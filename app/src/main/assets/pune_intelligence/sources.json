@@ -1,0 +1,56 @@
+[
+  {
+    "id": "SRC-POSTAL",
+    "url": "https://www.indiapost.gov.in/Financial/DOP_PDFFiles/PostOfficesOnline.pdf",
+    "accessed_at": "2026-11-10",
+    "source_type": "official_or_developer"
+  },
+  {
+    "id": "SRC-METRO",
+    "url": "https://punemetrorail.org/project-profile",
+    "accessed_at": "2026-11-10",
+    "source_type": "official_or_developer"
+  },
+  {
+    "id": "SRC-METRO_LIVE",
+    "url": "https://www.punemetrorail.org/",
+    "accessed_at": "2026-11-10",
+    "source_type": "official_or_developer"
+  },
+  {
+    "id": "SRC-METRO_FUTURE",
+    "url": "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2194711&lang=2&reg=3",
+    "accessed_at": "2026-11-10",
+    "source_type": "official_or_developer"
+  },
+  {
+    "id": "SRC-PANCHSHIL",
+    "url": "https://www.panchshil.com/office-parks/page/1",
+    "accessed_at": "2026-11-10",
+    "source_type": "official_or_developer"
+  },
+  {
+    "id": "SRC-PANCHSHIL2",
+    "url": "https://www.panchshil.com/office-parks/page/2",
+    "accessed_at": "2026-11-10",
+    "source_type": "official_or_developer"
+  },
+  {
+    "id": "SRC-EON",
+    "url": "https://www.eonfreezone.com/about-us",
+    "accessed_at": "2026-11-10",
+    "source_type": "official_or_developer"
+  },
+  {
+    "id": "SRC-RERA",
+    "url": "https://maharera.maharashtra.gov.in/sites/default/files/Orders_and_circulars/28.pdf",
+    "accessed_at": "2026-11-10",
+    "source_type": "official_or_developer"
+  },
+  {
+    "id": "SRC-PANCHSHILRES",
+    "url": "https://www.panchshil.com/yoovillas/contact/",
+    "accessed_at": "2026-11-10",
+    "source_type": "official_or_developer"
+  }
+]

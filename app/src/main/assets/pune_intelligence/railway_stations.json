@@ -1,0 +1,16 @@
+[
+  {
+    "id": "RAIL-001",
+    "name": "Pune Junction",
+    "station_code": "PUNE",
+    "status": "reference_seed",
+    "verification_status": "not_independently_verified_in_this_pass"
+  },
+  {
+    "id": "RAIL-002",
+    "name": "Hadapsar",
+    "station_code": null,
+    "status": "reference_seed",
+    "verification_status": "not_independently_verified_in_this_pass"
+  }
+]

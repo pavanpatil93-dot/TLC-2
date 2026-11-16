@@ -1,0 +1,212 @@
+[
+  {
+    "id": "COM-001",
+    "name": "EON Free Zone I",
+    "location_id": "LOC-001",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "completed",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  },
+  {
+    "id": "COM-002",
+    "name": "EON Free Zone II",
+    "location_id": "LOC-001",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "completed",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  },
+  {
+    "id": "COM-003",
+    "name": "World Trade Center Pune",
+    "location_id": "LOC-001",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "completed",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  },
+  {
+    "id": "COM-004",
+    "name": "Panchshil Business Park East",
+    "location_id": "LOC-002",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "completed",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  },
+  {
+    "id": "COM-005",
+    "name": "Tech Park One",
+    "location_id": "LOC-012",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "completed",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  },
+  {
+    "id": "COM-006",
+    "name": "Futura",
+    "location_id": "LOC-009",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "completed",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  },
+  {
+    "id": "COM-007",
+    "name": "Panchshil Business Park West",
+    "location_id": "LOC-018",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "completed",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  },
+  {
+    "id": "COM-008",
+    "name": "Panchshil Tech Park",
+    "location_id": "LOC-019",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "completed",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  },
+  {
+    "id": "COM-009",
+    "name": "ICC Tech Park",
+    "location_id": "LOC-028",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "completed",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  },
+  {
+    "id": "COM-010",
+    "name": "ICC Trade Tower",
+    "location_id": "LOC-028",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "completed",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  },
+  {
+    "id": "COM-011",
+    "name": "Panchshil Avenue",
+    "location_id": "LOC-003",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "completed",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL2"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  },
+  {
+    "id": "COM-012",
+    "name": "Panchshil Business Hub",
+    "location_id": "LOC-001",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "unknown",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL2"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  },
+  {
+    "id": "COM-013",
+    "name": "Vantage",
+    "location_id": "LOC-001",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "unknown",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL2"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  },
+  {
+    "id": "COM-014",
+    "name": "Eleven West",
+    "location_id": "LOC-017",
+    "developer_id": "DEV-001",
+    "asset_class": "office_park",
+    "project_status": "completed",
+    "rera_registration": null,
+    "coordinates": null,
+    "source_ids": [
+      "SRC-PANCHSHIL"
+    ],
+    "verification_status": "developer_listed",
+    "as_of": "2026-11-10"
+  }
+]

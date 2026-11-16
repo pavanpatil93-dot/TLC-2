@@ -1,0 +1,10 @@
+[
+  {
+    "id": "DEV-001",
+    "name": "Panchshil Realty",
+    "source_ids": [
+      "SRC-PANCHSHIL"
+    ],
+    "verification_status": "developer_official"
+  }
+]

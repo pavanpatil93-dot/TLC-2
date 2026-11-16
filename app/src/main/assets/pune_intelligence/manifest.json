@@ -1,0 +1,40 @@
+{
+  "as_of": "2026-11-10",
+  "scope": "East Pune first, wider Pune secondary",
+  "dataset_tier": "verified-source core plus quarantined legacy candidates",
+  "warning": "This is not a complete verified census of Pune properties. Blank arrays mean not researched/verified, not absent.",
+  "counts": {
+    "locations": 30,
+    "postal_offices": 12,
+    "commercial_projects": 14,
+    "residential_projects": 1,
+    "developers": 1,
+    "metro_stations": 28,
+    "metro_projects": 2,
+    "railway_stations": 2,
+    "landmarks_retail_hotels": 0,
+    "search_aliases": 60,
+    "road_candidates": 90,
+    "legacy_enrichment_candidates": 30,
+    "market_observations": 0
+  },
+  "official_sources": {
+    "postal": "https://www.indiapost.gov.in/Financial/DOP_PDFFiles/PostOfficesOnline.pdf",
+    "metro": "https://punemetrorail.org/project-profile",
+    "metro_live": "https://www.punemetrorail.org/",
+    "metro_future": "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2194711&lang=2&reg=3",
+    "panchshil": "https://www.panchshil.com/office-parks/page/1",
+    "panchshil2": "https://www.panchshil.com/office-parks/page/2",
+    "eon": "https://www.eonfreezone.com/about-us",
+    "rera": "https://maharera.maharashtra.gov.in/sites/default/files/Orders_and_circulars/28.pdf",
+    "panchshilres": "https://www.panchshil.com/yoovillas/contact/"
+  },
+  "operational_note": "Do not infer closest metro, road distance, RERA, project price, or availability from these tables.",
+  "production_gates": [
+    "Validate PIN at property address level",
+    "Resolve geography to authoritative coordinates",
+    "Verify RERA project registration and phase",
+    "Validate building/landmark against primary source",
+    "Collect transaction-backed rates before analytics"
+  ]
+}

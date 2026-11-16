@@ -1,0 +1,632 @@
+[
+  {
+    "id": "ROAD-0001",
+    "location_id": "LOC-001",
+    "road_name": "Nagar Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0002",
+    "location_id": "LOC-001",
+    "road_name": "Kharadi Bypass",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0003",
+    "location_id": "LOC-001",
+    "road_name": "Kharadi-Mundhwa Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0004",
+    "location_id": "LOC-002",
+    "road_name": "Nagar Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0005",
+    "location_id": "LOC-002",
+    "road_name": "Airport Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0006",
+    "location_id": "LOC-002",
+    "road_name": "Viman Nagar Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0007",
+    "location_id": "LOC-003",
+    "road_name": "Nagar Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0008",
+    "location_id": "LOC-003",
+    "road_name": "Kalyani Nagar Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0009",
+    "location_id": "LOC-003",
+    "road_name": "North Avenue",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0010",
+    "location_id": "LOC-004",
+    "road_name": "North Main Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0011",
+    "location_id": "LOC-004",
+    "road_name": "South Main Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0012",
+    "location_id": "LOC-004",
+    "road_name": "Bund Garden Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0013",
+    "location_id": "LOC-005",
+    "road_name": "North Main Road Extension",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0014",
+    "location_id": "LOC-005",
+    "road_name": "Mundhwa Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0015",
+    "location_id": "LOC-005",
+    "road_name": "Koregaon Park-Mundhwa Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0016",
+    "location_id": "LOC-006",
+    "road_name": "Mundhwa Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0017",
+    "location_id": "LOC-006",
+    "road_name": "Kharadi-Mundhwa Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0018",
+    "location_id": "LOC-006",
+    "road_name": "Hadapsar-Mundhwa Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0019",
+    "location_id": "LOC-007",
+    "road_name": "Keshav Nagar Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0020",
+    "location_id": "LOC-007",
+    "road_name": "Mundhwa-Manjri Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0021",
+    "location_id": "LOC-007",
+    "road_name": "Kharadi-Mundhwa Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0022",
+    "location_id": "LOC-008",
+    "road_name": "Pune-Ahmednagar Highway",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0023",
+    "location_id": "LOC-008",
+    "road_name": "Wagholi-Kesnand Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0024",
+    "location_id": "LOC-008",
+    "road_name": "Lohegaon-Wagholi Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0025",
+    "location_id": "LOC-009",
+    "road_name": "Pune-Solapur Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0026",
+    "location_id": "LOC-009",
+    "road_name": "Hadapsar-Mundhwa Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0027",
+    "location_id": "LOC-009",
+    "road_name": "Magarpatta Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0028",
+    "location_id": "LOC-010",
+    "road_name": "Magarpatta Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0029",
+    "location_id": "LOC-010",
+    "road_name": "Pune-Solapur Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0030",
+    "location_id": "LOC-010",
+    "road_name": "Hadapsar-Mundhwa Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0031",
+    "location_id": "LOC-011",
+    "road_name": "Amanora Park Town Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0032",
+    "location_id": "LOC-011",
+    "road_name": "Magarpatta Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0033",
+    "location_id": "LOC-011",
+    "road_name": "Hadapsar-Mundhwa Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0034",
+    "location_id": "LOC-012",
+    "road_name": "Nagar Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0035",
+    "location_id": "LOC-012",
+    "road_name": "Airport Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0036",
+    "location_id": "LOC-012",
+    "road_name": "Bund Garden Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0037",
+    "location_id": "LOC-013",
+    "road_name": "Airport Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0038",
+    "location_id": "LOC-013",
+    "road_name": "Lohegaon-Wagholi Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0039",
+    "location_id": "LOC-013",
+    "road_name": "Dhanori-Lohegaon Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0040",
+    "location_id": "LOC-014",
+    "road_name": "Dhanori Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0041",
+    "location_id": "LOC-014",
+    "road_name": "Vishrantwadi-Lohegaon Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0042",
+    "location_id": "LOC-014",
+    "road_name": "Airport Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0043",
+    "location_id": "LOC-015",
+    "road_name": "Kondhwa Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0044",
+    "location_id": "LOC-015",
+    "road_name": "NIBM Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0045",
+    "location_id": "LOC-015",
+    "road_name": "Katraj-Kondhwa Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0046",
+    "location_id": "LOC-016",
+    "road_name": "NIBM Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0047",
+    "location_id": "LOC-016",
+    "road_name": "Mohammed Wadi Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0048",
+    "location_id": "LOC-016",
+    "road_name": "Undri-Pisoli Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0049",
+    "location_id": "LOC-017",
+    "road_name": "Baner Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0050",
+    "location_id": "LOC-017",
+    "road_name": "Baner-Pashan Link Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0051",
+    "location_id": "LOC-017",
+    "road_name": "Mumbai-Bengaluru Highway",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0052",
+    "location_id": "LOC-018",
+    "road_name": "Balewadi High Street",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0053",
+    "location_id": "LOC-018",
+    "road_name": "Baner Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0054",
+    "location_id": "LOC-018",
+    "road_name": "Mumbai-Bengaluru Highway",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0055",
+    "location_id": "LOC-019",
+    "road_name": "Hinjewadi-Marunji Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0056",
+    "location_id": "LOC-019",
+    "road_name": "Wakad-Hinjewadi Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0057",
+    "location_id": "LOC-019",
+    "road_name": "Mumbai-Bengaluru Highway",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0058",
+    "location_id": "LOC-020",
+    "road_name": "Wakad-Hinjewadi Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0059",
+    "location_id": "LOC-020",
+    "road_name": "Mumbai-Bengaluru Highway",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0060",
+    "location_id": "LOC-020",
+    "road_name": "Aundh-Ravet BRTS Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0061",
+    "location_id": "LOC-021",
+    "road_name": "Aundh Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0062",
+    "location_id": "LOC-021",
+    "road_name": "University Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0063",
+    "location_id": "LOC-021",
+    "road_name": "Baner Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0064",
+    "location_id": "LOC-022",
+    "road_name": "Karve Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0065",
+    "location_id": "LOC-022",
+    "road_name": "Paud Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0066",
+    "location_id": "LOC-022",
+    "road_name": "Kothrud Bypass",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0067",
+    "location_id": "LOC-023",
+    "road_name": "Mumbai-Pune Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0068",
+    "location_id": "LOC-023",
+    "road_name": "Pimpri-Chinchwad Link Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0069",
+    "location_id": "LOC-023",
+    "road_name": "Old Mumbai-Pune Highway",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0070",
+    "location_id": "LOC-024",
+    "road_name": "Old Mumbai-Pune Highway",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0071",
+    "location_id": "LOC-024",
+    "road_name": "Chinchwad Station Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0072",
+    "location_id": "LOC-024",
+    "road_name": "Aundh-Ravet BRTS Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0073",
+    "location_id": "LOC-025",
+    "road_name": "Pune-Nashik Highway",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0074",
+    "location_id": "LOC-025",
+    "road_name": "Spine Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0075",
+    "location_id": "LOC-025",
+    "road_name": "Old Mumbai-Pune Highway",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0076",
+    "location_id": "LOC-026",
+    "road_name": "Bibwewadi Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0077",
+    "location_id": "LOC-026",
+    "road_name": "Satara Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0078",
+    "location_id": "LOC-026",
+    "road_name": "Gangadham Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0079",
+    "location_id": "LOC-027",
+    "road_name": "Pune-Satara Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0080",
+    "location_id": "LOC-027",
+    "road_name": "Katraj-Kondhwa Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0081",
+    "location_id": "LOC-027",
+    "road_name": "Mumbai-Bengaluru Highway",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0082",
+    "location_id": "LOC-028",
+    "road_name": "University Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0083",
+    "location_id": "LOC-028",
+    "road_name": "JM Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0084",
+    "location_id": "LOC-028",
+    "road_name": "FC Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0085",
+    "location_id": "LOC-029",
+    "road_name": "MG Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0086",
+    "location_id": "LOC-029",
+    "road_name": "East Street",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0087",
+    "location_id": "LOC-029",
+    "road_name": "Bund Garden Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0088",
+    "location_id": "LOC-030",
+    "road_name": "Satara Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0089",
+    "location_id": "LOC-030",
+    "road_name": "Shankar Sheth Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  },
+  {
+    "id": "ROAD-0090",
+    "location_id": "LOC-030",
+    "road_name": "Solapur Road",
+    "road_type": "unknown",
+    "verification_status": "candidate_unverified"
+  }
+]

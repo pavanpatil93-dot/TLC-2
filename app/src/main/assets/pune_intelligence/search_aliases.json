@@ -1,0 +1,482 @@
+[
+  {
+    "id": "ALIAS-0001",
+    "entity_type": "location",
+    "entity_id": "LOC-001",
+    "alias": "kharadi",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0002",
+    "entity_type": "location",
+    "entity_id": "LOC-002",
+    "alias": "viman-nagar",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0003",
+    "entity_type": "location",
+    "entity_id": "LOC-002",
+    "alias": "vimannagar",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0004",
+    "entity_type": "location",
+    "entity_id": "LOC-002",
+    "alias": "viman nagar",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0005",
+    "entity_type": "location",
+    "entity_id": "LOC-003",
+    "alias": "kalyani nagar",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0006",
+    "entity_type": "location",
+    "entity_id": "LOC-003",
+    "alias": "kalyani-nagar",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0007",
+    "entity_type": "location",
+    "entity_id": "LOC-003",
+    "alias": "kalyaninagar",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0008",
+    "entity_type": "location",
+    "entity_id": "LOC-004",
+    "alias": "koregaonpark",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0009",
+    "entity_type": "location",
+    "entity_id": "LOC-004",
+    "alias": "koregaon park",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0010",
+    "entity_type": "location",
+    "entity_id": "LOC-004",
+    "alias": "koregaon-park",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0011",
+    "entity_type": "location",
+    "entity_id": "LOC-005",
+    "alias": "koregaon park annexe",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0012",
+    "entity_type": "location",
+    "entity_id": "LOC-005",
+    "alias": "koregaonparkannexe",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0013",
+    "entity_type": "location",
+    "entity_id": "LOC-005",
+    "alias": "koregaon-park-annexe",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0014",
+    "entity_type": "location",
+    "entity_id": "LOC-006",
+    "alias": "mundhwa",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0015",
+    "entity_type": "location",
+    "entity_id": "LOC-007",
+    "alias": "keshav-nagar",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0016",
+    "entity_type": "location",
+    "entity_id": "LOC-007",
+    "alias": "keshavnagar",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0017",
+    "entity_type": "location",
+    "entity_id": "LOC-007",
+    "alias": "keshav nagar",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0018",
+    "entity_type": "location",
+    "entity_id": "LOC-008",
+    "alias": "wagholi",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0019",
+    "entity_type": "location",
+    "entity_id": "LOC-009",
+    "alias": "hadapsar",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0020",
+    "entity_type": "location",
+    "entity_id": "LOC-010",
+    "alias": "magarpatta city",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0021",
+    "entity_type": "location",
+    "entity_id": "LOC-010",
+    "alias": "magarpattacity",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0022",
+    "entity_type": "location",
+    "entity_id": "LOC-010",
+    "alias": "magarpatta-city",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0023",
+    "entity_type": "location",
+    "entity_id": "LOC-011",
+    "alias": "amanora",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0024",
+    "entity_type": "location",
+    "entity_id": "LOC-012",
+    "alias": "yerawada",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0025",
+    "entity_type": "location",
+    "entity_id": "LOC-013",
+    "alias": "lohegaon",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0026",
+    "entity_type": "location",
+    "entity_id": "LOC-014",
+    "alias": "dhanori",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0027",
+    "entity_type": "location",
+    "entity_id": "LOC-015",
+    "alias": "kondhwa",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0028",
+    "entity_type": "location",
+    "entity_id": "LOC-016",
+    "alias": "nibm-/-mohammed-wadi",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0029",
+    "entity_type": "location",
+    "entity_id": "LOC-016",
+    "alias": "nibmmohammedwadi",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0030",
+    "entity_type": "location",
+    "entity_id": "LOC-016",
+    "alias": "nibm / mohammed wadi",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0031",
+    "entity_type": "location",
+    "entity_id": "LOC-017",
+    "alias": "baner",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0032",
+    "entity_type": "location",
+    "entity_id": "LOC-018",
+    "alias": "balewadi",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0033",
+    "entity_type": "location",
+    "entity_id": "LOC-019",
+    "alias": "hinjewadi",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0034",
+    "entity_type": "location",
+    "entity_id": "LOC-020",
+    "alias": "wakad",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0035",
+    "entity_type": "location",
+    "entity_id": "LOC-021",
+    "alias": "aundh",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0036",
+    "entity_type": "location",
+    "entity_id": "LOC-022",
+    "alias": "kothrud",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0037",
+    "entity_type": "location",
+    "entity_id": "LOC-023",
+    "alias": "pimpri",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0038",
+    "entity_type": "location",
+    "entity_id": "LOC-024",
+    "alias": "chinchwad",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0039",
+    "entity_type": "location",
+    "entity_id": "LOC-025",
+    "alias": "bhosari",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0040",
+    "entity_type": "location",
+    "entity_id": "LOC-026",
+    "alias": "bibwewadi",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0041",
+    "entity_type": "location",
+    "entity_id": "LOC-027",
+    "alias": "katraj",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0042",
+    "entity_type": "location",
+    "entity_id": "LOC-028",
+    "alias": "shivajinagar",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0043",
+    "entity_type": "location",
+    "entity_id": "LOC-029",
+    "alias": "camp-/-mg-road",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0044",
+    "entity_type": "location",
+    "entity_id": "LOC-029",
+    "alias": "camp / mg road",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0045",
+    "entity_type": "location",
+    "entity_id": "LOC-029",
+    "alias": "campmgroad",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0046",
+    "entity_type": "location",
+    "entity_id": "LOC-030",
+    "alias": "swargate",
+    "match_type": "normalized_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0047",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-001",
+    "alias": "eon free zone i",
+    "match_type": "canonical_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0048",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-002",
+    "alias": "eon free zone ii",
+    "match_type": "canonical_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0049",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-003",
+    "alias": "world trade center pune",
+    "match_type": "canonical_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0050",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-004",
+    "alias": "panchshil business park east",
+    "match_type": "canonical_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0051",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-005",
+    "alias": "tech park one",
+    "match_type": "canonical_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0052",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-006",
+    "alias": "futura",
+    "match_type": "canonical_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0053",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-007",
+    "alias": "panchshil business park west",
+    "match_type": "canonical_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0054",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-008",
+    "alias": "panchshil tech park",
+    "match_type": "canonical_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0055",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-009",
+    "alias": "icc tech park",
+    "match_type": "canonical_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0056",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-010",
+    "alias": "icc trade tower",
+    "match_type": "canonical_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0057",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-011",
+    "alias": "panchshil avenue",
+    "match_type": "canonical_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0058",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-012",
+    "alias": "panchshil business hub",
+    "match_type": "canonical_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0059",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-013",
+    "alias": "vantage",
+    "match_type": "canonical_name",
+    "verified": true
+  },
+  {
+    "id": "ALIAS-0060",
+    "entity_type": "commercial_project",
+    "entity_id": "COM-014",
+    "alias": "eleven west",
+    "match_type": "canonical_name",
+    "verified": true
+  }
+]

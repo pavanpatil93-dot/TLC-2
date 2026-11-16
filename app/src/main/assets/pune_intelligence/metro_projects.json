@@ -1,0 +1,20 @@
+[
+  {
+    "id": "MPR-001",
+    "name": "Kharadi–Hadapsar–Swargate–Khadakwasla",
+    "line": "4",
+    "status": "approved_not_operational",
+    "source_ids": [
+      "SRC-METRO_FUTURE"
+    ]
+  },
+  {
+    "id": "MPR-002",
+    "name": "Nal Stop–Warje–Manik Baug",
+    "line": "4A",
+    "status": "approved_not_operational",
+    "source_ids": [
+      "SRC-METRO_FUTURE"
+    ]
+  }
+]

@@ -1,0 +1,1242 @@
+[
+  {
+    "tower_id": "TWR-001-01",
+    "project_id": "TLC-PRJ-001",
+    "phase_id": "PHS-001-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 8,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-002-01",
+    "project_id": "TLC-PRJ-002",
+    "phase_id": "PHS-002-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 14,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-003-01",
+    "project_id": "TLC-PRJ-003",
+    "phase_id": "PHS-003-A",
+    "tower_name": "Main Cluster / Tower (5 Buildings)",
+    "total_floors": 11,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-004-01",
+    "project_id": "TLC-PRJ-004",
+    "phase_id": "PHS-004-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 12,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-005-01",
+    "project_id": "TLC-PRJ-005",
+    "phase_id": "PHS-005-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 11,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-006-01",
+    "project_id": "TLC-PRJ-006",
+    "phase_id": "PHS-006-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 16,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-007-01",
+    "project_id": "TLC-PRJ-007",
+    "phase_id": "PHS-007-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 10,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-008-01",
+    "project_id": "TLC-PRJ-008",
+    "phase_id": "PHS-008-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 9,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-009-01",
+    "project_id": "TLC-PRJ-009",
+    "phase_id": "PHS-009-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 8,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-010-01",
+    "project_id": "TLC-PRJ-010",
+    "phase_id": "PHS-010-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 14,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-011-01",
+    "project_id": "TLC-PRJ-011",
+    "phase_id": "PHS-011-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 12,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-012-01",
+    "project_id": "TLC-PRJ-012",
+    "phase_id": "PHS-012-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 10,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-013-01",
+    "project_id": "TLC-PRJ-013",
+    "phase_id": "PHS-013-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 9,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-014-01",
+    "project_id": "TLC-PRJ-014",
+    "phase_id": "PHS-014-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 12,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-015-01",
+    "project_id": "TLC-PRJ-015",
+    "phase_id": "PHS-015-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 11,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-016-01",
+    "project_id": "TLC-PRJ-016",
+    "phase_id": "PHS-016-A",
+    "tower_name": "Main Cluster / Tower (9 Buildings)",
+    "total_floors": 34,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-017-01",
+    "project_id": "TLC-PRJ-017",
+    "phase_id": "PHS-017-A",
+    "tower_name": "Main Cluster / Tower (5 Buildings)",
+    "total_floors": 22,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-018-01",
+    "project_id": "TLC-PRJ-018",
+    "phase_id": "PHS-018-A",
+    "tower_name": "Main Cluster / Tower (6 Buildings)",
+    "total_floors": 27,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-019-01",
+    "project_id": "TLC-PRJ-019",
+    "phase_id": "PHS-019-A",
+    "tower_name": "Main Cluster / Tower (5 Buildings)",
+    "total_floors": 28,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-020-01",
+    "project_id": "TLC-PRJ-020",
+    "phase_id": "PHS-020-A",
+    "tower_name": "Main Cluster / Tower (3 Buildings)",
+    "total_floors": 27,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-021-01",
+    "project_id": "TLC-PRJ-021",
+    "phase_id": "PHS-021-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 30,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-022-01",
+    "project_id": "TLC-PRJ-022",
+    "phase_id": "PHS-022-A",
+    "tower_name": "Main Cluster / Tower (22 Buildings)",
+    "total_floors": 30,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-023-01",
+    "project_id": "TLC-PRJ-023",
+    "phase_id": "PHS-023-A",
+    "tower_name": "Main Cluster / Tower (9 Buildings)",
+    "total_floors": 32,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-024-01",
+    "project_id": "TLC-PRJ-024",
+    "phase_id": "PHS-024-A",
+    "tower_name": "Main Cluster / Tower (6 Buildings)",
+    "total_floors": 33,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-025-01",
+    "project_id": "TLC-PRJ-025",
+    "phase_id": "PHS-025-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 3,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-026-01",
+    "project_id": "TLC-PRJ-026",
+    "phase_id": "PHS-026-A",
+    "tower_name": "Main Cluster / Tower (5 Buildings)",
+    "total_floors": 28,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-027-01",
+    "project_id": "TLC-PRJ-027",
+    "phase_id": "PHS-027-A",
+    "tower_name": "Main Cluster / Tower (3 Buildings)",
+    "total_floors": 21,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-028-01",
+    "project_id": "TLC-PRJ-028",
+    "phase_id": "PHS-028-A",
+    "tower_name": "Main Cluster / Tower (3 Buildings)",
+    "total_floors": 26,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-029-01",
+    "project_id": "TLC-PRJ-029",
+    "phase_id": "PHS-029-A",
+    "tower_name": "Main Cluster / Tower (11 Buildings)",
+    "total_floors": 25,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-030-01",
+    "project_id": "TLC-PRJ-030",
+    "phase_id": "PHS-030-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 22,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-031-01",
+    "project_id": "TLC-PRJ-031",
+    "phase_id": "PHS-031-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 24,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-032-01",
+    "project_id": "TLC-PRJ-032",
+    "phase_id": "PHS-032-A",
+    "tower_name": "Main Cluster / Tower (6 Buildings)",
+    "total_floors": 20,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-033-01",
+    "project_id": "TLC-PRJ-033",
+    "phase_id": "PHS-033-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 22,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-034-01",
+    "project_id": "TLC-PRJ-034",
+    "phase_id": "PHS-034-A",
+    "tower_name": "Main Cluster / Tower (5 Buildings)",
+    "total_floors": 16,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-035-01",
+    "project_id": "TLC-PRJ-035",
+    "phase_id": "PHS-035-A",
+    "tower_name": "Main Cluster / Tower (9 Buildings)",
+    "total_floors": 24,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-036-01",
+    "project_id": "TLC-PRJ-036",
+    "phase_id": "PHS-036-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 18,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-037-01",
+    "project_id": "TLC-PRJ-037",
+    "phase_id": "PHS-037-A",
+    "tower_name": "Main Cluster / Tower (5 Buildings)",
+    "total_floors": 14,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-038-01",
+    "project_id": "TLC-PRJ-038",
+    "phase_id": "PHS-038-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 12,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-039-01",
+    "project_id": "TLC-PRJ-039",
+    "phase_id": "PHS-039-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 7,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-040-01",
+    "project_id": "TLC-PRJ-040",
+    "phase_id": "PHS-040-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 8,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-041-01",
+    "project_id": "TLC-PRJ-041",
+    "phase_id": "PHS-041-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 12,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-042-01",
+    "project_id": "TLC-PRJ-042",
+    "phase_id": "PHS-042-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 14,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-043-01",
+    "project_id": "TLC-PRJ-043",
+    "phase_id": "PHS-043-A",
+    "tower_name": "Main Cluster / Tower (3 Buildings)",
+    "total_floors": 12,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-044-01",
+    "project_id": "TLC-PRJ-044",
+    "phase_id": "PHS-044-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 13,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-045-01",
+    "project_id": "TLC-PRJ-045",
+    "phase_id": "PHS-045-A",
+    "tower_name": "Main Cluster / Tower (24 Buildings)",
+    "total_floors": 7,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-046-01",
+    "project_id": "TLC-PRJ-046",
+    "phase_id": "PHS-046-A",
+    "tower_name": "Main Cluster / Tower (3 Buildings)",
+    "total_floors": 10,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-047-01",
+    "project_id": "TLC-PRJ-047",
+    "phase_id": "PHS-047-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 19,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-048-01",
+    "project_id": "TLC-PRJ-048",
+    "phase_id": "PHS-048-A",
+    "tower_name": "Main Cluster / Tower (8 Buildings)",
+    "total_floors": 27,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-049-01",
+    "project_id": "TLC-PRJ-049",
+    "phase_id": "PHS-049-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 24,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-050-01",
+    "project_id": "TLC-PRJ-050",
+    "phase_id": "PHS-050-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 12,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-051-01",
+    "project_id": "TLC-PRJ-051",
+    "phase_id": "PHS-051-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 14,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-052-01",
+    "project_id": "TLC-PRJ-052",
+    "phase_id": "PHS-052-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 22,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-053-01",
+    "project_id": "TLC-PRJ-053",
+    "phase_id": "PHS-053-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 18,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-054-01",
+    "project_id": "TLC-PRJ-054",
+    "phase_id": "PHS-054-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 11,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-055-01",
+    "project_id": "TLC-PRJ-055",
+    "phase_id": "PHS-055-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 16,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-056-01",
+    "project_id": "TLC-PRJ-056",
+    "phase_id": "PHS-056-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 12,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-057-01",
+    "project_id": "TLC-PRJ-057",
+    "phase_id": "PHS-057-A",
+    "tower_name": "Main Cluster / Tower (6 Buildings)",
+    "total_floors": 30,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-058-01",
+    "project_id": "TLC-PRJ-058",
+    "phase_id": "PHS-058-A",
+    "tower_name": "Main Cluster / Tower (7 Buildings)",
+    "total_floors": 22,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-059-01",
+    "project_id": "TLC-PRJ-059",
+    "phase_id": "PHS-059-A",
+    "tower_name": "Main Cluster / Tower (16 Buildings)",
+    "total_floors": 28,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-060-01",
+    "project_id": "TLC-PRJ-060",
+    "phase_id": "PHS-060-A",
+    "tower_name": "Main Cluster / Tower (10 Buildings)",
+    "total_floors": 16,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-061-01",
+    "project_id": "TLC-PRJ-061",
+    "phase_id": "PHS-061-A",
+    "tower_name": "Main Cluster / Tower (20 Buildings)",
+    "total_floors": 10,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-062-01",
+    "project_id": "TLC-PRJ-062",
+    "phase_id": "PHS-062-A",
+    "tower_name": "Main Cluster / Tower (45 Buildings)",
+    "total_floors": 45,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-063-01",
+    "project_id": "TLC-PRJ-063",
+    "phase_id": "PHS-063-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 8,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-064-01",
+    "project_id": "TLC-PRJ-064",
+    "phase_id": "PHS-064-A",
+    "tower_name": "Main Cluster / Tower (6 Buildings)",
+    "total_floors": 10,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-065-01",
+    "project_id": "TLC-PRJ-065",
+    "phase_id": "PHS-065-A",
+    "tower_name": "Main Cluster / Tower (21 Buildings)",
+    "total_floors": 27,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-066-01",
+    "project_id": "TLC-PRJ-066",
+    "phase_id": "PHS-066-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 28,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-067-01",
+    "project_id": "TLC-PRJ-067",
+    "phase_id": "PHS-067-A",
+    "tower_name": "Main Cluster / Tower (5 Buildings)",
+    "total_floors": 32,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-068-01",
+    "project_id": "TLC-PRJ-068",
+    "phase_id": "PHS-068-A",
+    "tower_name": "Main Cluster / Tower (14 Buildings)",
+    "total_floors": 14,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-069-01",
+    "project_id": "TLC-PRJ-069",
+    "phase_id": "PHS-069-A",
+    "tower_name": "Main Cluster / Tower (8 Buildings)",
+    "total_floors": 10,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-070-01",
+    "project_id": "TLC-PRJ-070",
+    "phase_id": "PHS-070-A",
+    "tower_name": "Main Cluster / Tower (5 Buildings)",
+    "total_floors": 9,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-071-01",
+    "project_id": "TLC-PRJ-071",
+    "phase_id": "PHS-071-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 8,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-072-01",
+    "project_id": "TLC-PRJ-072",
+    "phase_id": "PHS-072-A",
+    "tower_name": "Main Cluster / Tower (28 Buildings)",
+    "total_floors": 16,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-073-01",
+    "project_id": "TLC-PRJ-073",
+    "phase_id": "PHS-073-A",
+    "tower_name": "Main Cluster / Tower (18 Buildings)",
+    "total_floors": 15,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-074-01",
+    "project_id": "TLC-PRJ-074",
+    "phase_id": "PHS-074-A",
+    "tower_name": "Main Cluster / Tower (8 Buildings)",
+    "total_floors": 16,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-075-01",
+    "project_id": "TLC-PRJ-075",
+    "phase_id": "PHS-075-A",
+    "tower_name": "Main Cluster / Tower (11 Buildings)",
+    "total_floors": 15,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-076-01",
+    "project_id": "TLC-PRJ-076",
+    "phase_id": "PHS-076-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 14,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-077-01",
+    "project_id": "TLC-PRJ-077",
+    "phase_id": "PHS-077-A",
+    "tower_name": "Main Cluster / Tower (5 Buildings)",
+    "total_floors": 16,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-078-01",
+    "project_id": "TLC-PRJ-078",
+    "phase_id": "PHS-078-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 24,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-079-01",
+    "project_id": "TLC-PRJ-079",
+    "phase_id": "PHS-079-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 14,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-080-01",
+    "project_id": "TLC-PRJ-080",
+    "phase_id": "PHS-080-A",
+    "tower_name": "Main Cluster / Tower (11 Buildings)",
+    "total_floors": 10,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-081-01",
+    "project_id": "TLC-PRJ-081",
+    "phase_id": "PHS-081-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 8,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-082-01",
+    "project_id": "TLC-PRJ-082",
+    "phase_id": "PHS-082-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 14,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-083-01",
+    "project_id": "TLC-PRJ-083",
+    "phase_id": "PHS-083-A",
+    "tower_name": "Main Cluster / Tower (9 Buildings)",
+    "total_floors": 28,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-084-01",
+    "project_id": "TLC-PRJ-084",
+    "phase_id": "PHS-084-A",
+    "tower_name": "Main Cluster / Tower (7 Buildings)",
+    "total_floors": 25,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-085-01",
+    "project_id": "TLC-PRJ-085",
+    "phase_id": "PHS-085-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 30,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-086-01",
+    "project_id": "TLC-PRJ-086",
+    "phase_id": "PHS-086-A",
+    "tower_name": "Main Cluster / Tower (6 Buildings)",
+    "total_floors": 26,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-087-01",
+    "project_id": "TLC-PRJ-087",
+    "phase_id": "PHS-087-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 25,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-088-01",
+    "project_id": "TLC-PRJ-088",
+    "phase_id": "PHS-088-A",
+    "tower_name": "Main Cluster / Tower (8 Buildings)",
+    "total_floors": 12,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-089-01",
+    "project_id": "TLC-PRJ-089",
+    "phase_id": "PHS-089-A",
+    "tower_name": "Main Cluster / Tower (55 Buildings)",
+    "total_floors": 24,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-090-01",
+    "project_id": "TLC-PRJ-090",
+    "phase_id": "PHS-090-A",
+    "tower_name": "Main Cluster / Tower (20 Buildings)",
+    "total_floors": 32,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-091-01",
+    "project_id": "TLC-PRJ-091",
+    "phase_id": "PHS-091-A",
+    "tower_name": "Main Cluster / Tower (35 Buildings)",
+    "total_floors": 34,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-092-01",
+    "project_id": "TLC-PRJ-092",
+    "phase_id": "PHS-092-A",
+    "tower_name": "Main Cluster / Tower (10 Buildings)",
+    "total_floors": 18,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-093-01",
+    "project_id": "TLC-PRJ-093",
+    "phase_id": "PHS-093-A",
+    "tower_name": "Main Cluster / Tower (5 Buildings)",
+    "total_floors": 24,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-094-01",
+    "project_id": "TLC-PRJ-094",
+    "phase_id": "PHS-094-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 22,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-095-01",
+    "project_id": "TLC-PRJ-095",
+    "phase_id": "PHS-095-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 16,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-096-01",
+    "project_id": "TLC-PRJ-096",
+    "phase_id": "PHS-096-A",
+    "tower_name": "Main Cluster / Tower (6 Buildings)",
+    "total_floors": 26,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-097-01",
+    "project_id": "TLC-PRJ-097",
+    "phase_id": "PHS-097-A",
+    "tower_name": "Main Cluster / Tower (3 Buildings)",
+    "total_floors": 30,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-098-01",
+    "project_id": "TLC-PRJ-098",
+    "phase_id": "PHS-098-A",
+    "tower_name": "Main Cluster / Tower (12 Buildings)",
+    "total_floors": 16,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-099-01",
+    "project_id": "TLC-PRJ-099",
+    "phase_id": "PHS-099-A",
+    "tower_name": "Main Cluster / Tower (6 Buildings)",
+    "total_floors": 28,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-100-01",
+    "project_id": "TLC-PRJ-100",
+    "phase_id": "PHS-100-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 22,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-101-01",
+    "project_id": "TLC-PRJ-101",
+    "phase_id": "PHS-101-A",
+    "tower_name": "Main Cluster / Tower (3 Buildings)",
+    "total_floors": 24,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-102-01",
+    "project_id": "TLC-PRJ-102",
+    "phase_id": "PHS-102-A",
+    "tower_name": "Main Cluster / Tower (8 Buildings)",
+    "total_floors": 20,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-103-01",
+    "project_id": "TLC-PRJ-103",
+    "phase_id": "PHS-103-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 12,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-104-01",
+    "project_id": "TLC-PRJ-104",
+    "phase_id": "PHS-104-A",
+    "tower_name": "Main Cluster / Tower (8 Buildings)",
+    "total_floors": 22,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-105-01",
+    "project_id": "TLC-PRJ-105",
+    "phase_id": "PHS-105-A",
+    "tower_name": "Main Cluster / Tower (2 Buildings)",
+    "total_floors": 26,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-106-01",
+    "project_id": "TLC-PRJ-106",
+    "phase_id": "PHS-106-A",
+    "tower_name": "Single Building / Plot",
+    "total_floors": 27,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-107-01",
+    "project_id": "TLC-PRJ-107",
+    "phase_id": "PHS-107-A",
+    "tower_name": "Main Cluster / Tower (5 Buildings)",
+    "total_floors": 22,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-108-01",
+    "project_id": "TLC-PRJ-108",
+    "phase_id": "PHS-108-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 20,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-109-01",
+    "project_id": "TLC-PRJ-109",
+    "phase_id": "PHS-109-A",
+    "tower_name": "Main Cluster / Tower (5 Buildings)",
+    "total_floors": 25,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-110-01",
+    "project_id": "TLC-PRJ-110",
+    "phase_id": "PHS-110-A",
+    "tower_name": "Main Cluster / Tower (5 Buildings)",
+    "total_floors": 24,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-111-01",
+    "project_id": "TLC-PRJ-111",
+    "phase_id": "PHS-111-A",
+    "tower_name": "Main Cluster / Tower (8 Buildings)",
+    "total_floors": 18,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-112-01",
+    "project_id": "TLC-PRJ-112",
+    "phase_id": "PHS-112-A",
+    "tower_name": "Main Cluster / Tower (30 Buildings)",
+    "total_floors": 24,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-113-01",
+    "project_id": "TLC-PRJ-113",
+    "phase_id": "PHS-113-A",
+    "tower_name": "Main Cluster / Tower (15 Buildings)",
+    "total_floors": 22,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-114-01",
+    "project_id": "TLC-PRJ-114",
+    "phase_id": "PHS-114-A",
+    "tower_name": "Main Cluster / Tower (6 Buildings)",
+    "total_floors": 35,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-115-01",
+    "project_id": "TLC-PRJ-115",
+    "phase_id": "PHS-115-A",
+    "tower_name": "Main Cluster / Tower (9 Buildings)",
+    "total_floors": 24,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-116-01",
+    "project_id": "TLC-PRJ-116",
+    "phase_id": "PHS-116-A",
+    "tower_name": "Main Cluster / Tower (18 Buildings)",
+    "total_floors": 16,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-117-01",
+    "project_id": "TLC-PRJ-117",
+    "phase_id": "PHS-117-A",
+    "tower_name": "Main Cluster / Tower (7 Buildings)",
+    "total_floors": 15,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-118-01",
+    "project_id": "TLC-PRJ-118",
+    "phase_id": "PHS-118-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 12,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-119-01",
+    "project_id": "TLC-PRJ-119",
+    "phase_id": "PHS-119-A",
+    "tower_name": "Main Cluster / Tower (3 Buildings)",
+    "total_floors": 18,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-120-01",
+    "project_id": "TLC-PRJ-120",
+    "phase_id": "PHS-120-A",
+    "tower_name": "Main Cluster / Tower (4 Buildings)",
+    "total_floors": 14,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-121-01",
+    "project_id": "TLC-PRJ-121",
+    "phase_id": "PHS-121-A",
+    "tower_name": "Main Cluster / Tower (28 Buildings)",
+    "total_floors": 24,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-122-01",
+    "project_id": "TLC-PRJ-122",
+    "phase_id": "PHS-122-A",
+    "tower_name": "Main Cluster / Tower (9 Buildings)",
+    "total_floors": 16,
+    "building_structure": "RCC Mivan / Shear Wall High-Rise Structure",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-123-01",
+    "project_id": "TLC-PRJ-123",
+    "phase_id": "PHS-123-A",
+    "tower_name": "Main Cluster / Tower (8 Buildings)",
+    "total_floors": 1,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  },
+  {
+    "tower_id": "TWR-124-01",
+    "project_id": "TLC-PRJ-124",
+    "phase_id": "PHS-124-A",
+    "tower_name": "Main Cluster / Tower (12 Buildings)",
+    "total_floors": 1,
+    "building_structure": "RCC Framed Structure / Grade-A Facade",
+    "lift_specifications": "High-Speed Passenger & Service Elevators",
+    "parking_levels": "Multi-Level Basement + Podium Parking"
+  }
+]

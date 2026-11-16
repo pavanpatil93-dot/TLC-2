@@ -1,0 +1,22 @@
+{
+  "schema_version": "2.0.0",
+  "database": "TLC1_PUNE_REFERENCE",
+  "primary_key": "id",
+  "foreign_keys": {
+    "postal_offices.location_id": "locations.id",
+    "commercial_projects.location_id": "locations.id",
+    "commercial_projects.developer_id": "developers.id",
+    "residential_projects.location_id": "locations.id",
+    "residential_projects.developer_id": "developers.id",
+    "search_aliases.entity_id": "polymorphic_reference_check_in_app"
+  },
+  "null_semantics": "unknown or not verified, never zero",
+  "sqlite_room_guidance": {
+    "json_arrays": "use TypeConverters or normalized join tables",
+    "source_ids": "normalize to entity_sources join table for production",
+    "migration": "import with upsert by stable id; never overwrite user inventory",
+    "search": "casefold aliases; index alias and entity_type",
+    "prices": "store INR integer paise or Decimal strings; avoid float for money"
+  },
+  "schema_validation": "see validate.py"
+}

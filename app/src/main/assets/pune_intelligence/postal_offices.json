@@ -1,0 +1,134 @@
+[
+  {
+    "id": "PIN-411014-LOC-002",
+    "location_id": "LOC-002",
+    "pin_code": "411014",
+    "post_office_name": "Viman nagar S.O",
+    "scope": "post_office_reference_not_full_micro_market",
+    "source_ids": [
+      "SRC-POSTAL"
+    ],
+    "verification_status": "official_directory"
+  },
+  {
+    "id": "PIN-412207-LOC-008",
+    "location_id": "LOC-008",
+    "pin_code": "412207",
+    "post_office_name": "Vagholi",
+    "scope": "post_office_reference_not_full_micro_market",
+    "source_ids": [
+      "SRC-POSTAL"
+    ],
+    "verification_status": "official_directory"
+  },
+  {
+    "id": "PIN-411028-LOC-009",
+    "location_id": "LOC-009",
+    "pin_code": "411028",
+    "post_office_name": "Hadapsar S.O",
+    "scope": "post_office_reference_not_full_micro_market",
+    "source_ids": [
+      "SRC-POSTAL"
+    ],
+    "verification_status": "official_directory"
+  },
+  {
+    "id": "PIN-411036-LOC-006",
+    "location_id": "LOC-006",
+    "pin_code": "411036",
+    "post_office_name": "Mundhva av",
+    "scope": "post_office_reference_not_full_micro_market",
+    "source_ids": [
+      "SRC-POSTAL"
+    ],
+    "verification_status": "official_directory"
+  },
+  {
+    "id": "PIN-411057-LOC-019",
+    "location_id": "LOC-019",
+    "pin_code": "411057",
+    "post_office_name": "Infotech park (hinjawadi)",
+    "scope": "post_office_reference_not_full_micro_market",
+    "source_ids": [
+      "SRC-POSTAL"
+    ],
+    "verification_status": "official_directory"
+  },
+  {
+    "id": "PIN-411046-LOC-027",
+    "location_id": "LOC-027",
+    "pin_code": "411046",
+    "post_office_name": "Katraj",
+    "scope": "post_office_reference_not_full_micro_market",
+    "source_ids": [
+      "SRC-POSTAL"
+    ],
+    "verification_status": "official_directory"
+  },
+  {
+    "id": "PIN-411042-LOC-030",
+    "location_id": "LOC-030",
+    "pin_code": "411042",
+    "post_office_name": "Swargate",
+    "scope": "post_office_reference_not_full_micro_market",
+    "source_ids": [
+      "SRC-POSTAL"
+    ],
+    "verification_status": "official_directory"
+  },
+  {
+    "id": "PIN-411015-LOC-014",
+    "location_id": "LOC-014",
+    "pin_code": "411015",
+    "post_office_name": "Dhanori B.O",
+    "scope": "post_office_reference_not_full_micro_market",
+    "source_ids": [
+      "SRC-POSTAL"
+    ],
+    "verification_status": "official_directory"
+  },
+  {
+    "id": "PIN-411047-LOC-013",
+    "location_id": "LOC-013",
+    "pin_code": "411047",
+    "post_office_name": "Lohogaon",
+    "scope": "post_office_reference_not_full_micro_market",
+    "source_ids": [
+      "SRC-POSTAL"
+    ],
+    "verification_status": "official_directory"
+  },
+  {
+    "id": "PIN-411039-LOC-025",
+    "location_id": "LOC-025",
+    "pin_code": "411039",
+    "post_office_name": "Bhosarigoan",
+    "scope": "post_office_reference_not_full_micro_market",
+    "source_ids": [
+      "SRC-POSTAL"
+    ],
+    "verification_status": "official_directory"
+  },
+  {
+    "id": "PIN-411019-LOC-024",
+    "location_id": "LOC-024",
+    "pin_code": "411019",
+    "post_office_name": "Chinchwad East S.O",
+    "scope": "post_office_reference_not_full_micro_market",
+    "source_ids": [
+      "SRC-POSTAL"
+    ],
+    "verification_status": "official_directory"
+  },
+  {
+    "id": "PIN-411017-LOC-023",
+    "location_id": "LOC-023",
+    "pin_code": "411017",
+    "post_office_name": "Pimpri Colony S.O",
+    "scope": "post_office_reference_not_full_micro_market",
+    "source_ids": [
+      "SRC-POSTAL"
+    ],
+    "verification_status": "official_directory"
+  }
+]

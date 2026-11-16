@@ -1,0 +1,25 @@
+# Project online enrichment
+
+## B02 required addition — Auto-fetch Project Details
+
+User explicitly requested auto-fetch of commercial and residential project details, floor plans, cover photos and other available online information on 12 November 2026. This is a required project-listing feature, not a claim that fetching is already operational. Implement source enrichment after stable project identities and a staged review path; keep it within the existing automated build queue.
+
+### User flow
+
+Enter project name + locality + developer, or paste official project URL / brochure / RERA reference. Tap Fetch online details. Show candidate projects and confirm exact project/phase/tower/configuration identity before applying anything. Discover official sources through a supported search provider/backend; do not scrape Google result pages or ship API secrets in the APK. Always support direct official URL/brochure input as a fallback. Fetch drafts of identity, developer, location, map reference, RERA registration, category/configurations, carpet range, amenities, construction status, stated possession, pricing and brochure/floor-plan/media references when present. Missing fields remain unknown. Every field/media item retains source URL, publisher, retrieval time, relevant phase/configuration and review status. Search position is not verification.
+
+### Source selection and record rules
+
+Prefer the official developer/project page and published brochures for marketing details/media; official MahaRERA records for registration/phase evidence where accessible. Use Google Places only for supported location/photo lookups through a configured integration, with required attribution and storage restrictions; Google search discovery is not an image download license. Portals and public social posts are supplementary evidence, clearly labelled. Do not infer approvals, legal title, bank loans, price inclusions, actual availability or possession commitments. Advertised starting price remains distinct from an owner's unit asking price; carpet remains distinct from saleable/built-up. Source-stated possession, RERA completion and employee-confirmed possession are separate concepts. No silent price-unit multipliers or project remapping.
+
+### Cover images and floor plans
+
+Present candidate covers as actual site photo / architectural rendering / stock illustration / unknown; let employee select the correct cover. Only download and persist assets when access and usage terms allow; otherwise retain a source/reference link and attribution. Do not crop away required attribution/watermarks. Keep floor plans separate from gallery photos, tagged with project, phase, tower, configuration, area basis, source and revision when supplied. Preserve brochure PDFs and source page references; extracting a diagram from a brochure must retain page evidence and usage context. Do not assign a generic 3 BHK plan to all 3 BHK units. Do not calculate or claim exact carpet from an unscaled/uncertain plan. No generative substitutes for missing project photos or plans.
+
+### Review / persistence / refresh
+
+Fetched candidates stay in staging with field-by-field before/after, conflicts and sources. Default is fill missing after employee review; never overwrite existing project/inventory/owner/CRM fields in a background fetch. Refresh creates a new proposal/version and keeps original sources/assets. Cover replacement, phase changes, areas, pricing and possession need explicit acceptance. New fetch timestamps mean checked, not verified. Unknown/unverified projects remain selectable. A repeated fetch must not duplicate projects, configurations or identical assets. Respect unavailable/removed sources, login requirements, robots/terms and rate limits; do not bypass CAPTCHA. Surface progress, partial results, no-source-found, network/auth errors, and offline saved records. Shared Sheet mapping uses project IDs and five-tab schema; data/asset references and source evidence sync only after conflict-safe mapping is implemented.
+
+### Build sequence and acceptance
+
+B02.1: project identity + staging schema + official-URL/brochure intake, review controls and provenance tests. B02.2: configured search-provider discovery + source adapters + candidate identity matching; review before source association. B02.3: cover and plan candidate previews with attribution, revision/configuration labels and allowed storage. B02.4: accepted-field persistence, project Sheet references, safe refresh and rollback. Provider access/credentials/cost decisions are blockers only for that adapter; prepare direct-source flow and keep independent work moving. Acceptance fixtures: same-name projects in different Pune localities, multiple phases/RERAs, conflicting possession/price, carpet vs built-up, missing metadata, broken URLs, unsupported PDF/image, duplicate fetches, stale reviews and preservation of employee-entered values. Run automated checks and device tests before marking online enrichment operational.

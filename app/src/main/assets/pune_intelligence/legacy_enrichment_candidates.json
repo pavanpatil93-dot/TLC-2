@@ -1,0 +1,1054 @@
+[
+  {
+    "location_id": "LOC-001",
+    "candidate_pin_codes": [
+      "411014"
+    ],
+    "candidate_roads": [
+      "Nagar Road",
+      "Kharadi Bypass",
+      "Kharadi-Mundhwa Road"
+    ],
+    "candidate_business_hubs": [
+      "EON Free Zone",
+      "World Trade Center Pune",
+      "Gera Commerzone",
+      "Zensar IT Park"
+    ],
+    "candidate_landmarks_hotels": [
+      "EON IT Park",
+      "Radisson Blu Pune Kharadi"
+    ],
+    "candidate_retail_hubs": [
+      "Reliance Mart Kharadi",
+      "Global Highstreet"
+    ],
+    "candidate_transit": {
+      "metro_station": "Ramwadi",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Hadapsar",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 8,
+        "max": 11
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-002",
+    "candidate_pin_codes": [
+      "411014"
+    ],
+    "candidate_roads": [
+      "Nagar Road",
+      "Airport Road",
+      "Viman Nagar Road"
+    ],
+    "candidate_business_hubs": [
+      "Weikfield IT Citi Info Park",
+      "Lunkad Sky Vista",
+      "Panchshil Tech Park One"
+    ],
+    "candidate_landmarks_hotels": [
+      "Symbiosis International University",
+      "Hyatt Regency Pune",
+      "Novotel Pune",
+      "Four Points by Sheraton Pune"
+    ],
+    "candidate_retail_hubs": [
+      "Phoenix Marketcity",
+      "Creaticity (nearby)"
+    ],
+    "candidate_transit": {
+      "metro_station": "Ramwadi",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 3,
+        "max": 6
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-003",
+    "candidate_pin_codes": [
+      "411006"
+    ],
+    "candidate_roads": [
+      "Nagar Road",
+      "Kalyani Nagar Road",
+      "North Avenue"
+    ],
+    "candidate_business_hubs": [
+      "Cerebrum IT Park",
+      "Marisoft IT Park",
+      "Business Bay (nearby)"
+    ],
+    "candidate_landmarks_hotels": [
+      "Aga Khan Palace (nearby)",
+      "Hyatt Pune",
+      "The Westin Pune Koregaon Park (nearby)"
+    ],
+    "candidate_retail_hubs": [
+      "Mariplex Mall",
+      "Nitesh HUB (nearby)"
+    ],
+    "candidate_transit": {
+      "metro_station": "Kalyani Nagar",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 5,
+        "max": 8
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-004",
+    "candidate_pin_codes": [
+      "411001"
+    ],
+    "candidate_roads": [
+      "North Main Road",
+      "South Main Road",
+      "Bund Garden Road"
+    ],
+    "candidate_business_hubs": [
+      "Cerebrum IT Park (nearby)",
+      "Business Bay (nearby)"
+    ],
+    "candidate_landmarks_hotels": [
+      "Osho International Meditation Resort",
+      "The O Hotel",
+      "Blue Diamond Pune"
+    ],
+    "candidate_retail_hubs": [
+      "Koregaon Park retail streets",
+      "Nitesh HUB (nearby)"
+    ],
+    "candidate_transit": {
+      "metro_station": "Bund Garden",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 6,
+        "max": 9
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-005",
+    "candidate_pin_codes": [
+      "411036"
+    ],
+    "candidate_roads": [
+      "North Main Road Extension",
+      "Mundhwa Road",
+      "Koregaon Park-Mundhwa Road"
+    ],
+    "candidate_business_hubs": [
+      "Gera Commerzone (nearby)",
+      "Mundhwa commercial corridor"
+    ],
+    "candidate_landmarks_hotels": [
+      "The Westin Pune Koregaon Park",
+      "ABC Farms (nearby)"
+    ],
+    "candidate_retail_hubs": [
+      "Koregaon Park Annexe high street",
+      "Seasons Mall (nearby)"
+    ],
+    "candidate_transit": {
+      "metro_station": "Kalyani Nagar",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 7,
+        "max": 11
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-006",
+    "candidate_pin_codes": [
+      "411036"
+    ],
+    "candidate_roads": [
+      "Mundhwa Road",
+      "Kharadi-Mundhwa Road",
+      "Hadapsar-Mundhwa Road"
+    ],
+    "candidate_business_hubs": [
+      "Mundhwa commercial corridor",
+      "Magarpatta Cybercity (nearby)"
+    ],
+    "candidate_landmarks_hotels": [
+      "Mundhwa Bridge",
+      "The Westin Pune Koregaon Park (nearby)"
+    ],
+    "candidate_retail_hubs": [
+      "Seasons Mall (nearby)",
+      "Amanora Mall (nearby)"
+    ],
+    "candidate_transit": {
+      "metro_station": "Kalyani Nagar",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Hadapsar",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 9,
+        "max": 13
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-007",
+    "candidate_pin_codes": [
+      "411036"
+    ],
+    "candidate_roads": [
+      "Keshav Nagar Road",
+      "Mundhwa-Manjri Road",
+      "Kharadi-Mundhwa Road"
+    ],
+    "candidate_business_hubs": [
+      "Magarpatta Cybercity (nearby)",
+      "EON IT Park (nearby)"
+    ],
+    "candidate_landmarks_hotels": [
+      "Keshav Nagar Bridge",
+      "Mundhwa junction"
+    ],
+    "candidate_retail_hubs": [
+      "Amanora Mall (nearby)",
+      "Seasons Mall (nearby)"
+    ],
+    "candidate_transit": {
+      "metro_station": "Ramwadi",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Hadapsar",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 10,
+        "max": 15
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-008",
+    "candidate_pin_codes": [
+      "412207"
+    ],
+    "candidate_roads": [
+      "Pune-Ahmednagar Highway",
+      "Wagholi-Kesnand Road",
+      "Lohegaon-Wagholi Road"
+    ],
+    "candidate_business_hubs": [
+      "EON IT Park (nearby)",
+      "Wagholi commercial corridor"
+    ],
+    "candidate_landmarks_hotels": [
+      "Wagheshwar Temple",
+      "Wagholi junction"
+    ],
+    "candidate_retail_hubs": [
+      "Local Nagar Road retail",
+      "Phoenix Marketcity (distant)"
+    ],
+    "candidate_transit": {
+      "metro_station": "Ramwadi",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Hadapsar",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 12,
+        "max": 19
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-009",
+    "candidate_pin_codes": [
+      "411028",
+      "411013"
+    ],
+    "candidate_roads": [
+      "Pune-Solapur Road",
+      "Hadapsar-Mundhwa Road",
+      "Magarpatta Road"
+    ],
+    "candidate_business_hubs": [
+      "Magarpatta Cybercity",
+      "SP Infocity (nearby)",
+      "Amanora business district"
+    ],
+    "candidate_landmarks_hotels": [
+      "Hadapsar Gadital",
+      "Amanora Park Town"
+    ],
+    "candidate_retail_hubs": [
+      "Amanora Mall",
+      "Seasons Mall"
+    ],
+    "candidate_transit": {
+      "metro_station": "Ramwadi",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Hadapsar",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 12,
+        "max": 17
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-010",
+    "candidate_pin_codes": [
+      "411013",
+      "411028"
+    ],
+    "candidate_roads": [
+      "Magarpatta Road",
+      "Pune-Solapur Road",
+      "Hadapsar-Mundhwa Road"
+    ],
+    "candidate_business_hubs": [
+      "Magarpatta Cybercity",
+      "Amanora business district"
+    ],
+    "candidate_landmarks_hotels": [
+      "Magarpatta City",
+      "Amanora Park Town"
+    ],
+    "candidate_retail_hubs": [
+      "Seasons Mall",
+      "Amanora Mall"
+    ],
+    "candidate_transit": {
+      "metro_station": "Ramwadi",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Hadapsar",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 11,
+        "max": 15
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-011",
+    "candidate_pin_codes": [
+      "411028"
+    ],
+    "candidate_roads": [
+      "Amanora Park Town Road",
+      "Magarpatta Road",
+      "Hadapsar-Mundhwa Road"
+    ],
+    "candidate_business_hubs": [
+      "Amanora business district",
+      "Magarpatta Cybercity"
+    ],
+    "candidate_landmarks_hotels": [
+      "Amanora Park Town",
+      "Amanora Gateway Towers"
+    ],
+    "candidate_retail_hubs": [
+      "Amanora Mall",
+      "Seasons Mall"
+    ],
+    "candidate_transit": {
+      "metro_station": "Ramwadi",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Hadapsar",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 11,
+        "max": 16
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-012",
+    "candidate_pin_codes": [
+      "411006"
+    ],
+    "candidate_roads": [
+      "Nagar Road",
+      "Airport Road",
+      "Bund Garden Road"
+    ],
+    "candidate_business_hubs": [
+      "Business Bay",
+      "Commerzone Yerawada"
+    ],
+    "candidate_landmarks_hotels": [
+      "Aga Khan Palace",
+      "The Ritz-Carlton Pune (nearby)"
+    ],
+    "candidate_retail_hubs": [
+      "Creaticity",
+      "Phoenix Marketcity (nearby)"
+    ],
+    "candidate_transit": {
+      "metro_station": "Yerawada",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 5,
+        "max": 9
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-013",
+    "candidate_pin_codes": [
+      "411047"
+    ],
+    "candidate_roads": [
+      "Airport Road",
+      "Lohegaon-Wagholi Road",
+      "Dhanori-Lohegaon Road"
+    ],
+    "candidate_business_hubs": [
+      "Viman Nagar commercial corridor (nearby)"
+    ],
+    "candidate_landmarks_hotels": [
+      "Pune International Airport",
+      "Air Force Station Pune"
+    ],
+    "candidate_retail_hubs": [
+      "Local Lohegaon retail",
+      "Phoenix Marketcity (nearby)"
+    ],
+    "candidate_transit": {
+      "metro_station": "Ramwadi",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 3,
+        "max": 9
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-014",
+    "candidate_pin_codes": [
+      "411015"
+    ],
+    "candidate_roads": [
+      "Dhanori Road",
+      "Vishrantwadi-Lohegaon Road",
+      "Airport Road"
+    ],
+    "candidate_business_hubs": [
+      "Yerawada business district (nearby)"
+    ],
+    "candidate_landmarks_hotels": [
+      "Dhanori junction",
+      "Pune Airport (nearby)"
+    ],
+    "candidate_retail_hubs": [
+      "Local Dhanori retail",
+      "Phoenix Marketcity (nearby)"
+    ],
+    "candidate_transit": {
+      "metro_station": "Yerawada",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 5,
+        "max": 10
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-015",
+    "candidate_pin_codes": [
+      "411048"
+    ],
+    "candidate_roads": [
+      "Kondhwa Road",
+      "NIBM Road",
+      "Katraj-Kondhwa Road"
+    ],
+    "candidate_business_hubs": [
+      "Kondhwa commercial corridor"
+    ],
+    "candidate_landmarks_hotels": [
+      "NIBM campus",
+      "Corinthians Resort (nearby)"
+    ],
+    "candidate_retail_hubs": [
+      "Dorabjee’s Royale Heritage Mall",
+      "Local NIBM retail"
+    ],
+    "candidate_transit": {
+      "metro_station": "Swargate",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 15,
+        "max": 21
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-016",
+    "candidate_pin_codes": [
+      "411048",
+      "411060"
+    ],
+    "candidate_roads": [
+      "NIBM Road",
+      "Mohammed Wadi Road",
+      "Undri-Pisoli Road"
+    ],
+    "candidate_business_hubs": [
+      "NIBM commercial corridor"
+    ],
+    "candidate_landmarks_hotels": [
+      "National Institute of Bank Management",
+      "The Corinthians Resort & Club"
+    ],
+    "candidate_retail_hubs": [
+      "Dorabjee’s Royale Heritage Mall",
+      "NIBM Road retail"
+    ],
+    "candidate_transit": {
+      "metro_station": "Swargate",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 16,
+        "max": 22
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-017",
+    "candidate_pin_codes": [
+      "411045"
+    ],
+    "candidate_roads": [
+      "Baner Road",
+      "Baner-Pashan Link Road",
+      "Mumbai-Bengaluru Highway"
+    ],
+    "candidate_business_hubs": [
+      "Panchshil Business Park",
+      "Baner commercial corridor"
+    ],
+    "candidate_landmarks_hotels": [
+      "Balewadi High Street (nearby)",
+      "The Orchid Hotel Pune (nearby)"
+    ],
+    "candidate_retail_hubs": [
+      "Westend Mall (nearby)",
+      "Balewadi High Street"
+    ],
+    "candidate_transit": {
+      "metro_station": "Vanaz",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 17,
+        "max": 22
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-018",
+    "candidate_pin_codes": [
+      "411045"
+    ],
+    "candidate_roads": [
+      "Balewadi High Street",
+      "Baner Road",
+      "Mumbai-Bengaluru Highway"
+    ],
+    "candidate_business_hubs": [
+      "Balewadi commercial district",
+      "Panchshil Business Park (nearby)"
+    ],
+    "candidate_landmarks_hotels": [
+      "Shree Shiv Chhatrapati Sports Complex",
+      "The Orchid Hotel Pune"
+    ],
+    "candidate_retail_hubs": [
+      "Balewadi High Street",
+      "Westend Mall (nearby)"
+    ],
+    "candidate_transit": {
+      "metro_station": "Vanaz",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 18,
+        "max": 24
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-019",
+    "candidate_pin_codes": [
+      "411057"
+    ],
+    "candidate_roads": [
+      "Hinjewadi-Marunji Road",
+      "Wakad-Hinjewadi Road",
+      "Mumbai-Bengaluru Highway"
+    ],
+    "candidate_business_hubs": [
+      "Rajiv Gandhi Infotech Park Phase 1",
+      "Rajiv Gandhi Infotech Park Phase 2",
+      "Rajiv Gandhi Infotech Park Phase 3",
+      "Embassy TechZone"
+    ],
+    "candidate_landmarks_hotels": [
+      "Infosys Hinjewadi campus",
+      "Courtyard by Marriott Pune Hinjewadi"
+    ],
+    "candidate_retail_hubs": [
+      "Xion Mall",
+      "Grand Highstreet"
+    ],
+    "candidate_transit": {
+      "metro_station": "Vanaz",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 23,
+        "max": 33
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-020",
+    "candidate_pin_codes": [
+      "411057"
+    ],
+    "candidate_roads": [
+      "Wakad-Hinjewadi Road",
+      "Mumbai-Bengaluru Highway",
+      "Aundh-Ravet BRTS Road"
+    ],
+    "candidate_business_hubs": [
+      "Hinjewadi IT Park (nearby)",
+      "Wakad business corridor"
+    ],
+    "candidate_landmarks_hotels": [
+      "Wakad junction",
+      "Sayaji Pune"
+    ],
+    "candidate_retail_hubs": [
+      "Phoenix Mall of the Millennium",
+      "Xion Mall (nearby)"
+    ],
+    "candidate_transit": {
+      "metro_station": "Vanaz",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 20,
+        "max": 26
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-021",
+    "candidate_pin_codes": [
+      "411007"
+    ],
+    "candidate_roads": [
+      "Aundh Road",
+      "University Road",
+      "Baner Road"
+    ],
+    "candidate_business_hubs": [
+      "Aundh business corridor",
+      "Panchshil Business Park (nearby)"
+    ],
+    "candidate_landmarks_hotels": [
+      "University of Pune (nearby)",
+      "Westend Mall"
+    ],
+    "candidate_retail_hubs": [
+      "Westend Mall",
+      "Aundh retail streets"
+    ],
+    "candidate_transit": {
+      "metro_station": "Khadki",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Khadki",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 13,
+        "max": 18
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-022",
+    "candidate_pin_codes": [
+      "411038"
+    ],
+    "candidate_roads": [
+      "Karve Road",
+      "Paud Road",
+      "Kothrud Bypass"
+    ],
+    "candidate_business_hubs": [
+      "Kothrud commercial corridor"
+    ],
+    "candidate_landmarks_hotels": [
+      "MIT World Peace University",
+      "Yashwantrao Chavan Natyagruha"
+    ],
+    "candidate_retail_hubs": [
+      "City Pride Kothrud",
+      "Karve Road retail"
+    ],
+    "candidate_transit": {
+      "metro_station": "Vanaz",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Shivajinagar",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 15,
+        "max": 20
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-023",
+    "candidate_pin_codes": [
+      "411018"
+    ],
+    "candidate_roads": [
+      "Mumbai-Pune Road",
+      "Pimpri-Chinchwad Link Road",
+      "Old Mumbai-Pune Highway"
+    ],
+    "candidate_business_hubs": [
+      "Pimpri industrial and commercial belt",
+      "MIDC Pimpri"
+    ],
+    "candidate_landmarks_hotels": [
+      "PCMC headquarters",
+      "Auto Cluster (nearby)"
+    ],
+    "candidate_retail_hubs": [
+      "Pimpri Market",
+      "Premier Plaza (nearby)"
+    ],
+    "candidate_transit": {
+      "metro_station": "PCMC",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pimpri",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 18,
+        "max": 24
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-024",
+    "candidate_pin_codes": [
+      "411019",
+      "411033"
+    ],
+    "candidate_roads": [
+      "Old Mumbai-Pune Highway",
+      "Chinchwad Station Road",
+      "Aundh-Ravet BRTS Road"
+    ],
+    "candidate_business_hubs": [
+      "MIDC Chinchwad",
+      "Auto Cluster"
+    ],
+    "candidate_landmarks_hotels": [
+      "Chinchwad railway station",
+      "Elpro City Square"
+    ],
+    "candidate_retail_hubs": [
+      "Elpro City Square"
+    ],
+    "candidate_transit": {
+      "metro_station": "PCMC",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Chinchwad",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 20,
+        "max": 27
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-025",
+    "candidate_pin_codes": [
+      "411026",
+      "411039"
+    ],
+    "candidate_roads": [
+      "Pune-Nashik Highway",
+      "Spine Road",
+      "Old Mumbai-Pune Highway"
+    ],
+    "candidate_business_hubs": [
+      "Bhosari MIDC",
+      "Bhosari industrial estate"
+    ],
+    "candidate_landmarks_hotels": [
+      "Nashik Phata",
+      "Bhosari MIDC"
+    ],
+    "candidate_retail_hubs": [
+      "Local Bhosari industrial retail"
+    ],
+    "candidate_transit": {
+      "metro_station": "Bhosari (Nashik Phata)",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Kasarwadi",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 15,
+        "max": 22
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-026",
+    "candidate_pin_codes": [
+      "411037"
+    ],
+    "candidate_roads": [
+      "Bibwewadi Road",
+      "Satara Road",
+      "Gangadham Road"
+    ],
+    "candidate_business_hubs": [
+      "Market Yard commercial belt (nearby)"
+    ],
+    "candidate_landmarks_hotels": [
+      "Gangadham Chowk",
+      "Market Yard (nearby)"
+    ],
+    "candidate_retail_hubs": [
+      "Kumar Pacific Mall (nearby)",
+      "Gangadham retail"
+    ],
+    "candidate_transit": {
+      "metro_station": "Swargate",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 13,
+        "max": 19
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-027",
+    "candidate_pin_codes": [
+      "411046"
+    ],
+    "candidate_roads": [
+      "Pune-Satara Road",
+      "Katraj-Kondhwa Road",
+      "Mumbai-Bengaluru Highway"
+    ],
+    "candidate_business_hubs": [
+      "Katraj commercial corridor"
+    ],
+    "candidate_landmarks_hotels": [
+      "Rajiv Gandhi Zoological Park",
+      "Katraj Dairy"
+    ],
+    "candidate_retail_hubs": [
+      "Local Katraj retail"
+    ],
+    "candidate_transit": {
+      "metro_station": "Swargate",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 19,
+        "max": 25
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-028",
+    "candidate_pin_codes": [
+      "411005"
+    ],
+    "candidate_roads": [
+      "University Road",
+      "JM Road",
+      "FC Road"
+    ],
+    "candidate_business_hubs": [
+      "ICC Trade Tower",
+      "Senapati Bapat Road commercial corridor"
+    ],
+    "candidate_landmarks_hotels": [
+      "Savitribai Phule Pune University",
+      "JW Marriott Pune (nearby)"
+    ],
+    "candidate_retail_hubs": [
+      "The Pavillion Mall",
+      "JM Road retail"
+    ],
+    "candidate_transit": {
+      "metro_station": "Shivajinagar",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Shivajinagar",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 10,
+        "max": 14
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-029",
+    "candidate_pin_codes": [
+      "411001"
+    ],
+    "candidate_roads": [
+      "MG Road",
+      "East Street",
+      "Bund Garden Road"
+    ],
+    "candidate_business_hubs": [
+      "Camp commercial district"
+    ],
+    "candidate_landmarks_hotels": [
+      "Pune Cantonment",
+      "Conrad Pune (nearby)"
+    ],
+    "candidate_retail_hubs": [
+      "MG Road retail",
+      "SGS Mall"
+    ],
+    "candidate_transit": {
+      "metro_station": "Pune Railway Station",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 8,
+        "max": 12
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  },
+  {
+    "location_id": "LOC-030",
+    "candidate_pin_codes": [
+      "411042"
+    ],
+    "candidate_roads": [
+      "Satara Road",
+      "Shankar Sheth Road",
+      "Solapur Road"
+    ],
+    "candidate_business_hubs": [
+      "Swargate transport and commercial district"
+    ],
+    "candidate_landmarks_hotels": [
+      "Swargate Bus Stand"
+    ],
+    "candidate_retail_hubs": [
+      "Kumar Pacific Mall (nearby)"
+    ],
+    "candidate_transit": {
+      "metro_station": "Swargate",
+      "metro_status": "operational_station_not_necessarily_within_market",
+      "railway_station": "Pune Junction",
+      "airport_code": "PNQ",
+      "airport_road_distance_km_estimate": {
+        "min": 11,
+        "max": 16
+      }
+    },
+    "status": "legacy_unverified_do_not_autofill",
+    "source": "previously_generated_v1_seed"
+  }
+]

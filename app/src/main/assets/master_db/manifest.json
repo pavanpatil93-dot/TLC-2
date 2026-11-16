@@ -1,0 +1,82 @@
+{
+  "database_name": "TLC-1 Pune Real Estate Project Master Database",
+  "target_repository": "pavanpatil93-dot/Tlc-1",
+  "schema_version": "1.0.0",
+  "generated_at": "2026-11-10T02:15:40+05:30",
+  "last_research_date": "2026-11-10",
+  "business_divisions": [
+    "ASCEND COMMERCIAL SOLUTIONS",
+    "AUREA LIVING LLP"
+  ],
+  "record_counts": {
+    "total_unique_projects": 124,
+    "residential_projects": 71,
+    "commercial_projects": 44,
+    "mixed_use_projects": 9,
+    "total_developers": 36,
+    "explicit_rera_numbers_verified": 76,
+    "developer_verified_projects": 78,
+    "portal_only_projects": 40,
+    "records_requiring_rera_subphase_verification": 26,
+    "duplicate_portal_records_merged": 38,
+    "project_phases": 124,
+    "project_towers": 124,
+    "residential_configurations": 80,
+    "commercial_configurations": 53,
+    "project_amenities": 124,
+    "project_price_observations": 124,
+    "project_sources": 226,
+    "project_aliases": 138
+  },
+  "files_included": {
+    "excel": [
+      "excel/Pune_All_Projects_Master.xlsx",
+      "excel/Pune_Commercial_Projects.xlsx",
+      "excel/Pune_Residential_Projects.xlsx",
+      "excel/Pune_Developers_Master.xlsx",
+      "excel/Pune_Project_Configurations.xlsx",
+      "excel/Pune_RERA_Verification.xlsx",
+      "excel/Pune_Project_Price_Observations.xlsx",
+      "excel/Pune_Data_Quality_Report.xlsx"
+    ],
+    "json": [
+      "json/projects.json",
+      "json/developers.json",
+      "json/project_phases.json",
+      "json/project_towers.json",
+      "json/residential_configurations.json",
+      "json/commercial_configurations.json",
+      "json/project_amenities.json",
+      "json/project_rera.json",
+      "json/project_price_observations.json",
+      "json/project_sources.json",
+      "json/project_aliases.json",
+      "json/project_locations.json",
+      "json/project_verification.json",
+      "json/project_change_history.json",
+      "json/manifest.json"
+    ],
+    "documentation": [
+      "docs/README.md",
+      "docs/SCHEMA.md",
+      "docs/SOURCE_COVERAGE.md",
+      "docs/DATA_QUALITY_REPORT.md",
+      "docs/IMPORT_GUIDE_TLC1.md"
+    ],
+    "validation_script": "scripts/validate_database.py"
+  },
+  "continuation_manifest": {
+    "completed_batches": [
+      "Batch 1 (Pilot): Kharadi, Upper Kharadi, Kharadi Annex, Viman Nagar, Mundhwa",
+      "Batch 2 (East Pune Core): Kalyani Nagar, Koregaon Park, KP Annexe, Keshav Nagar, Hadapsar, Magarpatta, Amanora, Shewalewadi, Phursungi, Wagholi, Lohegaon, Dhanori, Yerawada, Wadgaon Sheri",
+      "Batch 3 (West Pune): Baner, Balewadi, Wakad, Hinjewadi Phases 1-3, Mahalunge, Sus, Pashan, Bavdhan, Kothrud, Tathawade, Punawale",
+      "Batch 4 (North Pune / PCMC): Pimpri, Chinchwad, Akurdi, Ravet, Kiwale, Moshi, Spine Road, Charholi Budruk, Pimple Nilakh",
+      "Batch 5 (South, Central & Extended Pune): NIBM, Kondhwa, Undri, Sinhagad Road, Shivajinagar, Sadashiv Peth, Talegaon, Somatane, Gahunje, Chakan MIDC, Ranjangaon MIDC"
+    ],
+    "unresolved_gaps_and_next_batches": [
+      "MahaRERA CAPTCHA-protected sub-phase certificates for 15 newly launched 2025-2026 projects marked VERIFICATION_PENDING",
+      "Standalone small plot redevelopments (<500 sq.m) in inner Peth areas (Narayan Peth, Shaniwar Peth, Kasba Peth)",
+      "Secondary PMRDA industrial clusters in Pirangut, Bhugaon, Bhukum, Uruli Kanchan, and Loni Kalbhor"
+    ]
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "currency": "INR",
+  "area_units": [
+    "sq_ft_carpet",
+    "sq_ft_built_up",
+    "sq_ft_chargeable"
+  ],
+  "market_rates_policy": "no fabricated market rates; populate only with dated verified comparables",
+  "rules": [
+    {
+      "id": "gross_yield",
+      "formula": "annual_rent_inr / total_acquisition_cost_inr * 100",
+      "requirements": [
+        "annual_rent_inr",
+        "total_acquisition_cost_inr"
+      ],
+      "output_unit": "percent"
+    },
+    {
+      "id": "net_yield",
+      "formula": "(annual_rent_inr - annual_owner_expenses_inr) / total_acquisition_cost_inr * 100",
+      "requirements": [
+        "annual_rent_inr",
+        "annual_owner_expenses_inr",
+        "total_acquisition_cost_inr"
+      ],
+      "output_unit": "percent"
+    },
+    {
+      "id": "rent_psf",
+      "formula": "monthly_rent_inr / area_sq_ft",
+      "requirements": [
+        "monthly_rent_inr",
+        "area_sq_ft",
+        "area_basis"
+      ],
+      "output_unit": "INR_per_sq_ft_per_month"
+    }
+  ]
+}

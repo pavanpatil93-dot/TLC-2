@@ -1,0 +1,2262 @@
+[
+  {
+    "source_id": "SRC-001-1",
+    "project_id": "TLC-PRJ-001",
+    "source_name": "Panchshil Realty Official & myHQ (Primary)",
+    "source_url": "https://www.panchshil.com/office-parks/eon-free-zone-i",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-001-2",
+    "project_id": "TLC-PRJ-001",
+    "source_name": "Panchshil Realty Official & myHQ (Secondary Cross-Check)",
+    "source_url": "https://myhq.in/office-space-for-rent/eon-free-zone--cluster-c--wing-3-kharadi",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-002-1",
+    "project_id": "TLC-PRJ-002",
+    "source_name": "Panchshil Realty Official & myHQ (Primary)",
+    "source_url": "https://www.panchshil.com/office-parks/eon-free-zone-ii",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-002-2",
+    "project_id": "TLC-PRJ-002",
+    "source_name": "Panchshil Realty Official & myHQ (Secondary Cross-Check)",
+    "source_url": "https://myhq.in/office-space-for-rent/eon-free-zone-phase-2--tower-2-kharadi",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-003-1",
+    "project_id": "TLC-PRJ-003",
+    "source_name": "WTCA Official & 99acres (Primary)",
+    "source_url": "https://www.wtca.org/locations/asia-pacific/world-trade-center-pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-003-2",
+    "project_id": "TLC-PRJ-003",
+    "source_name": "WTCA Official & 99acres (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-004-1",
+    "project_id": "TLC-PRJ-004",
+    "source_name": "Gera Official Website (Primary)",
+    "source_url": "https://www.gera.in/projects/sez/pune/ongoing/gera-commerzone/overview",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-004-2",
+    "project_id": "TLC-PRJ-004",
+    "source_name": "Gera Official Website (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-005-1",
+    "project_id": "TLC-PRJ-005",
+    "source_name": "Daftar Commercial Directory (Primary)",
+    "source_url": "https://daftar.com/property/international-tech-park-pune-kharadi-pune-2a83a6a1",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-005-2",
+    "project_id": "TLC-PRJ-005",
+    "source_name": "Daftar Commercial Directory (Secondary Cross-Check)",
+    "source_url": "https://www.justdial.com/Pune/IT-Parks-in-Yerawada/nct-10616037",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-006-1",
+    "project_id": "TLC-PRJ-006",
+    "source_name": "Panchshil Realty & JLL (Primary)",
+    "source_url": "https://www.panchshil.com/office-parks/page/1",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-006-2",
+    "project_id": "TLC-PRJ-006",
+    "source_name": "Panchshil Realty & JLL (Secondary Cross-Check)",
+    "source_url": "https://property.jll.co.in/listings/panchshil-business-park-phase-1-tower-b-survey-no-20-21-opposite-park-express-laxman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-007-1",
+    "project_id": "TLC-PRJ-007",
+    "source_name": "99acres & CBRE (Primary)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-007-2",
+    "project_id": "TLC-PRJ-007",
+    "source_name": "99acres & CBRE (Secondary Cross-Check)",
+    "source_url": "https://www.cbre.co.in/properties/commercial-space-for-sale-in-pune?location=Pune,Maharashtra,India&aspects=isSale",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-008-1",
+    "project_id": "TLC-PRJ-008",
+    "source_name": "99acres Commercial Portal (Primary)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-008-2",
+    "project_id": "TLC-PRJ-008",
+    "source_name": "99acres Commercial Portal (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-009-1",
+    "project_id": "TLC-PRJ-009",
+    "source_name": "99acres Commercial Portal (Primary)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-010-1",
+    "project_id": "TLC-PRJ-010",
+    "source_name": "99acres & Vilas Javdekar (Primary)",
+    "source_url": "https://vilasjavdekar.com/supernova/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-010-2",
+    "project_id": "TLC-PRJ-010",
+    "source_name": "99acres & Vilas Javdekar (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-011-1",
+    "project_id": "TLC-PRJ-011",
+    "source_name": "99acres Commercial Portal (Primary)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-011-2",
+    "project_id": "TLC-PRJ-011",
+    "source_name": "99acres Commercial Portal (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-012-1",
+    "project_id": "TLC-PRJ-012",
+    "source_name": "99acres Commercial Portal (Primary)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-012-2",
+    "project_id": "TLC-PRJ-012",
+    "source_name": "99acres Commercial Portal (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-013-1",
+    "project_id": "TLC-PRJ-013",
+    "source_name": "Kolte-Patil Official & 99acres (Primary)",
+    "source_url": "https://www.koltepatil.com/pune/residential-projects-in-pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-013-2",
+    "project_id": "TLC-PRJ-013",
+    "source_name": "Kolte-Patil Official & 99acres (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-014-1",
+    "project_id": "TLC-PRJ-014",
+    "source_name": "99acres & Lodha Group (Primary)",
+    "source_url": "https://www.lodhagroup.com/projects/residential-property-in-pune/lodha-belmondo",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-014-2",
+    "project_id": "TLC-PRJ-014",
+    "source_name": "99acres & Lodha Group (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-015-1",
+    "project_id": "TLC-PRJ-015",
+    "source_name": "99acres Commercial Portal (Primary)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-015-2",
+    "project_id": "TLC-PRJ-015",
+    "source_name": "99acres Commercial Portal (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-016-1",
+    "project_id": "TLC-PRJ-016",
+    "source_name": "99acres & Panchshil Realty (Primary)",
+    "source_url": "https://www.panchshil.com/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-016-2",
+    "project_id": "TLC-PRJ-016",
+    "source_name": "99acres & Panchshil Realty (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-017-1",
+    "project_id": "TLC-PRJ-017",
+    "source_name": "99acres & MagicBricks (Primary)",
+    "source_url": "https://www.magicbricks.com/rera-registered-projects-Kharadi-in-Pune/page-2",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-017-2",
+    "project_id": "TLC-PRJ-017",
+    "source_name": "99acres & MagicBricks (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-018-1",
+    "project_id": "TLC-PRJ-018",
+    "source_name": "MagicBricks & Housing.com (Primary)",
+    "source_url": "https://www.magicbricks.com/godrej-kharadi-kharadi-pune-pdpid-4d4235343431313137",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-018-2",
+    "project_id": "TLC-PRJ-018",
+    "source_name": "MagicBricks & Housing.com (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/299187-shubh-nirvana-phase-ii-by-shubh-developer-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-019-1",
+    "project_id": "TLC-PRJ-019",
+    "source_name": "99acres & Lodha Group (Primary)",
+    "source_url": "https://www.lodhagroup.com/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-019-2",
+    "project_id": "TLC-PRJ-019",
+    "source_name": "99acres & Lodha Group (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-020-1",
+    "project_id": "TLC-PRJ-020",
+    "source_name": "99acres & Lodha Group (Primary)",
+    "source_url": "https://www.lodhagroup.com/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-020-2",
+    "project_id": "TLC-PRJ-020",
+    "source_name": "99acres & Lodha Group (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-021-1",
+    "project_id": "TLC-PRJ-021",
+    "source_name": "Housing.com & Lodha Group (Primary)",
+    "source_url": "https://www.lodhagroup.com/projects/residential-property-in-pune/lodha-belmondo",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-021-2",
+    "project_id": "TLC-PRJ-021",
+    "source_name": "Housing.com & Lodha Group (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/299187-shubh-nirvana-phase-ii-by-shubh-developer-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-022-1",
+    "project_id": "TLC-PRJ-022",
+    "source_name": "VTP Realty Official & 99acres (Primary)",
+    "source_url": "https://www.vtprealty.in/blogs/pune-transformation-education-to-it-business-hub",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-022-2",
+    "project_id": "TLC-PRJ-022",
+    "source_name": "VTP Realty Official & 99acres (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-023-1",
+    "project_id": "TLC-PRJ-023",
+    "source_name": "VTP Realty Official (Primary)",
+    "source_url": "https://www.vtprealty.in/blogs/pune-transformation-education-to-it-business-hub",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-023-2",
+    "project_id": "TLC-PRJ-023",
+    "source_name": "VTP Realty Official (Secondary Cross-Check)",
+    "source_url": "https://www.magicbricks.com/godrej-kharadi-kharadi-pune-pdpid-4d4235343431313137",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-024-1",
+    "project_id": "TLC-PRJ-024",
+    "source_name": "VTP Realty & PropTiger (Primary)",
+    "source_url": "https://www.vtprealty.in/blogs/pune-transformation-education-to-it-business-hub",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-024-2",
+    "project_id": "TLC-PRJ-024",
+    "source_name": "VTP Realty & PropTiger (Secondary Cross-Check)",
+    "source_url": "https://www.proptiger.com/pune/kharadi/guardian-developers-eastern-meadows-669197",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-025-1",
+    "project_id": "TLC-PRJ-025",
+    "source_name": "99acres & VTP Realty (Primary)",
+    "source_url": "https://www.vtprealty.in/blogs/pune-transformation-education-to-it-business-hub",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-025-2",
+    "project_id": "TLC-PRJ-025",
+    "source_name": "99acres & VTP Realty (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-026-1",
+    "project_id": "TLC-PRJ-026",
+    "source_name": "Gera Official & Housing.com (Primary)",
+    "source_url": "https://www.gera.in/flats-in-pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-026-2",
+    "project_id": "TLC-PRJ-026",
+    "source_name": "Gera Official & Housing.com (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/348489-viman-avenue-by-precon-realty-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-027-1",
+    "project_id": "TLC-PRJ-027",
+    "source_name": "99acres & Gera Official (Primary)",
+    "source_url": "https://www.gera.in/projects/projects-in-pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-027-2",
+    "project_id": "TLC-PRJ-027",
+    "source_name": "99acres & Gera Official (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-028-1",
+    "project_id": "TLC-PRJ-028",
+    "source_name": "99acres Portal (Primary)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-029-1",
+    "project_id": "TLC-PRJ-029",
+    "source_name": "Mantra Official & Housing.com (Primary)",
+    "source_url": "https://www.mantraproperties.in/properties/residential/mantra-melange",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-029-2",
+    "project_id": "TLC-PRJ-029",
+    "source_name": "Mantra Official & Housing.com (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/348489-viman-avenue-by-precon-realty-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-030-1",
+    "project_id": "TLC-PRJ-030",
+    "source_name": "Housing.com & MagicBricks (Primary)",
+    "source_url": "https://housing.com/in/buy/projects/page/367940-venkatesh-vanaya-wing-i-and-j-phase-2-by-shree-venkatesh-realty-in-kharadi",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-030-2",
+    "project_id": "TLC-PRJ-030",
+    "source_name": "Housing.com & MagicBricks (Secondary Cross-Check)",
+    "source_url": "https://www.magicbricks.com/rera-registered-projects-Kharadi-in-Pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-031-1",
+    "project_id": "TLC-PRJ-031",
+    "source_name": "MagicBricks & 99acres (Primary)",
+    "source_url": "https://www.magicbricks.com/under-construction-projects-kharadi-in-pune-nprid/page-2",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-031-2",
+    "project_id": "TLC-PRJ-031",
+    "source_name": "MagicBricks & 99acres (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-032-1",
+    "project_id": "TLC-PRJ-032",
+    "source_name": "99acres & Housing.com (Primary)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-032-2",
+    "project_id": "TLC-PRJ-032",
+    "source_name": "99acres & Housing.com (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/299187-shubh-nirvana-phase-ii-by-shubh-developer-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-033-1",
+    "project_id": "TLC-PRJ-033",
+    "source_name": "Vilas Javdekar & MahaRERA Directory (Primary)",
+    "source_url": "https://vilasjavdekar.com/supernova/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-033-2",
+    "project_id": "TLC-PRJ-033",
+    "source_name": "Vilas Javdekar & MahaRERA Directory (Secondary Cross-Check)",
+    "source_url": "https://vjsproperties2000.in/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-034-1",
+    "project_id": "TLC-PRJ-034",
+    "source_name": "Kolte-Patil Official & 99acres (Primary)",
+    "source_url": "https://www.koltepatil.com/blog/2015/04/14/property-investment-in-pune/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-034-2",
+    "project_id": "TLC-PRJ-034",
+    "source_name": "Kolte-Patil Official & 99acres (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-035-1",
+    "project_id": "TLC-PRJ-035",
+    "source_name": "Kohinoor Official & Housing.com (Primary)",
+    "source_url": "https://kohinoorpune.com/blogs-detail/maharera-act-rera-benefits-for-home-buyers-and-builders-in-maharashtra",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-035-2",
+    "project_id": "TLC-PRJ-035",
+    "source_name": "Kohinoor Official & Housing.com (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/299187-shubh-nirvana-phase-ii-by-shubh-developer-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-036-1",
+    "project_id": "TLC-PRJ-036",
+    "source_name": "99acres & MagicBricks (Primary)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-036-2",
+    "project_id": "TLC-PRJ-036",
+    "source_name": "99acres & MagicBricks (Secondary Cross-Check)",
+    "source_url": "https://www.magicbricks.com/rera-registered-projects-Kharadi-in-Pune/page-3",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-037-1",
+    "project_id": "TLC-PRJ-037",
+    "source_name": "PropTiger Portal (Primary)",
+    "source_url": "https://www.proptiger.com/pune/kharadi/guardian-developers-eastern-meadows-669197",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-038-1",
+    "project_id": "TLC-PRJ-038",
+    "source_name": "Panchshil Official & JLL (Primary)",
+    "source_url": "https://www.panchshil.com/office-parks/panchshil-business-park-east",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-038-2",
+    "project_id": "TLC-PRJ-038",
+    "source_name": "Panchshil Official & JLL (Secondary Cross-Check)",
+    "source_url": "https://property.jll.co.in/listings/panchshil-business-park-tower-a-opp-phoenix-market-city-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-039-1",
+    "project_id": "TLC-PRJ-039",
+    "source_name": "JLL Commercial Directory (Primary)",
+    "source_url": "https://property.jll.co.in/listings/gaia-apex-no-33-1-1-2-vadgaon-sheri-behind-eden-garden-society-nagar-road",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-040-1",
+    "project_id": "TLC-PRJ-040",
+    "source_name": "Daftar & MagicBricks (Primary)",
+    "source_url": "https://daftar.com/office-space/pune-maharashtra/weikfield-2-pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-040-2",
+    "project_id": "TLC-PRJ-040",
+    "source_name": "Daftar & MagicBricks (Secondary Cross-Check)",
+    "source_url": "https://www.magicbricks.com/blog/it-parks-in-pune/134195.html",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-041-1",
+    "project_id": "TLC-PRJ-041",
+    "source_name": "Housing.com Portal (Primary)",
+    "source_url": "https://housing.com/in/buy/projects/page/348489-viman-avenue-by-precon-realty-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-042-1",
+    "project_id": "TLC-PRJ-042",
+    "source_name": "Housing.com Portal (Primary)",
+    "source_url": "https://housing.com/in/buy/projects/page/279551-shubh-nirvana-by-shubh-developer-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-042-2",
+    "project_id": "TLC-PRJ-042",
+    "source_name": "Housing.com Portal (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/299187-shubh-nirvana-phase-ii-by-shubh-developer-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-043-1",
+    "project_id": "TLC-PRJ-043",
+    "source_name": "Housing.com Portal (Primary)",
+    "source_url": "https://housing.com/in/buy/projects/page/129275-shubh-gateway-by-shubh-developer-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-044-1",
+    "project_id": "TLC-PRJ-044",
+    "source_name": "Housing.com & CommonFloor (Primary)",
+    "source_url": "https://housing.com/in/buy/projects/page/254942-oxy-beaumonde-phase-1-by-oxy-buildcrop-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-044-2",
+    "project_id": "TLC-PRJ-044",
+    "source_name": "Housing.com & CommonFloor (Secondary Cross-Check)",
+    "source_url": "https://www.commonfloor.com/pune-property/in-viman-nagar-a5051/projects",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-045-1",
+    "project_id": "TLC-PRJ-045",
+    "source_name": "Rohan Builders Official (Primary)",
+    "source_url": "https://www.rohanbuilders.com/residential6ddb.html?location=pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-045-2",
+    "project_id": "TLC-PRJ-045",
+    "source_name": "Rohan Builders Official (Secondary Cross-Check)",
+    "source_url": "http://www.rohanbuilders.com/residential1a24.html?state=&location=",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-046-1",
+    "project_id": "TLC-PRJ-046",
+    "source_name": "MagicBricks & InfoBitWiz (Primary)",
+    "source_url": "https://infobitwiz.com/pune/kalyani-nagar/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-046-2",
+    "project_id": "TLC-PRJ-046",
+    "source_name": "MagicBricks & InfoBitWiz (Secondary Cross-Check)",
+    "source_url": "https://www.magicbricks.com/blog/it-parks-in-pune/134195.html",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-047-1",
+    "project_id": "TLC-PRJ-047",
+    "source_name": "Daftar & Panchshil Official (Primary)",
+    "source_url": "https://daftar.com/property/panchshil-avenue-pune-e2530001",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-047-2",
+    "project_id": "TLC-PRJ-047",
+    "source_name": "Daftar & Panchshil Official (Secondary Cross-Check)",
+    "source_url": "https://www.panchshil.com/office-parks/page/1",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-048-1",
+    "project_id": "TLC-PRJ-048",
+    "source_name": "BramhaCorp Official Website (Primary)",
+    "source_url": "https://bramhacorp.in/residential/the-collection",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-049-1",
+    "project_id": "TLC-PRJ-049",
+    "source_name": "Nyati Group Official & Housing.com (Primary)",
+    "source_url": "https://nyatigroup.com/luxury-projects/nyati-elenor",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-049-2",
+    "project_id": "TLC-PRJ-049",
+    "source_name": "Nyati Group Official & Housing.com (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/138881-chandhare-complex-by-reputed-builder-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-050-1",
+    "project_id": "TLC-PRJ-050",
+    "source_name": "CommonFloor Portal (Primary)",
+    "source_url": "https://www.commonfloor.com/pune-property/projects/in-kalyani-nagar-r51b98eba0f647",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-051-1",
+    "project_id": "TLC-PRJ-051",
+    "source_name": "Rohan Builders Official (Primary)",
+    "source_url": "https://www.rohanbuilders.com/residential6ddb.html?location=pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-051-2",
+    "project_id": "TLC-PRJ-051",
+    "source_name": "Rohan Builders Official (Secondary Cross-Check)",
+    "source_url": "http://www.rohanbuilders.com/residential1a24.html?state=&location=",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-052-1",
+    "project_id": "TLC-PRJ-052",
+    "source_name": "Kohinoor Official & 99acres (Primary)",
+    "source_url": "https://kohinoorpune.com/blogs-detail/maharera-act-rera-benefits-for-home-buyers-and-builders-in-maharashtra",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-052-2",
+    "project_id": "TLC-PRJ-052",
+    "source_name": "Kohinoor Official & 99acres (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-053-1",
+    "project_id": "TLC-PRJ-053",
+    "source_name": "99acres Commercial Portal (Primary)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-054-1",
+    "project_id": "TLC-PRJ-054",
+    "source_name": "Mantra Properties Official (Primary)",
+    "source_url": "https://www.mantraproperties.in/properties/residential",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-054-2",
+    "project_id": "TLC-PRJ-054",
+    "source_name": "Mantra Properties Official (Secondary Cross-Check)",
+    "source_url": "https://www.mantraproperties.in/properties/residential/mantra-melange",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-055-1",
+    "project_id": "TLC-PRJ-055",
+    "source_name": "99acres Commercial Portal (Primary)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-056-1",
+    "project_id": "TLC-PRJ-056",
+    "source_name": "99acres Commercial Portal (Primary)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-056-2",
+    "project_id": "TLC-PRJ-056",
+    "source_name": "99acres Commercial Portal (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3-crores-to-5-crores-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-057-1",
+    "project_id": "TLC-PRJ-057",
+    "source_name": "99acres & Housing.com (Primary)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-057-2",
+    "project_id": "TLC-PRJ-057",
+    "source_name": "99acres & Housing.com (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/279551-shubh-nirvana-by-shubh-developer-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-058-1",
+    "project_id": "TLC-PRJ-058",
+    "source_name": "Mantra Properties Official (Primary)",
+    "source_url": "https://www.mantraproperties.in/properties/residential",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-058-2",
+    "project_id": "TLC-PRJ-058",
+    "source_name": "Mantra Properties Official (Secondary Cross-Check)",
+    "source_url": "https://vjsproperties2000.in/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-059-1",
+    "project_id": "TLC-PRJ-059",
+    "source_name": "Godrej Properties Official & Housing.com (Primary)",
+    "source_url": "https://www.godrejproperties.com/pune/residential/godrej-aqua-vista",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-059-2",
+    "project_id": "TLC-PRJ-059",
+    "source_name": "Godrej Properties Official & Housing.com (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/348489-viman-avenue-by-precon-realty-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-060-1",
+    "project_id": "TLC-PRJ-060",
+    "source_name": "Mantra Properties Official (Primary)",
+    "source_url": "https://www.mantraproperties.in/properties/residential",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-061-1",
+    "project_id": "TLC-PRJ-061",
+    "source_name": "MagicBricks & InfoBitWiz (Primary)",
+    "source_url": "https://infobitwiz.com/tag/magarpatta-cybercity/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-061-2",
+    "project_id": "TLC-PRJ-061",
+    "source_name": "MagicBricks & InfoBitWiz (Secondary Cross-Check)",
+    "source_url": "https://www.magicbricks.com/blog/it-parks-in-pune/134195.html",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-062-1",
+    "project_id": "TLC-PRJ-062",
+    "source_name": "Amanora Official & MagicBricks (Primary)",
+    "source_url": "https://amanora.com/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-062-2",
+    "project_id": "TLC-PRJ-062",
+    "source_name": "Amanora Official & MagicBricks (Secondary Cross-Check)",
+    "source_url": "https://www.magicbricks.com/rera-registered-projects-Hadapsar-in-Pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-063-1",
+    "project_id": "TLC-PRJ-063",
+    "source_name": "99acres & MagicBricks (Primary)",
+    "source_url": "https://www.99acres.com/amanora-chambers-hadapsar-pune-npxid-c4017",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-063-2",
+    "project_id": "TLC-PRJ-063",
+    "source_name": "99acres & MagicBricks (Secondary Cross-Check)",
+    "source_url": "https://www.magicbricks.com/office-space-for-sale-in-amanora-park-town-main-road-pune-pppfs",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-064-1",
+    "project_id": "TLC-PRJ-064",
+    "source_name": "myHQ & InfoBitWiz (Primary)",
+    "source_url": "https://myhq.in/office-space-for-rent/sp-infocity--building-no-4a-hadapsar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-064-2",
+    "project_id": "TLC-PRJ-064",
+    "source_name": "myHQ & InfoBitWiz (Secondary Cross-Check)",
+    "source_url": "https://infobitwiz.com/companies-in-sp-infocity-phursungi-pune/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-065-1",
+    "project_id": "TLC-PRJ-065",
+    "source_name": "MagicBricks & Housing.com (Primary)",
+    "source_url": "https://www.magicbricks.com/rera-registered-projects-Hadapsar-in-Pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-065-2",
+    "project_id": "TLC-PRJ-065",
+    "source_name": "MagicBricks & Housing.com (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/348489-viman-avenue-by-precon-realty-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-066-1",
+    "project_id": "TLC-PRJ-066",
+    "source_name": "Housing.com Portal (Primary)",
+    "source_url": "https://housing.com/in/buy/projects/page/348489-viman-avenue-by-precon-realty-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-066-2",
+    "project_id": "TLC-PRJ-066",
+    "source_name": "Housing.com Portal (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/279551-shubh-nirvana-by-shubh-developer-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-067-1",
+    "project_id": "TLC-PRJ-067",
+    "source_name": "Mantra Properties Official (Primary)",
+    "source_url": "https://www.mantraproperties.in/blog/luxury-real-estate-modern-living/3-bhk-flats-in-balewadi-pune-mantra-meridian",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-067-2",
+    "project_id": "TLC-PRJ-067",
+    "source_name": "Mantra Properties Official (Secondary Cross-Check)",
+    "source_url": "https://www.mantraproperties.in/properties/residential",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-068-1",
+    "project_id": "TLC-PRJ-068",
+    "source_name": "CityAir Pune Portal (Primary)",
+    "source_url": "https://cityair.in/phursungi-in-pune-Overview.html",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-069-1",
+    "project_id": "TLC-PRJ-069",
+    "source_name": "Mindspace REIT Official & FloorTap (Primary)",
+    "source_url": "https://www.mindspaceindia.com/yerwada/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-069-2",
+    "project_id": "TLC-PRJ-069",
+    "source_name": "Mindspace REIT Official & FloorTap (Secondary Cross-Check)",
+    "source_url": "https://www.floortap.com/projects/details/commerzone-yerwada-pune/yerwada/45/2636",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-070-1",
+    "project_id": "TLC-PRJ-070",
+    "source_name": "Smartworks & Daftar (Primary)",
+    "source_url": "https://www.smartworksoffice.com/office-space/pune/tech-park-one/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-070-2",
+    "project_id": "TLC-PRJ-070",
+    "source_name": "Smartworks & Daftar (Secondary Cross-Check)",
+    "source_url": "https://daftar.com/office-space/pune-maharashtra/weikfield-2-pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-071-1",
+    "project_id": "TLC-PRJ-071",
+    "source_name": "CBRE & Nyati Group (Primary)",
+    "source_url": "https://www.cbre.co.in/properties/commercial-space-for-sale-in-pune?location=Pune,Maharashtra,India&aspects=isSale",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-071-2",
+    "project_id": "TLC-PRJ-071",
+    "source_name": "CBRE & Nyati Group (Secondary Cross-Check)",
+    "source_url": "https://nyatigroup.com/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-072-1",
+    "project_id": "TLC-PRJ-072",
+    "source_name": "Kolte-Patil Official (Primary)",
+    "source_url": "https://www.koltepatil.com/blog/2015/04/14/property-investment-in-pune/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-072-2",
+    "project_id": "TLC-PRJ-072",
+    "source_name": "Kolte-Patil Official (Secondary Cross-Check)",
+    "source_url": "https://www.koltepatil.com/pune/residential-projects-in-pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-073-1",
+    "project_id": "TLC-PRJ-073",
+    "source_name": "Rohan Builders Official (Primary)",
+    "source_url": "https://www.rohanbuilders.com/residential0ea2.html?state=ongoing&location=pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-074-1",
+    "project_id": "TLC-PRJ-074",
+    "source_name": "Nyati Official & Housing.com (Primary)",
+    "source_url": "https://nyatigroup.com/projects/residential/nyati-equinox",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-074-2",
+    "project_id": "TLC-PRJ-074",
+    "source_name": "Nyati Official & Housing.com (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/279551-shubh-nirvana-by-shubh-developer-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-075-1",
+    "project_id": "TLC-PRJ-075",
+    "source_name": "Mantra Official & 99acres (Primary)",
+    "source_url": "https://www.mantraproperties.in/properties/residential",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-075-2",
+    "project_id": "TLC-PRJ-075",
+    "source_name": "Mantra Official & 99acres (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/new-commercial-projects-in-kharadi-pune-3000-sq-ft-to-4000-sq-ft-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-076-1",
+    "project_id": "TLC-PRJ-076",
+    "source_name": "Housing.com Portal (Primary)",
+    "source_url": "https://housing.com/in/buy/projects/page/348489-viman-avenue-by-precon-realty-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-076-2",
+    "project_id": "TLC-PRJ-076",
+    "source_name": "Housing.com Portal (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/279551-shubh-nirvana-by-shubh-developer-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-077-1",
+    "project_id": "TLC-PRJ-077",
+    "source_name": "JLL & Panchshil Official (Primary)",
+    "source_url": "https://property.jll.co.in/listings/panchshil-business-park-phase-1-tower-b-survey-no-20-21-opposite-park-express-laxman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-077-2",
+    "project_id": "TLC-PRJ-077",
+    "source_name": "JLL & Panchshil Official (Secondary Cross-Check)",
+    "source_url": "https://thebusinessestate.com/panchshil-business-park-balewadi-baner-pune/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-078-1",
+    "project_id": "TLC-PRJ-078",
+    "source_name": "Kohinoor Group Official (Primary)",
+    "source_url": "https://kohinoorpune.com/blogs-detail/maharera-act-rera-benefits-for-home-buyers-and-builders-in-maharashtra",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-078-2",
+    "project_id": "TLC-PRJ-078",
+    "source_name": "Kohinoor Group Official (Secondary Cross-Check)",
+    "source_url": "https://kohinoorpune.com/blogs-detail/new-and-up-coming-residential-projects-at-tathawade",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-079-1",
+    "project_id": "TLC-PRJ-079",
+    "source_name": "TheBusinessEstate & Rohan Portal (Primary)",
+    "source_url": "https://thebusinessestate.com/panchshil-business-park-balewadi-baner-pune/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-079-2",
+    "project_id": "TLC-PRJ-079",
+    "source_name": "TheBusinessEstate & Rohan Portal (Secondary Cross-Check)",
+    "source_url": "https://rohanbuilders.com/pune-homes/ekam/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-080-1",
+    "project_id": "TLC-PRJ-080",
+    "source_name": "JLL Commercial Directory (Primary)",
+    "source_url": "https://property.jll.co.in/listings/panchshil-business-park-phase-2-tower-c-baner-balewadi-link-road-balewadi",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-080-2",
+    "project_id": "TLC-PRJ-080",
+    "source_name": "JLL Commercial Directory (Secondary Cross-Check)",
+    "source_url": "https://property.jll.co.in/listings/gaia-apex-no-33-1-1-2-vadgaon-sheri-behind-eden-garden-society-nagar-road",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-081-1",
+    "project_id": "TLC-PRJ-081",
+    "source_name": "99acres & JLL (Primary)",
+    "source_url": "https://www.99acres.com/panchshil-tech-park-hinjewadi-hinjewadi-pune-npxid-c4698",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-081-2",
+    "project_id": "TLC-PRJ-081",
+    "source_name": "99acres & JLL (Secondary Cross-Check)",
+    "source_url": "https://property.jll.co.in/listings/gaia-apex-no-33-1-1-2-vadgaon-sheri-behind-eden-garden-society-nagar-road",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-082-1",
+    "project_id": "TLC-PRJ-082",
+    "source_name": "Gera Official & 99acres (Primary)",
+    "source_url": "https://www.gera.in/projects/projects-in-pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-082-2",
+    "project_id": "TLC-PRJ-082",
+    "source_name": "Gera Official & 99acres (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/commercial-shops-for-rent-in-amanora-park-town-pune-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-083-1",
+    "project_id": "TLC-PRJ-083",
+    "source_name": "Rohan Builders Official (Primary)",
+    "source_url": "https://rohanbuilders.com/pune-homes/ekam/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-083-2",
+    "project_id": "TLC-PRJ-083",
+    "source_name": "Rohan Builders Official (Secondary Cross-Check)",
+    "source_url": "https://codenameprojects.in/rohan-ekam-balewadi/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-084-1",
+    "project_id": "TLC-PRJ-084",
+    "source_name": "Mantra Properties Official (Primary)",
+    "source_url": "https://www.mantraproperties.in/blog/luxury-real-estate-modern-living/3-bhk-flats-in-balewadi-pune-mantra-meridian",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-084-2",
+    "project_id": "TLC-PRJ-084",
+    "source_name": "Mantra Properties Official (Secondary Cross-Check)",
+    "source_url": "https://www.mantraproperties.in/properties/residential",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-085-1",
+    "project_id": "TLC-PRJ-085",
+    "source_name": "Lodha Group Official (Primary)",
+    "source_url": "https://www.lodhagroup.com/projects/residential-property-in-pune/lodha-massimo-baner",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-086-1",
+    "project_id": "TLC-PRJ-086",
+    "source_name": "Nyati Group Official (Primary)",
+    "source_url": "https://nyatigroup.com/projects/residential/nyati-emerald",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-086-2",
+    "project_id": "TLC-PRJ-086",
+    "source_name": "Nyati Group Official (Secondary Cross-Check)",
+    "source_url": "https://nyatigroup.com/projects/residential/nyati-equinox",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-087-1",
+    "project_id": "TLC-PRJ-087",
+    "source_name": "Propsearchs & Vilas Javdekar (Primary)",
+    "source_url": "https://propsearchs.com/property/vj-portia-grand-baner/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-087-2",
+    "project_id": "TLC-PRJ-087",
+    "source_name": "Propsearchs & Vilas Javdekar (Secondary Cross-Check)",
+    "source_url": "https://vilasjavdekar.com/supernova/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-088-1",
+    "project_id": "TLC-PRJ-088",
+    "source_name": "Rohan Builders Official (Primary)",
+    "source_url": "https://www.rohanbuilders.com/residential6ddb.html?location=pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-088-2",
+    "project_id": "TLC-PRJ-088",
+    "source_name": "Rohan Builders Official (Secondary Cross-Check)",
+    "source_url": "http://www.rohanbuilders.com/residential1a24.html?state=&location=",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-089-1",
+    "project_id": "TLC-PRJ-089",
+    "source_name": "Kolte-Patil Official & 99acres (Primary)",
+    "source_url": "https://www.koltepatil.com/pune/residential-properties/ongoing/life-republic",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-089-2",
+    "project_id": "TLC-PRJ-089",
+    "source_name": "Kolte-Patil Official & 99acres (Secondary Cross-Check)",
+    "source_url": "https://www.koltepatil.com/blog/2015/04/14/property-investment-in-pune/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-090-1",
+    "project_id": "TLC-PRJ-090",
+    "source_name": "Godrej Official & 99acres (Primary)",
+    "source_url": "https://www.godrejproperties.com/pune/residential/godrej-aqua-vista",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-090-2",
+    "project_id": "TLC-PRJ-090",
+    "source_name": "Godrej Official & 99acres (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/kolte-patil-life-republic-hinjewadi-pune-npxid-r1363",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-091-1",
+    "project_id": "TLC-PRJ-091",
+    "source_name": "VTP Realty Official & 99acres (Primary)",
+    "source_url": "https://www.vtprealty.in/blogs/pune-transformation-education-to-it-business-hub",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-091-2",
+    "project_id": "TLC-PRJ-091",
+    "source_name": "VTP Realty Official & 99acres (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/vilas-javdekar-yashwin-hinjewadi-hinjewadi-phase-2-pune-npxid-r268669",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-092-1",
+    "project_id": "TLC-PRJ-092",
+    "source_name": "Rohan Builders Official (Primary)",
+    "source_url": "https://www.rohanbuilders.com/residential0ea2.html?state=ongoing&location=pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-092-2",
+    "project_id": "TLC-PRJ-092",
+    "source_name": "Rohan Builders Official (Secondary Cross-Check)",
+    "source_url": "https://rohanbuilders.com/pune-homes/ekam/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-093-1",
+    "project_id": "TLC-PRJ-093",
+    "source_name": "Propsearchs Portal (Primary)",
+    "source_url": "https://propsearchs.com/property/saheel-i-trend-futura/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-094-1",
+    "project_id": "TLC-PRJ-094",
+    "source_name": "99acres Commercial Portal (Primary)",
+    "source_url": "https://www.99acres.com/under-construction-commercial-projects-in-wakad-pune-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-095-1",
+    "project_id": "TLC-PRJ-095",
+    "source_name": "99acres Commercial Portal (Primary)",
+    "source_url": "https://www.99acres.com/under-construction-commercial-projects-in-wakad-pune-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-096-1",
+    "project_id": "TLC-PRJ-096",
+    "source_name": "99acres Portal (Primary)",
+    "source_url": "https://www.99acres.com/under-construction-commercial-projects-in-wakad-pune-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-097-1",
+    "project_id": "TLC-PRJ-097",
+    "source_name": "99acres & Lodha Group (Primary)",
+    "source_url": "https://www.lodhagroup.com/projects/residential-property-in-pune/lodha-palais-kothrud",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-097-2",
+    "project_id": "TLC-PRJ-097",
+    "source_name": "99acres & Lodha Group (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/under-construction-commercial-projects-in-wakad-pune-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-098-1",
+    "project_id": "TLC-PRJ-098",
+    "source_name": "MagicBricks & Kolte-Patil (Primary)",
+    "source_url": "https://www.magicbricks.com/residential-projects-Wakad-in-Pune-nprid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-098-2",
+    "project_id": "TLC-PRJ-098",
+    "source_name": "MagicBricks & Kolte-Patil (Secondary Cross-Check)",
+    "source_url": "https://www.koltepatil.com/pune/residential-projects-in-pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-099-1",
+    "project_id": "TLC-PRJ-099",
+    "source_name": "Vilas Javdekar Official & 99acres (Primary)",
+    "source_url": "https://vilasjavdekar.com/supernova/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-099-2",
+    "project_id": "TLC-PRJ-099",
+    "source_name": "Vilas Javdekar Official & 99acres (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/under-construction-commercial-projects-in-wakad-pune-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-100-1",
+    "project_id": "TLC-PRJ-100",
+    "source_name": "Rohan Builders Official (Primary)",
+    "source_url": "https://www.rohanbuilders.com/residential0ea2.html?state=ongoing&location=pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-100-2",
+    "project_id": "TLC-PRJ-100",
+    "source_name": "Rohan Builders Official (Secondary Cross-Check)",
+    "source_url": "https://www.rohanbuilders.com/residential6ddb.html?location=pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-101-1",
+    "project_id": "TLC-PRJ-101",
+    "source_name": "MagicBricks RERA Directory (Primary)",
+    "source_url": "https://www.magicbricks.com/rera-registered-projects-Wakad-in-Pune/page-2",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-101-2",
+    "project_id": "TLC-PRJ-101",
+    "source_name": "MagicBricks RERA Directory (Secondary Cross-Check)",
+    "source_url": "https://www.magicbricks.com/under-construction-projects-Wakad-in-Pune-nprid/page-2",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-102-1",
+    "project_id": "TLC-PRJ-102",
+    "source_name": "Rohan Official & Kohinoor (Primary)",
+    "source_url": "https://www.rohanbuilders.com/residential0ea2.html?state=ongoing&location=pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-102-2",
+    "project_id": "TLC-PRJ-102",
+    "source_name": "Rohan Official & Kohinoor (Secondary Cross-Check)",
+    "source_url": "https://kohinoorpune.com/blogs-detail/new-and-up-coming-residential-projects-at-tathawade",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-103-1",
+    "project_id": "TLC-PRJ-103",
+    "source_name": "99acres Commercial Portal (Primary)",
+    "source_url": "https://www.99acres.com/under-construction-commercial-projects-in-wakad-pune-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-104-1",
+    "project_id": "TLC-PRJ-104",
+    "source_name": "Kolte-Patil & Nyati Official (Primary)",
+    "source_url": "https://www.koltepatil.com/blog/2015/04/14/property-investment-in-pune/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-104-2",
+    "project_id": "TLC-PRJ-104",
+    "source_name": "Kolte-Patil & Nyati Official (Secondary Cross-Check)",
+    "source_url": "https://nyatigroup.com/projects/residential/nyati-equinox",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-105-1",
+    "project_id": "TLC-PRJ-105",
+    "source_name": "Lodha Group Official (Primary)",
+    "source_url": "https://www.lodhagroup.com/projects/residential-property-in-pune/lodha-palais-kothrud",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-106-1",
+    "project_id": "TLC-PRJ-106",
+    "source_name": "Xprop Pune Portal (Primary)",
+    "source_url": "https://xproppune.com/codename-the-link-pashan/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-107-1",
+    "project_id": "TLC-PRJ-107",
+    "source_name": "Mantra & VTP Official (Primary)",
+    "source_url": "https://www.mantraproperties.in/properties/residential",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-107-2",
+    "project_id": "TLC-PRJ-107",
+    "source_name": "Mantra & VTP Official (Secondary Cross-Check)",
+    "source_url": "https://www.vtprealty.in/blogs/pune-transformation-education-to-it-business-hub",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-108-1",
+    "project_id": "TLC-PRJ-108",
+    "source_name": "Godrej Launch Portal & Kohinoor (Primary)",
+    "source_url": "https://www.godrejnewlaunching.com/projects-in-pune/godrej-nexus/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-108-2",
+    "project_id": "TLC-PRJ-108",
+    "source_name": "Godrej Launch Portal & Kohinoor (Secondary Cross-Check)",
+    "source_url": "https://kohinoorpune.com/blogs-detail/maharera-act-rera-benefits-for-home-buyers-and-builders-in-maharashtra",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-109-1",
+    "project_id": "TLC-PRJ-109",
+    "source_name": "BuyIndiaHomes & 99acres (Primary)",
+    "source_url": "https://www.buyindiahomes.com/vone-akurdi-akurdi-pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-109-2",
+    "project_id": "TLC-PRJ-109",
+    "source_name": "BuyIndiaHomes & 99acres (Secondary Cross-Check)",
+    "source_url": "https://www.99acres.com/under-construction-commercial-projects-in-wakad-pune-ffid",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-110-1",
+    "project_id": "TLC-PRJ-110",
+    "source_name": "Kolte-Patil Official (Primary)",
+    "source_url": "https://www.koltepatil.com/blog/2015/04/14/property-investment-in-pune/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-110-2",
+    "project_id": "TLC-PRJ-110",
+    "source_name": "Kolte-Patil Official (Secondary Cross-Check)",
+    "source_url": "https://www.koltepatil.com/pune/residential-projects-in-pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-111-1",
+    "project_id": "TLC-PRJ-111",
+    "source_name": "Housing.com & MahaRERA Directory (Primary)",
+    "source_url": "https://housing.com/in/buy/projects/page/279551-shubh-nirvana-by-shubh-developer-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-111-2",
+    "project_id": "TLC-PRJ-111",
+    "source_name": "Housing.com & MahaRERA Directory (Secondary Cross-Check)",
+    "source_url": "https://vjsproperties2000.in/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-112-1",
+    "project_id": "TLC-PRJ-112",
+    "source_name": "Housing.com & AddressOfChoice (Primary)",
+    "source_url": "https://housing.com/in/buy/projects/page/348489-viman-avenue-by-precon-realty-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-112-2",
+    "project_id": "TLC-PRJ-112",
+    "source_name": "Housing.com & AddressOfChoice (Secondary Cross-Check)",
+    "source_url": "https://www.addressofchoice.com/mansukhlal-girindu-alandi-pune-p44974",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-113-1",
+    "project_id": "TLC-PRJ-113",
+    "source_name": "Kolte-Patil Official (Primary)",
+    "source_url": "https://www.koltepatil.com/pune/residential-projects-in-pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-113-2",
+    "project_id": "TLC-PRJ-113",
+    "source_name": "Kolte-Patil Official (Secondary Cross-Check)",
+    "source_url": "https://www.koltepatil.com/pune/residential-properties/ongoing",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-114-1",
+    "project_id": "TLC-PRJ-114",
+    "source_name": "RealEstateIndia Portal (Primary)",
+    "source_url": "https://www.realestateindia.com/property-detail/commercial-shops-for-sale-in-nibm-pune-1-65-cr-1081688.htm",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-115-1",
+    "project_id": "TLC-PRJ-115",
+    "source_name": "Nyati Group Official (Primary)",
+    "source_url": "https://nyatigroup.com/projects/residential/nyati-equinox",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-115-2",
+    "project_id": "TLC-PRJ-115",
+    "source_name": "Nyati Group Official (Secondary Cross-Check)",
+    "source_url": "https://nyatigroup.com/projects/residential/nyati-emerald",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-116-1",
+    "project_id": "TLC-PRJ-116",
+    "source_name": "Kolte-Patil & Godrej Official (Primary)",
+    "source_url": "https://www.koltepatil.com/blog/2015/04/14/property-investment-in-pune/",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-116-2",
+    "project_id": "TLC-PRJ-116",
+    "source_name": "Kolte-Patil & Godrej Official (Secondary Cross-Check)",
+    "source_url": "https://www.godrejproperties.com/pune/residential/godrej-aqua-vista",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-117-1",
+    "project_id": "TLC-PRJ-117",
+    "source_name": "Rohan & Mantra Official (Primary)",
+    "source_url": "https://www.rohanbuilders.com/residential6ddb.html?location=pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-117-2",
+    "project_id": "TLC-PRJ-117",
+    "source_name": "Rohan & Mantra Official (Secondary Cross-Check)",
+    "source_url": "https://www.mantraproperties.in/properties/residential",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-118-1",
+    "project_id": "TLC-PRJ-118",
+    "source_name": "JLL & MagicBricks (Primary)",
+    "source_url": "https://property.jll.co.in/listings/gaia-apex-no-33-1-1-2-vadgaon-sheri-behind-eden-garden-society-nagar-road",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-118-2",
+    "project_id": "TLC-PRJ-118",
+    "source_name": "JLL & MagicBricks (Secondary Cross-Check)",
+    "source_url": "https://www.magicbricks.com/blog/it-parks-in-pune/134195.html",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-119-1",
+    "project_id": "TLC-PRJ-119",
+    "source_name": "Nyati Official & Housing.com (Primary)",
+    "source_url": "https://nyatigroup.com/luxury-projects/nyati-elenor",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-119-2",
+    "project_id": "TLC-PRJ-119",
+    "source_name": "Nyati Official & Housing.com (Secondary Cross-Check)",
+    "source_url": "https://housing.com/in/buy/projects/page/348489-viman-avenue-by-precon-realty-in-viman-nagar",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-120-1",
+    "project_id": "TLC-PRJ-120",
+    "source_name": "Rohan Builders Official (Primary)",
+    "source_url": "https://www.rohanbuilders.com/residential6ddb.html?location=pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-120-2",
+    "project_id": "TLC-PRJ-120",
+    "source_name": "Rohan Builders Official (Secondary Cross-Check)",
+    "source_url": "http://www.rohanbuilders.com/residential1a24.html?state=&location=",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-121-1",
+    "project_id": "TLC-PRJ-121",
+    "source_name": "Lodha Official & MahaRERA (Primary)",
+    "source_url": "https://www.lodhagroup.com/projects/residential-property-in-pune/lodha-belmondo",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-121-2",
+    "project_id": "TLC-PRJ-121",
+    "source_name": "Lodha Official & MahaRERA (Secondary Cross-Check)",
+    "source_url": "https://www.mantraproperties.in/properties/residential",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-122-1",
+    "project_id": "TLC-PRJ-122",
+    "source_name": "Rohan & Mantra Official (Primary)",
+    "source_url": "https://www.rohanbuilders.com/residential0ea2.html?state=ongoing&location=pune",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-122-2",
+    "project_id": "TLC-PRJ-122",
+    "source_name": "Rohan & Mantra Official (Secondary Cross-Check)",
+    "source_url": "https://www.mantraproperties.in/properties/residential",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-123-1",
+    "project_id": "TLC-PRJ-123",
+    "source_name": "ESR India Official (Primary)",
+    "source_url": "https://in.esr.com/warehouse-in-chakan",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Official Developer / REIT / Institutional Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-123-2",
+    "project_id": "TLC-PRJ-123",
+    "source_name": "ESR India Official (Secondary Cross-Check)",
+    "source_url": "https://in.esr.com/parks/esr-talegaon",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  },
+  {
+    "source_id": "SRC-124-1",
+    "project_id": "TLC-PRJ-124",
+    "source_name": "Justdial & IndoSpace Directory (Primary)",
+    "source_url": "https://www.justdial.com/Pune/Indospace-Park-Chakan-V-Chakan/020PXX20-XX20-240911231501-N1A6_BZDET",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "High"
+  },
+  {
+    "source_id": "SRC-124-2",
+    "project_id": "TLC-PRJ-124",
+    "source_name": "Justdial & IndoSpace Directory (Secondary Cross-Check)",
+    "source_url": "https://www.scribd.com/document/474659248/IndoSpace-Ranjangaon-Brochure-V4",
+    "retrieved_timestamp": "2026-11-10T02:15:40+05:30",
+    "source_category": "Public Property Portal",
+    "access_status": "ACCESSIBLE_PUBLIC",
+    "reliability_classification": "Medium"
+  }
+]

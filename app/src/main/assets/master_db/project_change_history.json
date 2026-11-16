@@ -1,0 +1,1242 @@
+[
+  {
+    "change_id": "CHG-001",
+    "project_id": "TLC-PRJ-001",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-001-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-001 (EON Free Zone Phase 1) with source attribution."
+  },
+  {
+    "change_id": "CHG-002",
+    "project_id": "TLC-PRJ-002",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-002-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-002 (EON Free Zone Phase 2) with source attribution."
+  },
+  {
+    "change_id": "CHG-003",
+    "project_id": "TLC-PRJ-003",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-003-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-003 (World Trade Center Pune) with source attribution."
+  },
+  {
+    "change_id": "CHG-004",
+    "project_id": "TLC-PRJ-004",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-004-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-004 (Gera Commerzone Kharadi) with source attribution."
+  },
+  {
+    "change_id": "CHG-005",
+    "project_id": "TLC-PRJ-005",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-005-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-005 (International Tech Park Pune (ITPP) Kharadi) with source attribution."
+  },
+  {
+    "change_id": "CHG-006",
+    "project_id": "TLC-PRJ-006",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-006-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-006 (Panchshil Business Hub Kharadi) with source attribution."
+  },
+  {
+    "change_id": "CHG-007",
+    "project_id": "TLC-PRJ-007",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-007-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-007 (The Platinum Towers) with source attribution."
+  },
+  {
+    "change_id": "CHG-008",
+    "project_id": "TLC-PRJ-008",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-008-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-008 (Allure Business Hub) with source attribution."
+  },
+  {
+    "change_id": "CHG-009",
+    "project_id": "TLC-PRJ-009",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-009-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-009 (Gagan Grant Bay) with source attribution."
+  },
+  {
+    "change_id": "CHG-010",
+    "project_id": "TLC-PRJ-010",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-010-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-010 (VJ IndiWorks Kharadi Central) with source attribution."
+  },
+  {
+    "change_id": "CHG-011",
+    "project_id": "TLC-PRJ-011",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-011-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-011 (Vascon Tower of Ascend) with source attribution."
+  },
+  {
+    "change_id": "CHG-012",
+    "project_id": "TLC-PRJ-012",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-012-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-012 (GSV Vertica) with source attribution."
+  },
+  {
+    "change_id": "CHG-013",
+    "project_id": "TLC-PRJ-013",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-013-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-013 (Kolte-Patil Downtown City Vista) with source attribution."
+  },
+  {
+    "change_id": "CHG-014",
+    "project_id": "TLC-PRJ-014",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-014-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-014 (Lodha Kharadi Signet) with source attribution."
+  },
+  {
+    "change_id": "CHG-015",
+    "project_id": "TLC-PRJ-015",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-015-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-015 (Omicron Business Landmarks) with source attribution."
+  },
+  {
+    "change_id": "CHG-016",
+    "project_id": "TLC-PRJ-016",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-016-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-016 (Panchshil Towers) with source attribution."
+  },
+  {
+    "change_id": "CHG-017",
+    "project_id": "TLC-PRJ-017",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-017-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-017 (Panchshil EON Waterfront) with source attribution."
+  },
+  {
+    "change_id": "CHG-018",
+    "project_id": "TLC-PRJ-018",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-018-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-018 (Godrej Ivara (Godrej Upper Kharadi)) with source attribution."
+  },
+  {
+    "change_id": "CHG-019",
+    "project_id": "TLC-PRJ-019",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-019-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-019 (Lodha Giardino) with source attribution."
+  },
+  {
+    "change_id": "CHG-020",
+    "project_id": "TLC-PRJ-020",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-020-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-020 (Lodha Estilo) with source attribution."
+  },
+  {
+    "change_id": "CHG-021",
+    "project_id": "TLC-PRJ-021",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-021-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-021 (Lodha Camelot) with source attribution."
+  },
+  {
+    "change_id": "CHG-022",
+    "project_id": "TLC-PRJ-022",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-022-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-022 (VTP Township Codename Pegasus) with source attribution."
+  },
+  {
+    "change_id": "CHG-023",
+    "project_id": "TLC-PRJ-023",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-023-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-023 (VTP Dolce Vita) with source attribution."
+  },
+  {
+    "change_id": "CHG-024",
+    "project_id": "TLC-PRJ-024",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-024-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-024 (Flamante by VTP Luxe) with source attribution."
+  },
+  {
+    "change_id": "CHG-025",
+    "project_id": "TLC-PRJ-025",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-025-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-025 (VTP Velvet Villas) with source attribution."
+  },
+  {
+    "change_id": "CHG-026",
+    "project_id": "TLC-PRJ-026",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-026-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-026 (Gera's Avive Towers) with source attribution."
+  },
+  {
+    "change_id": "CHG-027",
+    "project_id": "TLC-PRJ-027",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-027-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-027 (Gera's Greensville Sky Villas) with source attribution."
+  },
+  {
+    "change_id": "CHG-028",
+    "project_id": "TLC-PRJ-028",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-028-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-028 (Duville Riverdale Grand) with source attribution."
+  },
+  {
+    "change_id": "CHG-029",
+    "project_id": "TLC-PRJ-029",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-029-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-029 (Mantra Melange (Joypin Kharadi Riverside)) with source attribution."
+  },
+  {
+    "change_id": "CHG-030",
+    "project_id": "TLC-PRJ-030",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-030-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-030 (Venkatesh Vanaya) with source attribution."
+  },
+  {
+    "change_id": "CHG-031",
+    "project_id": "TLC-PRJ-031",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-031-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-031 (SSPL The Strand) with source attribution."
+  },
+  {
+    "change_id": "CHG-032",
+    "project_id": "TLC-PRJ-032",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-032-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-032 (Ganga Platino & Ganga Platinum B) with source attribution."
+  },
+  {
+    "change_id": "CHG-033",
+    "project_id": "TLC-PRJ-033",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-033-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-033 (Vilas Javdekar Yashwin Orizzonte) with source attribution."
+  },
+  {
+    "change_id": "CHG-034",
+    "project_id": "TLC-PRJ-034",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-034-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-034 (Kolte-Patil Tuscan Parkland) with source attribution."
+  },
+  {
+    "change_id": "CHG-035",
+    "project_id": "TLC-PRJ-035",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-035-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-035 (Kohinoor Kaleido) with source attribution."
+  },
+  {
+    "change_id": "CHG-036",
+    "project_id": "TLC-PRJ-036",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-036-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-036 (Marvel Zephyr & Marvel Cerise) with source attribution."
+  },
+  {
+    "change_id": "CHG-037",
+    "project_id": "TLC-PRJ-037",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-037-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-037 (Guardian Eastern Meadows) with source attribution."
+  },
+  {
+    "change_id": "CHG-038",
+    "project_id": "TLC-PRJ-038",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-038-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-038 (Panchshil Business Park East) with source attribution."
+  },
+  {
+    "change_id": "CHG-039",
+    "project_id": "TLC-PRJ-039",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-039-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-039 (Gaia Apex) with source attribution."
+  },
+  {
+    "change_id": "CHG-040",
+    "project_id": "TLC-PRJ-040",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-040-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-040 (Weikfield IT Citi Info Park) with source attribution."
+  },
+  {
+    "change_id": "CHG-041",
+    "project_id": "TLC-PRJ-041",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-041-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-041 (Precon Viman Avenue) with source attribution."
+  },
+  {
+    "change_id": "CHG-042",
+    "project_id": "TLC-PRJ-042",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-042-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-042 (Shubh Nirvana) with source attribution."
+  },
+  {
+    "change_id": "CHG-043",
+    "project_id": "TLC-PRJ-043",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-043-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-043 (Shubh Gateway) with source attribution."
+  },
+  {
+    "change_id": "CHG-044",
+    "project_id": "TLC-PRJ-044",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-044-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-044 (Oxy Beaumonde) with source attribution."
+  },
+  {
+    "change_id": "CHG-045",
+    "project_id": "TLC-PRJ-045",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-045-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-045 (Rohan Mithila) with source attribution."
+  },
+  {
+    "change_id": "CHG-046",
+    "project_id": "TLC-PRJ-046",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-046-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-046 (Cerebrum IT Park) with source attribution."
+  },
+  {
+    "change_id": "CHG-047",
+    "project_id": "TLC-PRJ-047",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-047-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-047 (Panchshil Avenue) with source attribution."
+  },
+  {
+    "change_id": "CHG-048",
+    "project_id": "TLC-PRJ-048",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-048-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-048 (The Collection by BramhaCorp) with source attribution."
+  },
+  {
+    "change_id": "CHG-049",
+    "project_id": "TLC-PRJ-049",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-049-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-049 (Nyati Evoque) with source attribution."
+  },
+  {
+    "change_id": "CHG-050",
+    "project_id": "TLC-PRJ-050",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-050-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-050 (Abhilasha Hermes Paras 3) with source attribution."
+  },
+  {
+    "change_id": "CHG-051",
+    "project_id": "TLC-PRJ-051",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-051-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-051 (Rohan Asaman) with source attribution."
+  },
+  {
+    "change_id": "CHG-052",
+    "project_id": "TLC-PRJ-052",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-052-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-052 (Kohinoor Business Tower KP Annexe) with source attribution."
+  },
+  {
+    "change_id": "CHG-053",
+    "project_id": "TLC-PRJ-053",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-053-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-053 (Merlin 18 East) with source attribution."
+  },
+  {
+    "change_id": "CHG-054",
+    "project_id": "TLC-PRJ-054",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-054-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-054 (Mantra Business Centre) with source attribution."
+  },
+  {
+    "change_id": "CHG-055",
+    "project_id": "TLC-PRJ-055",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-055-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-055 (Platinum Capital & A Advani Platinum One) with source attribution."
+  },
+  {
+    "change_id": "CHG-056",
+    "project_id": "TLC-PRJ-056",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-056-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-056 (Moonlight Melliza Towers) with source attribution."
+  },
+  {
+    "change_id": "CHG-057",
+    "project_id": "TLC-PRJ-057",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-057-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-057 (Godrej Elaris) with source attribution."
+  },
+  {
+    "change_id": "CHG-058",
+    "project_id": "TLC-PRJ-058",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-058-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-058 (Mantra Magnus) with source attribution."
+  },
+  {
+    "change_id": "CHG-059",
+    "project_id": "TLC-PRJ-059",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-059-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-059 (Godrej Aqua Vista & Godrej Infinity) with source attribution."
+  },
+  {
+    "change_id": "CHG-060",
+    "project_id": "TLC-PRJ-060",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-060-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-060 (Mantra Insignia & Mantra Mesmer) with source attribution."
+  },
+  {
+    "change_id": "CHG-061",
+    "project_id": "TLC-PRJ-061",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-061-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-061 (Cybercity Magarpatta) with source attribution."
+  },
+  {
+    "change_id": "CHG-062",
+    "project_id": "TLC-PRJ-062",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-062-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-062 (Amanora Park Town & Amanora Gateway Towers) with source attribution."
+  },
+  {
+    "change_id": "CHG-063",
+    "project_id": "TLC-PRJ-063",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-063-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-063 (Amanora Chambers) with source attribution."
+  },
+  {
+    "change_id": "CHG-064",
+    "project_id": "TLC-PRJ-064",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-064-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-064 (SP Infocity Pune) with source attribution."
+  },
+  {
+    "change_id": "CHG-065",
+    "project_id": "TLC-PRJ-065",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-065-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-065 (Joyville Hadapsar Annexe) with source attribution."
+  },
+  {
+    "change_id": "CHG-066",
+    "project_id": "TLC-PRJ-066",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-066-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-066 (Wildernest at SP Kingstown) with source attribution."
+  },
+  {
+    "change_id": "CHG-067",
+    "project_id": "TLC-PRJ-067",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-067-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-067 (One Residences by Burgundy (Mantra Luxury Line)) with source attribution."
+  },
+  {
+    "change_id": "CHG-068",
+    "project_id": "TLC-PRJ-068",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-068-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-068 (Kumar Park Infinia & Majestique Aqua) with source attribution."
+  },
+  {
+    "change_id": "CHG-069",
+    "project_id": "TLC-PRJ-069",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-069-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-069 (Commerzone Yerawada) with source attribution."
+  },
+  {
+    "change_id": "CHG-070",
+    "project_id": "TLC-PRJ-070",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-070-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-070 (Tech Park One & Business Bay Yerawada) with source attribution."
+  },
+  {
+    "change_id": "CHG-071",
+    "project_id": "TLC-PRJ-071",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-071-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-071 (Nyati Unitree) with source attribution."
+  },
+  {
+    "change_id": "CHG-072",
+    "project_id": "TLC-PRJ-072",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-072-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-072 (Kolte-Patil Ivy Estate & Springshire) with source attribution."
+  },
+  {
+    "change_id": "CHG-073",
+    "project_id": "TLC-PRJ-073",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-073-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-073 (Rohan Abhilasha (1, 2 & 3)) with source attribution."
+  },
+  {
+    "change_id": "CHG-074",
+    "project_id": "TLC-PRJ-074",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-074-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-074 (Nyati Era) with source attribution."
+  },
+  {
+    "change_id": "CHG-075",
+    "project_id": "TLC-PRJ-075",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-075-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-075 (Mantra Montana & Triaa Vasantam City Center) with source attribution."
+  },
+  {
+    "change_id": "CHG-076",
+    "project_id": "TLC-PRJ-076",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-076-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-076 (Bhandari 31 Palma Drive & Choice Goodwill Elements) with source attribution."
+  },
+  {
+    "change_id": "CHG-077",
+    "project_id": "TLC-PRJ-077",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-077-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-077 (Panchshil Business Park & Balewadi High Street) with source attribution."
+  },
+  {
+    "change_id": "CHG-078",
+    "project_id": "TLC-PRJ-078",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-078-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-078 (Kohinoor Business Tower Baner) with source attribution."
+  },
+  {
+    "change_id": "CHG-079",
+    "project_id": "TLC-PRJ-079",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-079-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-079 (Amar Business Park & Amar Tech Park) with source attribution."
+  },
+  {
+    "change_id": "CHG-080",
+    "project_id": "TLC-PRJ-080",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-080-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-080 (Embassy TechZone Hinjewadi) with source attribution."
+  },
+  {
+    "change_id": "CHG-081",
+    "project_id": "TLC-PRJ-081",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-081-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-081 (Panchshil Tech Park Hinjewadi & Quantum Towers) with source attribution."
+  },
+  {
+    "change_id": "CHG-082",
+    "project_id": "TLC-PRJ-082",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-082-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-082 (Gera's Imperium Rise) with source attribution."
+  },
+  {
+    "change_id": "CHG-083",
+    "project_id": "TLC-PRJ-083",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-083-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-083 (Rohan Ekam) with source attribution."
+  },
+  {
+    "change_id": "CHG-084",
+    "project_id": "TLC-PRJ-084",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-084-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-084 (Mantra Meridian & Mantra Monarch) with source attribution."
+  },
+  {
+    "change_id": "CHG-085",
+    "project_id": "TLC-PRJ-085",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-085-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-085 (Lodha Massimo) with source attribution."
+  },
+  {
+    "change_id": "CHG-086",
+    "project_id": "TLC-PRJ-086",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-086-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-086 (Nyati Emerald) with source attribution."
+  },
+  {
+    "change_id": "CHG-087",
+    "project_id": "TLC-PRJ-087",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-087-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-087 (VJ Portia Grande) with source attribution."
+  },
+  {
+    "change_id": "CHG-088",
+    "project_id": "TLC-PRJ-088",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-088-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-088 (Rohan Leher (1, 2 & 3) & Rohan Seher) with source attribution."
+  },
+  {
+    "change_id": "CHG-089",
+    "project_id": "TLC-PRJ-089",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-089-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-089 (Kolte-Patil Life Republic Township) with source attribution."
+  },
+  {
+    "change_id": "CHG-090",
+    "project_id": "TLC-PRJ-090",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-090-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-090 (Godrej Park World (The Aqua Retreat & Evergreen Square)) with source attribution."
+  },
+  {
+    "change_id": "CHG-091",
+    "project_id": "TLC-PRJ-091",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-091-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-091 (VTP Township Codename Blue Waters (Bellissimo, Volare, Earth 1, Monarque)) with source attribution."
+  },
+  {
+    "change_id": "CHG-092",
+    "project_id": "TLC-PRJ-092",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-092-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-092 (Rohan Nidita, Rohan Ipsita & Rohan Prathama) with source attribution."
+  },
+  {
+    "change_id": "CHG-093",
+    "project_id": "TLC-PRJ-093",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-093-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-093 (Saheel ITrend Futura & ITrend Vesta) with source attribution."
+  },
+  {
+    "change_id": "CHG-094",
+    "project_id": "TLC-PRJ-094",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-094-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-094 (Platinum 9 World Tower) with source attribution."
+  },
+  {
+    "change_id": "CHG-095",
+    "project_id": "TLC-PRJ-095",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-095-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-095 (VTP Altitude & Kolte-Patil City Avenue) with source attribution."
+  },
+  {
+    "change_id": "CHG-096",
+    "project_id": "TLC-PRJ-096",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-096-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-096 (ANP Bizsquare & ANP Ultimus) with source attribution."
+  },
+  {
+    "change_id": "CHG-097",
+    "project_id": "TLC-PRJ-097",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-097-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-097 (Lodha Altero) with source attribution."
+  },
+  {
+    "change_id": "CHG-098",
+    "project_id": "TLC-PRJ-098",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-098-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-098 (Kolte-Patil Western Avenue) with source attribution."
+  },
+  {
+    "change_id": "CHG-099",
+    "project_id": "TLC-PRJ-099",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-099-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-099 (Vilas Javdekar Yashwin Supernova & Urbo Centro) with source attribution."
+  },
+  {
+    "change_id": "CHG-100",
+    "project_id": "TLC-PRJ-100",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-100-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-100 (Rohan Viti & Rohan Tarang) with source attribution."
+  },
+  {
+    "change_id": "CHG-101",
+    "project_id": "TLC-PRJ-101",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-101-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-101 (PK Canopus & Futuristic Millefiori) with source attribution."
+  },
+  {
+    "change_id": "CHG-102",
+    "project_id": "TLC-PRJ-102",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-102-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-102 (Rohan Ananta & Kohinoor Sapphire 2) with source attribution."
+  },
+  {
+    "change_id": "CHG-103",
+    "project_id": "TLC-PRJ-103",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-103-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-103 (Shiv Sai Millenium) with source attribution."
+  },
+  {
+    "change_id": "CHG-104",
+    "project_id": "TLC-PRJ-104",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-104-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-104 (Kolte-Patil 24K Stargaze & Nyati Equinox) with source attribution."
+  },
+  {
+    "change_id": "CHG-105",
+    "project_id": "TLC-PRJ-105",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-105-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-105 (Lodha Palais) with source attribution."
+  },
+  {
+    "change_id": "CHG-106",
+    "project_id": "TLC-PRJ-106",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-106-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-106 (Kalash Codename The Link & Livience Aleenta) with source attribution."
+  },
+  {
+    "change_id": "CHG-107",
+    "project_id": "TLC-PRJ-107",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-107-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-107 (Mantra Mistara & VTP Sierra) with source attribution."
+  },
+  {
+    "change_id": "CHG-108",
+    "project_id": "TLC-PRJ-108",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-108-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-108 (Godrej Nexus & Kohinoor World Towers) with source attribution."
+  },
+  {
+    "change_id": "CHG-109",
+    "project_id": "TLC-PRJ-109",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-109-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-109 (Shubh Veda & V-One Akurdi) with source attribution."
+  },
+  {
+    "change_id": "CHG-110",
+    "project_id": "TLC-PRJ-110",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-110-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-110 (Kolte-Patil 24K Manor, 24K Atria & 24K Opula) with source attribution."
+  },
+  {
+    "change_id": "CHG-111",
+    "project_id": "TLC-PRJ-111",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-111-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-111 (Pharande L-Axis & Woodsville) with source attribution."
+  },
+  {
+    "change_id": "CHG-112",
+    "project_id": "TLC-PRJ-112",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-112-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-112 (Pride World City (Montreal & Mansukhlal Girindu)) with source attribution."
+  },
+  {
+    "change_id": "CHG-113",
+    "project_id": "TLC-PRJ-113",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-113-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-113 (Kolte-Patil Little Earth) with source attribution."
+  },
+  {
+    "change_id": "CHG-114",
+    "project_id": "TLC-PRJ-114",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-114-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-114 (Tribeca Highstreet & The Ark Voyage) with source attribution."
+  },
+  {
+    "change_id": "CHG-115",
+    "project_id": "TLC-PRJ-115",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-115-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-115 (Nyati Esteban II & Nyati Exuberance) with source attribution."
+  },
+  {
+    "change_id": "CHG-116",
+    "project_id": "TLC-PRJ-116",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-116-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-116 (Godrej Greens & Kolte-Patil Three Jewels) with source attribution."
+  },
+  {
+    "change_id": "CHG-117",
+    "project_id": "TLC-PRJ-117",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-117-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-117 (Rohan Kritika & Mantra 7 Hills) with source attribution."
+  },
+  {
+    "change_id": "CHG-118",
+    "project_id": "TLC-PRJ-118",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-118-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-118 (Panchshil Tech Park & ICC Trade Tower Shivajinagar) with source attribution."
+  },
+  {
+    "change_id": "CHG-119",
+    "project_id": "TLC-PRJ-119",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-119-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-119 (Nyati Evania & Nyati Emblem) with source attribution."
+  },
+  {
+    "change_id": "CHG-120",
+    "project_id": "TLC-PRJ-120",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-120-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-120 (1 Modibaug & Rohan Garima) with source attribution."
+  },
+  {
+    "change_id": "CHG-121",
+    "project_id": "TLC-PRJ-121",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-121-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-121 (Lodha Belmondo & Mantra 24 West) with source attribution."
+  },
+  {
+    "change_id": "CHG-122",
+    "project_id": "TLC-PRJ-122",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-122-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-122 (Rohan Anand & Mantra City 360) with source attribution."
+  },
+  {
+    "change_id": "CHG-123",
+    "project_id": "TLC-PRJ-123",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-123-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-123 (ESR Chakan 1, Chakan 2 & Talegaon Logistics Parks) with source attribution."
+  },
+  {
+    "change_id": "CHG-124",
+    "project_id": "TLC-PRJ-124",
+    "change_timestamp": "2026-11-10T02:15:40+05:30",
+    "change_type": "INITIAL_MASTER_IMPORT",
+    "changed_by": "TLC-1 Bulk Research & ETL Pipeline v1.0",
+    "source_id": "SRC-124-1",
+    "conflict_resolution_policy": "PRESERVE_HIGHER_TRUST_SOURCE_AND_NEVER_OVERWRITE_EMPLOYEE_INVENTORY",
+    "change_summary": "Created canonical project record TLC-PRJ-124 (IndoSpace Park Chakan & Ranjangaon) with source attribution."
+  }
+]

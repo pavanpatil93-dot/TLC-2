@@ -1,0 +1,8 @@
+{
+  "name": "The Leasing Company",
+  "description": "The Leasing Company — Commercial & Residential Real Estate Inventory, CRM, and Team Workspace.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

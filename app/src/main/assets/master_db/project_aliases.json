@@ -1,0 +1,1244 @@
+[
+  {
+    "alias_id": "ALS-001-1",
+    "project_id": "TLC-PRJ-001",
+    "canonical_name": "EON Free Zone Phase 1",
+    "alias_name": "EON IT Park Phase I",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Panchshil Realty Official & myHQ",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-002-1",
+    "project_id": "TLC-PRJ-002",
+    "canonical_name": "EON Free Zone Phase 2",
+    "alias_name": "EON IT Park Phase II",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Panchshil Realty Official & myHQ",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-003-1",
+    "project_id": "TLC-PRJ-003",
+    "canonical_name": "World Trade Center Pune",
+    "alias_name": "WTC Pune Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "WTCA Official & 99acres",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-004-1",
+    "project_id": "TLC-PRJ-004",
+    "canonical_name": "Gera Commerzone Kharadi",
+    "alias_name": "Gera SEZ Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Gera Official Website",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-005-1",
+    "project_id": "TLC-PRJ-005",
+    "canonical_name": "International Tech Park Pune (ITPP) Kharadi",
+    "alias_name": "Ascendas ITPP Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Daftar Commercial Directory",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-006-1",
+    "project_id": "TLC-PRJ-006",
+    "canonical_name": "Panchshil Business Hub Kharadi",
+    "alias_name": "Panchshil Business Hub",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Panchshil Realty & JLL",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-007-1",
+    "project_id": "TLC-PRJ-007",
+    "canonical_name": "The Platinum Towers",
+    "alias_name": "Platinum Towers Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & CBRE",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-008-1",
+    "project_id": "TLC-PRJ-008",
+    "canonical_name": "Allure Business Hub",
+    "alias_name": "Allure Business Hub Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres Commercial Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-009-1",
+    "project_id": "TLC-PRJ-009",
+    "canonical_name": "Gagan Grant Bay",
+    "alias_name": "Grant Bay Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres Commercial Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-010-1",
+    "project_id": "TLC-PRJ-010",
+    "canonical_name": "VJ IndiWorks Kharadi Central",
+    "alias_name": "VJ Indi Works Kharadi Central",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & Vilas Javdekar",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-011-1",
+    "project_id": "TLC-PRJ-011",
+    "canonical_name": "Vascon Tower of Ascend",
+    "alias_name": "Tower of Ascend Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres Commercial Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-012-1",
+    "project_id": "TLC-PRJ-012",
+    "canonical_name": "GSV Vertica",
+    "alias_name": "GSV Vertica Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres Commercial Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-013-1",
+    "project_id": "TLC-PRJ-013",
+    "canonical_name": "Kolte-Patil Downtown City Vista",
+    "alias_name": "City Vista Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Kolte-Patil Official & 99acres",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-014-1",
+    "project_id": "TLC-PRJ-014",
+    "canonical_name": "Lodha Kharadi Signet",
+    "alias_name": "Lodha Signet Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & Lodha Group",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-015-1",
+    "project_id": "TLC-PRJ-015",
+    "canonical_name": "Omicron Business Landmarks",
+    "alias_name": "Omicron Business Landmarks Wagholi-Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres Commercial Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-016-1",
+    "project_id": "TLC-PRJ-016",
+    "canonical_name": "Panchshil Towers",
+    "alias_name": "Panchshil Towers Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & Panchshil Realty",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-017-1",
+    "project_id": "TLC-PRJ-017",
+    "canonical_name": "Panchshil EON Waterfront",
+    "alias_name": "EON Waterfront Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & MagicBricks",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-018-1",
+    "project_id": "TLC-PRJ-018",
+    "canonical_name": "Godrej Ivara (Godrej Upper Kharadi)",
+    "alias_name": "Godrej Upper Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "MagicBricks & Housing.com",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-019-1",
+    "project_id": "TLC-PRJ-019",
+    "canonical_name": "Lodha Giardino",
+    "alias_name": "Lodha Giardino Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & Lodha Group",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-020-1",
+    "project_id": "TLC-PRJ-020",
+    "canonical_name": "Lodha Estilo",
+    "alias_name": "Lodha Estilo Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & Lodha Group",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-021-1",
+    "project_id": "TLC-PRJ-021",
+    "canonical_name": "Lodha Camelot",
+    "alias_name": "Lodha Camelot Upper Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Housing.com & Lodha Group",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-022-1",
+    "project_id": "TLC-PRJ-022",
+    "canonical_name": "VTP Township Codename Pegasus",
+    "alias_name": "VTP Pegasus Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "VTP Realty Official & 99acres",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-023-1",
+    "project_id": "TLC-PRJ-023",
+    "canonical_name": "VTP Dolce Vita",
+    "alias_name": "VTP Dolce Vita New Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "VTP Realty Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-024-1",
+    "project_id": "TLC-PRJ-024",
+    "canonical_name": "Flamante by VTP Luxe",
+    "alias_name": "Flamante By VTP Luxe Phase 1",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "VTP Realty & PropTiger",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-025-1",
+    "project_id": "TLC-PRJ-025",
+    "canonical_name": "VTP Velvet Villas",
+    "alias_name": "VTP Velvet Villa Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & VTP Realty",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-026-1",
+    "project_id": "TLC-PRJ-026",
+    "canonical_name": "Gera's Avive Towers",
+    "alias_name": "Gera Avive Towers East Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Gera Official & Housing.com",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-027-1",
+    "project_id": "TLC-PRJ-027",
+    "canonical_name": "Gera's Greensville Sky Villas",
+    "alias_name": "Gera Greensville Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & Gera Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-028-1",
+    "project_id": "TLC-PRJ-028",
+    "canonical_name": "Duville Riverdale Grand",
+    "alias_name": "Riverdale Grand Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-029-1",
+    "project_id": "TLC-PRJ-029",
+    "canonical_name": "Mantra Melange (Joypin Kharadi Riverside)",
+    "alias_name": "Mantra Melange Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Mantra Official & Housing.com",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-030-1",
+    "project_id": "TLC-PRJ-030",
+    "canonical_name": "Venkatesh Vanaya",
+    "alias_name": "Venkatesh Vanaya Wing I & J Phase 2",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Housing.com & MagicBricks",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-031-1",
+    "project_id": "TLC-PRJ-031",
+    "canonical_name": "SSPL The Strand",
+    "alias_name": "The Strand Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "MagicBricks & 99acres",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-032-1",
+    "project_id": "TLC-PRJ-032",
+    "canonical_name": "Ganga Platino & Ganga Platinum B",
+    "alias_name": "Goel Platinum Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & Housing.com",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-033-1",
+    "project_id": "TLC-PRJ-033",
+    "canonical_name": "Vilas Javdekar Yashwin Orizzonte",
+    "alias_name": "Yashwin Orizzonte Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Vilas Javdekar & MahaRERA Directory",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-034-1",
+    "project_id": "TLC-PRJ-034",
+    "canonical_name": "Kolte-Patil Tuscan Parkland",
+    "alias_name": "Tuscan Estate Signature Meadows",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Kolte-Patil Official & 99acres",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-035-1",
+    "project_id": "TLC-PRJ-035",
+    "canonical_name": "Kohinoor Kaleido",
+    "alias_name": "Kohinoor Kaleido Phase 2",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Kohinoor Official & Housing.com",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-036-1",
+    "project_id": "TLC-PRJ-036",
+    "canonical_name": "Marvel Zephyr & Marvel Cerise",
+    "alias_name": "Marvel Zephyr Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & MagicBricks",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-037-1",
+    "project_id": "TLC-PRJ-037",
+    "canonical_name": "Guardian Eastern Meadows",
+    "alias_name": "Eastern Meadows Kharadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "PropTiger Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-038-1",
+    "project_id": "TLC-PRJ-038",
+    "canonical_name": "Panchshil Business Park East",
+    "alias_name": "Panchshil Business Park Viman Nagar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Panchshil Official & JLL",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-039-1",
+    "project_id": "TLC-PRJ-039",
+    "canonical_name": "Gaia Apex",
+    "alias_name": "Gaia Apex Viman Nagar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "JLL Commercial Directory",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-040-1",
+    "project_id": "TLC-PRJ-040",
+    "canonical_name": "Weikfield IT Citi Info Park",
+    "alias_name": "Weikfield 2 Pune",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Daftar & MagicBricks",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-041-1",
+    "project_id": "TLC-PRJ-041",
+    "canonical_name": "Precon Viman Avenue",
+    "alias_name": "Viman Avenue Viman Nagar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Housing.com Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-042-1",
+    "project_id": "TLC-PRJ-042",
+    "canonical_name": "Shubh Nirvana",
+    "alias_name": "Shubh Nirvana Phase I & II",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Housing.com Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-043-1",
+    "project_id": "TLC-PRJ-043",
+    "canonical_name": "Shubh Gateway",
+    "alias_name": "Shubh Gateway Viman Nagar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Housing.com Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-044-1",
+    "project_id": "TLC-PRJ-044",
+    "canonical_name": "Oxy Beaumonde",
+    "alias_name": "Oxy Beaumonde Phase 1",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Housing.com & CommonFloor",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-045-1",
+    "project_id": "TLC-PRJ-045",
+    "canonical_name": "Rohan Mithila",
+    "alias_name": "Rohan Mithila Viman Nagar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Rohan Builders Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-046-1",
+    "project_id": "TLC-PRJ-046",
+    "canonical_name": "Cerebrum IT Park",
+    "alias_name": "Cerebrum IT Park Kalyani Nagar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "MagicBricks & InfoBitWiz",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-047-1",
+    "project_id": "TLC-PRJ-047",
+    "canonical_name": "Panchshil Avenue",
+    "alias_name": "Panchshil Avenue Kalyani Nagar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Daftar & Panchshil Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-048-1",
+    "project_id": "TLC-PRJ-048",
+    "canonical_name": "The Collection by BramhaCorp",
+    "alias_name": "BramhaCorp The Collection",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "BramhaCorp Official Website",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-049-1",
+    "project_id": "TLC-PRJ-049",
+    "canonical_name": "Nyati Evoque",
+    "alias_name": "Nyati Evoque Kalyani Nagar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Nyati Group Official & Housing.com",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-050-1",
+    "project_id": "TLC-PRJ-050",
+    "canonical_name": "Abhilasha Hermes Paras 3",
+    "alias_name": "Hermes Paras 3 Kalyani Nagar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "CommonFloor Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-051-1",
+    "project_id": "TLC-PRJ-051",
+    "canonical_name": "Rohan Asaman",
+    "alias_name": "Rohan Asaman Koregaon Park",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Rohan Builders Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-052-1",
+    "project_id": "TLC-PRJ-052",
+    "canonical_name": "Kohinoor Business Tower KP Annexe",
+    "alias_name": "Kohinoor Business Towers Koregaon Park Annexe",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Kohinoor Official & 99acres",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-053-1",
+    "project_id": "TLC-PRJ-053",
+    "canonical_name": "Merlin 18 East",
+    "alias_name": "18 East by Merlin Group",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres Commercial Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-054-1",
+    "project_id": "TLC-PRJ-054",
+    "canonical_name": "Mantra Business Centre",
+    "alias_name": "Mantra Business Centre Upper KP",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Mantra Properties Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-055-1",
+    "project_id": "TLC-PRJ-055",
+    "canonical_name": "Platinum Capital & A Advani Platinum One",
+    "alias_name": "Platinum Capital Retail Mundhwa",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres Commercial Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-056-1",
+    "project_id": "TLC-PRJ-056",
+    "canonical_name": "Moonlight Melliza Towers",
+    "alias_name": "Melliza Towers Mundhwa",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres Commercial Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-057-1",
+    "project_id": "TLC-PRJ-057",
+    "canonical_name": "Godrej Elaris",
+    "alias_name": "Godrej Elaris Mundhwa",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & Housing.com",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-058-1",
+    "project_id": "TLC-PRJ-058",
+    "canonical_name": "Mantra Magnus",
+    "alias_name": "Mantra Magnus Mundhwa",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Mantra Properties Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-059-1",
+    "project_id": "TLC-PRJ-059",
+    "canonical_name": "Godrej Aqua Vista & Godrej Infinity",
+    "alias_name": "Godrej Infinity Keshav Nagar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Godrej Properties Official & Housing.com",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-060-1",
+    "project_id": "TLC-PRJ-060",
+    "canonical_name": "Mantra Insignia & Mantra Mesmer",
+    "alias_name": "Mantra Mesmer Keshav Nagar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Mantra Properties Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-061-1",
+    "project_id": "TLC-PRJ-061",
+    "canonical_name": "Cybercity Magarpatta",
+    "alias_name": "Magarpatta Cybercity IT Park",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "MagicBricks & InfoBitWiz",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-062-1",
+    "project_id": "TLC-PRJ-062",
+    "canonical_name": "Amanora Park Town & Amanora Gateway Towers",
+    "alias_name": "Amanora Gateway Towers",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Amanora Official & MagicBricks",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-063-1",
+    "project_id": "TLC-PRJ-063",
+    "canonical_name": "Amanora Chambers",
+    "alias_name": "Amanora Chambers Hadapsar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & MagicBricks",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-064-1",
+    "project_id": "TLC-PRJ-064",
+    "canonical_name": "SP Infocity Pune",
+    "alias_name": "Ozone SP Infocity Fursungi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "myHQ & InfoBitWiz",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-065-1",
+    "project_id": "TLC-PRJ-065",
+    "canonical_name": "Joyville Hadapsar Annexe",
+    "alias_name": "Shapoorji Pallonji Joyville Hadapsar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "MagicBricks & Housing.com",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-066-1",
+    "project_id": "TLC-PRJ-066",
+    "canonical_name": "Wildernest at SP Kingstown",
+    "alias_name": "Wildernest Shewalewadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Housing.com Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-067-1",
+    "project_id": "TLC-PRJ-067",
+    "canonical_name": "One Residences by Burgundy (Mantra Luxury Line)",
+    "alias_name": "Mantra One Residences Magarpatta",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Mantra Properties Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-068-1",
+    "project_id": "TLC-PRJ-068",
+    "canonical_name": "Kumar Park Infinia & Majestique Aqua",
+    "alias_name": "Kumar Park Infinia Phursungi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "CityAir Pune Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-069-1",
+    "project_id": "TLC-PRJ-069",
+    "canonical_name": "Commerzone Yerawada",
+    "alias_name": "Mindspace Commerzone Yerawada",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Mindspace REIT Official & FloorTap",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-070-1",
+    "project_id": "TLC-PRJ-070",
+    "canonical_name": "Tech Park One & Business Bay Yerawada",
+    "alias_name": "Tech Park One Yerawada",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Smartworks & Daftar",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-071-1",
+    "project_id": "TLC-PRJ-071",
+    "canonical_name": "Nyati Unitree",
+    "alias_name": "Nyati Unitree Yerawada",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "CBRE & Nyati Group",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-072-1",
+    "project_id": "TLC-PRJ-072",
+    "canonical_name": "Kolte-Patil Ivy Estate & Springshire",
+    "alias_name": "Ivy Estate Wagholi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Kolte-Patil Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-073-1",
+    "project_id": "TLC-PRJ-073",
+    "canonical_name": "Rohan Abhilasha (1, 2 & 3)",
+    "alias_name": "Rohan Abhilasha 2 & 3 Wagholi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Rohan Builders Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-074-1",
+    "project_id": "TLC-PRJ-074",
+    "canonical_name": "Nyati Era",
+    "alias_name": "Nyati Era IV Dhanori",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Nyati Official & Housing.com",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-075-1",
+    "project_id": "TLC-PRJ-075",
+    "canonical_name": "Mantra Montana & Triaa Vasantam City Center",
+    "alias_name": "Mantra Montana Dhanori",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Mantra Official & 99acres",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-076-1",
+    "project_id": "TLC-PRJ-076",
+    "canonical_name": "Bhandari 31 Palma Drive & Choice Goodwill Elements",
+    "alias_name": "31 Palma Drive Lohegaon",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Housing.com Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-077-1",
+    "project_id": "TLC-PRJ-077",
+    "canonical_name": "Panchshil Business Park & Balewadi High Street",
+    "alias_name": "Panchshil Business Park Balewadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "JLL & Panchshil Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-078-1",
+    "project_id": "TLC-PRJ-078",
+    "canonical_name": "Kohinoor Business Tower Baner",
+    "alias_name": "KBT Baner",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Kohinoor Group Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-079-1",
+    "project_id": "TLC-PRJ-079",
+    "canonical_name": "Amar Business Park & Amar Tech Park",
+    "alias_name": "Amar Tech Park Balewadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "TheBusinessEstate & Rohan Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-080-1",
+    "project_id": "TLC-PRJ-080",
+    "canonical_name": "Embassy TechZone Hinjewadi",
+    "alias_name": "Embassy TechZone Ganges & Hudson",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "JLL Commercial Directory",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-081-1",
+    "project_id": "TLC-PRJ-081",
+    "canonical_name": "Panchshil Tech Park Hinjewadi & Quantum Towers",
+    "alias_name": "Panchshil Tech Park Hinjewadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & JLL",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-082-1",
+    "project_id": "TLC-PRJ-082",
+    "canonical_name": "Gera's Imperium Rise",
+    "alias_name": "Gera Imperium Rise Hinjewadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Gera Official & 99acres",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-083-1",
+    "project_id": "TLC-PRJ-083",
+    "canonical_name": "Rohan Ekam",
+    "alias_name": "Rohan Ekam Balewadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Rohan Builders Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-084-1",
+    "project_id": "TLC-PRJ-084",
+    "canonical_name": "Mantra Meridian & Mantra Monarch",
+    "alias_name": "Meridian at Riverside Balewadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Mantra Properties Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-085-1",
+    "project_id": "TLC-PRJ-085",
+    "canonical_name": "Lodha Massimo",
+    "alias_name": "Lodha Massimo Baner",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Lodha Group Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-086-1",
+    "project_id": "TLC-PRJ-086",
+    "canonical_name": "Nyati Emerald",
+    "alias_name": "Nyati Emerald Baner",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Nyati Group Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-087-1",
+    "project_id": "TLC-PRJ-087",
+    "canonical_name": "VJ Portia Grande",
+    "alias_name": "Vilas Javdekar Portia Grand Baner",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Propsearchs & Vilas Javdekar",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-088-1",
+    "project_id": "TLC-PRJ-088",
+    "canonical_name": "Rohan Leher (1, 2 & 3) & Rohan Seher",
+    "alias_name": "Rohan Leher Baner",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Rohan Builders Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-089-1",
+    "project_id": "TLC-PRJ-089",
+    "canonical_name": "Kolte-Patil Life Republic Township",
+    "alias_name": "Life Republic Hinjewadi-Marunji",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Kolte-Patil Official & 99acres",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-090-1",
+    "project_id": "TLC-PRJ-090",
+    "canonical_name": "Godrej Park World (The Aqua Retreat & Evergreen Square)",
+    "alias_name": "Godrej Park World Hinjewadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Godrej Official & 99acres",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-091-1",
+    "project_id": "TLC-PRJ-091",
+    "canonical_name": "VTP Township Codename Blue Waters (Bellissimo, Volare, Earth 1, Monarque)",
+    "alias_name": "VTP Blue Waters Mahalunge-Hinjewadi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "VTP Realty Official & 99acres",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-092-1",
+    "project_id": "TLC-PRJ-092",
+    "canonical_name": "Rohan Nidita, Rohan Ipsita & Rohan Prathama",
+    "alias_name": "Rohan Nidita Hinjewadi Phase 1",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Rohan Builders Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-093-1",
+    "project_id": "TLC-PRJ-093",
+    "canonical_name": "Saheel ITrend Futura & ITrend Vesta",
+    "alias_name": "ITrend Futura Baner NX",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Propsearchs Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-094-1",
+    "project_id": "TLC-PRJ-094",
+    "canonical_name": "Platinum 9 World Tower",
+    "alias_name": "Platinum 9 World Tower Wakad",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres Commercial Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-095-1",
+    "project_id": "TLC-PRJ-095",
+    "canonical_name": "VTP Altitude & Kolte-Patil City Avenue",
+    "alias_name": "VTP Altitude Wakad",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres Commercial Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-096-1",
+    "project_id": "TLC-PRJ-096",
+    "canonical_name": "ANP Bizsquare & ANP Ultimus",
+    "alias_name": "Five Star ANP Bizsquare Wakad",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-097-1",
+    "project_id": "TLC-PRJ-097",
+    "canonical_name": "Lodha Altero",
+    "alias_name": "Lodha Altero Wakad",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres & Lodha Group",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-098-1",
+    "project_id": "TLC-PRJ-098",
+    "canonical_name": "Kolte-Patil Western Avenue",
+    "alias_name": "Western Avenue Wakad",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "MagicBricks & Kolte-Patil",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-099-1",
+    "project_id": "TLC-PRJ-099",
+    "canonical_name": "Vilas Javdekar Yashwin Supernova & Urbo Centro",
+    "alias_name": "Yashwin Supernova Wakad",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Vilas Javdekar Official & 99acres",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-100-1",
+    "project_id": "TLC-PRJ-100",
+    "canonical_name": "Rohan Viti & Rohan Tarang",
+    "alias_name": "Rohan Viti Wakad",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Rohan Builders Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-101-1",
+    "project_id": "TLC-PRJ-101",
+    "canonical_name": "PK Canopus & Futuristic Millefiori",
+    "alias_name": "PK Canopus Wakad",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "MagicBricks RERA Directory",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-102-1",
+    "project_id": "TLC-PRJ-102",
+    "canonical_name": "Rohan Ananta & Kohinoor Sapphire 2",
+    "alias_name": "Rohan Ananta Tathawade",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Rohan Official & Kohinoor",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-103-1",
+    "project_id": "TLC-PRJ-103",
+    "canonical_name": "Shiv Sai Millenium",
+    "alias_name": "Sai Millenium Punawale",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "99acres Commercial Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-104-1",
+    "project_id": "TLC-PRJ-104",
+    "canonical_name": "Kolte-Patil 24K Stargaze & Nyati Equinox",
+    "alias_name": "24K Stargaze Bavdhan",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Kolte-Patil & Nyati Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-105-1",
+    "project_id": "TLC-PRJ-105",
+    "canonical_name": "Lodha Palais",
+    "alias_name": "Lodha Palais Kothrud",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Lodha Group Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-106-1",
+    "project_id": "TLC-PRJ-106",
+    "canonical_name": "Kalash Codename The Link & Livience Aleenta",
+    "alias_name": "Codename The Link Pashan",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Xprop Pune Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-107-1",
+    "project_id": "TLC-PRJ-107",
+    "canonical_name": "Mantra Mistara & VTP Sierra",
+    "alias_name": "Mantra Mistara Sus",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Mantra & VTP Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-108-1",
+    "project_id": "TLC-PRJ-108",
+    "canonical_name": "Godrej Nexus & Kohinoor World Towers",
+    "alias_name": "Godrej Nexus Pimpri-Chinchwad",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Godrej Launch Portal & Kohinoor",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-109-1",
+    "project_id": "TLC-PRJ-109",
+    "canonical_name": "Shubh Veda & V-One Akurdi",
+    "alias_name": "Shubh Veda Akurdi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "BuyIndiaHomes & 99acres",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-110-1",
+    "project_id": "TLC-PRJ-110",
+    "canonical_name": "Kolte-Patil 24K Manor, 24K Atria & 24K Opula",
+    "alias_name": "24K Manor Pimple Nilakh",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Kolte-Patil Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-111-1",
+    "project_id": "TLC-PRJ-111",
+    "canonical_name": "Pharande L-Axis & Woodsville",
+    "alias_name": "Pharande L Axis Spine Road Moshi",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Housing.com & MahaRERA Directory",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-112-1",
+    "project_id": "TLC-PRJ-112",
+    "canonical_name": "Pride World City (Montreal & Mansukhlal Girindu)",
+    "alias_name": "Pride Montreal Charholi Budruk",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Housing.com & AddressOfChoice",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-113-1",
+    "project_id": "TLC-PRJ-113",
+    "canonical_name": "Kolte-Patil Little Earth",
+    "alias_name": "Little Earth Kiwale-Ravet",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Kolte-Patil Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-114-1",
+    "project_id": "TLC-PRJ-114",
+    "canonical_name": "Tribeca Highstreet & The Ark Voyage",
+    "alias_name": "Tribeca Highstreet NIBM",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "RealEstateIndia Portal",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-115-1",
+    "project_id": "TLC-PRJ-115",
+    "canonical_name": "Nyati Esteban II & Nyati Exuberance",
+    "alias_name": "Nyati Esteban Undri",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Nyati Group Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-116-1",
+    "project_id": "TLC-PRJ-116",
+    "canonical_name": "Godrej Greens & Kolte-Patil Three Jewels",
+    "alias_name": "Three Jewels Katraj-Kondhwa",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Kolte-Patil & Godrej Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-117-1",
+    "project_id": "TLC-PRJ-117",
+    "canonical_name": "Rohan Kritika & Mantra 7 Hills",
+    "alias_name": "Rohan Kritika Sinhagad Road",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Rohan & Mantra Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-118-1",
+    "project_id": "TLC-PRJ-118",
+    "canonical_name": "Panchshil Tech Park & ICC Trade Tower Shivajinagar",
+    "alias_name": "ICC Tech Park Shivajinagar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "JLL & MagicBricks",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-119-1",
+    "project_id": "TLC-PRJ-119",
+    "canonical_name": "Nyati Evania & Nyati Emblem",
+    "alias_name": "Nyati Evania Sadashiv Peth",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Nyati Official & Housing.com",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-120-1",
+    "project_id": "TLC-PRJ-120",
+    "canonical_name": "1 Modibaug & Rohan Garima",
+    "alias_name": "Rohan 1 Modibaug Shivajinagar",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Rohan Builders Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-121-1",
+    "project_id": "TLC-PRJ-121",
+    "canonical_name": "Lodha Belmondo & Mantra 24 West",
+    "alias_name": "Lodha Belmondo Gahunje",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Lodha Official & MahaRERA",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-122-1",
+    "project_id": "TLC-PRJ-122",
+    "canonical_name": "Rohan Anand & Mantra City 360",
+    "alias_name": "Rohan Anand Somatane",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Rohan & Mantra Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-123-1",
+    "project_id": "TLC-PRJ-123",
+    "canonical_name": "ESR Chakan 1, Chakan 2 & Talegaon Logistics Parks",
+    "alias_name": "ESR Chakan Industrial & Logistics Park",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "ESR India Official",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-124-1",
+    "project_id": "TLC-PRJ-124",
+    "canonical_name": "IndoSpace Park Chakan & Ranjangaon",
+    "alias_name": "IndoSpace Industrial Park Ranjangaon",
+    "alias_type": "Portal / Search Alternate Name",
+    "source_portal": "Justdial & IndoSpace Directory",
+    "deduplication_rule": "Matched via Developer + Locality + RERA/Road Identifier"
+  },
+  {
+    "alias_id": "ALS-DUP-001",
+    "project_id": "TLC-PRJ-001",
+    "canonical_name": "EON Free Zone Phase 1",
+    "alias_name": "EON IT Park Kharadi Cluster A/B/C/D",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "99acres / NoBroker Portal Variant",
+    "deduplication_rule": "Merged portal cluster listings into canonical EON Free Zone Phase 1"
+  },
+  {
+    "alias_id": "ALS-DUP-002",
+    "project_id": "TLC-PRJ-003",
+    "canonical_name": "World Trade Center Pune",
+    "alias_name": "WTC Kharadi Pune Tower 1-5",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "MagicBricks / OfficeHub Variant",
+    "deduplication_rule": "Merged tower-level portal duplicates into canonical World Trade Center Pune"
+  },
+  {
+    "alias_id": "ALS-DUP-003",
+    "project_id": "TLC-PRJ-010",
+    "canonical_name": "VJ IndiWorks Kharadi Central",
+    "alias_name": "VJ Indi Works Kharadi Central",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "99acres Spacing Variant",
+    "deduplication_rule": "Deduplicated 'VJ Indi Works Kharadi Central' vs 'VJ IndiWorks Kharadi Central' on 99acres"
+  },
+  {
+    "alias_id": "ALS-DUP-004",
+    "project_id": "TLC-PRJ-018",
+    "canonical_name": "Godrej Ivara (Godrej Upper Kharadi)",
+    "alias_name": "Godrej Upper Kharadi / Godrej Kharadi",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "MagicBricks Pre-Launch Variant",
+    "deduplication_rule": "Merged pre-launch 'Godrej Upper Kharadi' into canonical 'Godrej Ivara'"
+  },
+  {
+    "alias_id": "ALS-DUP-005",
+    "project_id": "TLC-PRJ-022",
+    "canonical_name": "VTP Township Codename Pegasus",
+    "alias_name": "VTP Pegasus Luxe / Codename Pegasus",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "Portal Marketing Name Variant",
+    "deduplication_rule": "Merged sales-office portal alias into Township Codename Pegasus"
+  },
+  {
+    "alias_id": "ALS-DUP-006",
+    "project_id": "TLC-PRJ-029",
+    "canonical_name": "Mantra Melange (Joypin Kharadi Riverside)",
+    "alias_name": "Mantra Melange Joypin Kharadi Riverside",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "Channel Partner RERA Variant",
+    "deduplication_rule": "Linked JV name 'Joypin Kharadi Riverside' (RERA P52100079582) to Mantra Melange"
+  },
+  {
+    "alias_id": "ALS-DUP-007",
+    "project_id": "TLC-PRJ-038",
+    "canonical_name": "Panchshil Business Park East",
+    "alias_name": "Panchshil Tech Park Viman Nagar",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "Gladwins / Daftar Portal Variant",
+    "deduplication_rule": "Merged portal name into Panchshil Business Park East"
+  },
+  {
+    "alias_id": "ALS-DUP-008",
+    "project_id": "TLC-PRJ-048",
+    "canonical_name": "The Collection by BramhaCorp",
+    "alias_name": "The Collection New Kalyani Nagar",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "BramhaCorp Marketing Location Alias",
+    "deduplication_rule": "Normalized marketing locality 'New Kalyani Nagar' to administrative locality Kalyani Nagar / Wadgaon Sheri"
+  },
+  {
+    "alias_id": "ALS-DUP-009",
+    "project_id": "TLC-PRJ-052",
+    "canonical_name": "Kohinoor Business Tower KP Annexe",
+    "alias_name": "Kohinoor Business Towers Mundhwa",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "99acres Locality Variant",
+    "deduplication_rule": "Merged Mundhwa/KP Annexe duplicate portal entries"
+  },
+  {
+    "alias_id": "ALS-DUP-010",
+    "project_id": "TLC-PRJ-053",
+    "canonical_name": "Merlin 18 East",
+    "alias_name": "18 East by Merlin Group",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "Google Maps / 99acres Variant",
+    "deduplication_rule": "Merged 'Merlin 18 East' and '18 East by Merlin Group'"
+  },
+  {
+    "alias_id": "ALS-DUP-011",
+    "project_id": "TLC-PRJ-064",
+    "canonical_name": "SP Infocity Pune",
+    "alias_name": "Ozone SP Infocity Fursungi",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "CommonFloor Historical Alias",
+    "deduplication_rule": "Merged historical 'Ozone SP Infocity' into SP Infocity Pune"
+  },
+  {
+    "alias_id": "ALS-DUP-012",
+    "project_id": "TLC-PRJ-077",
+    "canonical_name": "Panchshil Business Park & Balewadi High Street",
+    "alias_name": "Panchshil Balewadi High Street",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "99acres Retail Alias",
+    "deduplication_rule": "Linked Balewadi High Street retail zone to Panchshil Business Park Balewadi"
+  },
+  {
+    "alias_id": "ALS-DUP-013",
+    "project_id": "TLC-PRJ-089",
+    "canonical_name": "Kolte-Patil Life Republic Township",
+    "alias_name": "Kolte Patil R1 / R2 / R10 / R16 Life Republic",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "Sector-Level Portal Listings",
+    "deduplication_rule": "Normalized sector listings as phases under canonical Life Republic Township"
+  },
+  {
+    "alias_id": "ALS-DUP-014",
+    "project_id": "TLC-PRJ-093",
+    "canonical_name": "Saheel ITrend Futura & ITrend Vesta",
+    "alias_name": "ITrend Futura Baner NX",
+    "alias_type": "Merged Duplicate Portal Listing",
+    "source_portal": "Marketing Location Variant",
+    "deduplication_rule": "Normalized 'Baner NX' marketing tag to actual administrative locality Mahalunge"
+  }
+]

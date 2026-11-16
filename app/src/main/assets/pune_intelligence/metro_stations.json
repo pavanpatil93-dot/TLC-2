@@ -1,0 +1,423 @@
+[
+  {
+    "id": "MET-001",
+    "name": "PCMC",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "1"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-002",
+    "name": "Sant Tukaram Nagar",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "1"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-003",
+    "name": "Bhosari (Nashik Phata)",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "1"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-004",
+    "name": "Kasarwadi",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "1"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-005",
+    "name": "Phugewadi",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "1"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-006",
+    "name": "Dapodi",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "1"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-007",
+    "name": "Bopodi",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "1"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-008",
+    "name": "Khadki",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "1"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-009",
+    "name": "Shivaji Nagar",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "1"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-010",
+    "name": "District Court",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "1",
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-011",
+    "name": "Budhwar Peth",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "1"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-012",
+    "name": "Mandai",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "1"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-013",
+    "name": "Swargate",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "1"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-014",
+    "name": "Vanaz",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-015",
+    "name": "Anand Nagar",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-016",
+    "name": "Ideal Colony",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-017",
+    "name": "Nal Stop",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-018",
+    "name": "Garware College",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-019",
+    "name": "Deccan Gymkhana",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-020",
+    "name": "Chhatrapati Sambhaji Udyan",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-021",
+    "name": "PMC",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-022",
+    "name": "Mangalwar Peth",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-023",
+    "name": "Pune Railway Station",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-024",
+    "name": "Ruby Hall Clinic",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-025",
+    "name": "Bund Garden",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-026",
+    "name": "Yerawada",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-027",
+    "name": "Kalyani Nagar",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  },
+  {
+    "id": "MET-028",
+    "name": "Ramwadi",
+    "mode": "metro",
+    "status": "operational",
+    "lines": [
+      "2"
+    ],
+    "latitude": null,
+    "longitude": null,
+    "source_ids": [
+      "SRC-METRO"
+    ],
+    "verification_status": "official_profile"
+  }
+]

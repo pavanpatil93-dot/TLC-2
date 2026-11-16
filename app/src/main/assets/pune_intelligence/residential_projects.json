@@ -1,0 +1,16 @@
+[
+  {
+    "id": "RES-001",
+    "name": "YOO Villas",
+    "location_id": "LOC-008",
+    "developer_id": "DEV-001",
+    "rera_registration": null,
+    "possession_date": null,
+    "configuration": null,
+    "price_inr": null,
+    "verification_status": "developer_website_project_name_only",
+    "source_ids": [
+      "SRC-PANCHSHILRES"
+    ]
+  }
+]

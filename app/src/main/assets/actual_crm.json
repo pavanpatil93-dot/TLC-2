@@ -1,0 +1,62 @@
+[
+  {
+    "id": "CRM-000001",
+    "name": "Geetanjali Gupta",
+    "phone": "",
+    "segment": "Commercial",
+    "requirement": "Lease Office Furnished",
+    "location": "Kharadi",
+    "budget": "100000",
+    "status": "Exploring Market",
+    "nextFollowUp": "",
+    "notes": "10 seating; office expansion | Lead source: Historical chat | Priority: High | Verification: Needs Verification",
+    "assignedTo": "",
+    "source": "TLC-1 Master Database",
+    "sourceRecordId": "CRM-000001"
+  },
+  {
+    "id": "CRM-000002",
+    "name": "Rahul Tiwari",
+    "phone": "",
+    "segment": "Commercial",
+    "requirement": "Buy Office",
+    "location": "Kharadi",
+    "budget": "",
+    "status": "Exploring Market",
+    "nextFollowUp": "",
+    "notes": "Under construction or ready to move; Pristine Allure suggested | Lead source: Historical chat | Verification: Needs Verification",
+    "assignedTo": "",
+    "source": "TLC-1 Master Database",
+    "sourceRecordId": "CRM-000002"
+  },
+  {
+    "id": "CRM-000003",
+    "name": "Sachin Patle",
+    "phone": "",
+    "segment": "Commercial",
+    "requirement": "Buy Shop",
+    "location": "Aundh; Baner; Balewadi",
+    "budget": "30000000",
+    "status": "Exploring Market",
+    "nextFollowUp": "",
+    "notes": "Main-road facing 1st or 2nd floor; ₹3 Cr+ budget | Lead source: Historical chat | Verification: Needs Verification",
+    "assignedTo": "",
+    "source": "TLC-1 Master Database",
+    "sourceRecordId": "CRM-000003"
+  },
+  {
+    "id": "CRM-000004",
+    "name": "Manuvendra Singh (CP client)",
+    "phone": "",
+    "segment": "Commercial",
+    "requirement": "Lease Office",
+    "location": "Yerwada; Koregaon Park; Viman Nagar",
+    "budget": "",
+    "status": "Exploring Market",
+    "nextFollowUp": "",
+    "notes": "40 workstations; 3 meeting rooms; 20 car parks | Lead source: Historical chat | Verification: Needs Verification",
+    "assignedTo": "",
+    "source": "TLC-1 Master Database",
+    "sourceRecordId": "CRM-000004"
+  }
+]
