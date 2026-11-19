@@ -7,6 +7,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,18 +39,48 @@ import com.example.crm.CrmCallRecord
 import com.example.crm.CrmPipelineAndWorkloadEngine
 import com.example.crm.DashboardDataState
 import com.example.crm.DashboardDrillDownSpec
+import com.example.crm.DashboardMetricProjectionState
 import com.example.crm.DashboardReportPeriod
 import com.example.crm.EmployeeEligibilityItem
+import com.example.crm.PendingLoopsQueueCard
 import com.example.data.ApprovalAndAuditManager
+import com.example.data.OfflineDiskCache
+import com.example.data.SheetsRepository
+import com.example.data.UserSettingsManager
 import com.example.data.master.ApprovalRequestEntity
 import com.example.data.projects.ProjectDirectoryStore
+import com.example.inventory.PropertyPrecomputedCache
 import com.example.model.*
 import com.example.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import java.util.*
+
+private data class DashboardComputedState(
+    val activeProperties: List<PropertyItem> = emptyList(),
+    val liveCrmLeads: List<CrmLead> = emptyList(),
+    val commercialCount: Int = 0,
+    val residentialCount: Int = 0,
+    val commercialAvailableCount: Int = 0,
+    val residentialAvailableCount: Int = 0,
+    val renewalRadar90dCount: Int = 0,
+    val availableCount: Int = 0,
+    val leaseCount: Int = 0,
+    val saleCount: Int = 0,
+    val recentlyAddedInventory: List<PropertyItem> = emptyList(),
+    val eligibleEmployees: List<EmployeeEligibilityItem> = emptyList(),
+    val projection: DashboardMetricProjectionState = DashboardMetricProjectionState(dataState = DashboardDataState.READY),
+    val liveClientAndOwnerFollowUpsDue: Int = 0,
+    val unloggedQueueCalls: List<CrmCallRecord> = emptyList(),
+    val liveUnloggedCallsCount: Int = 0,
+    val live60DayRecheckDueCount: Int = 0
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,7 +102,24 @@ fun DashboardScreen(
     onNavigateToResidentialInventory: () -> Unit = onNavigateToInventory,
     onNavigateToProjects: () -> Unit = onNavigateToInventory,
     onSearchInventory: (String) -> Unit = { onNavigateToInventory() },
-    onNavigateToCalls: () -> Unit = {}
+    onNavigateToCalls: () -> Unit = {},
+    onNavigateToDeals: () -> Unit = {},
+    dailyReports: List<DailyReportRecord> = emptyList(),
+    onNavigateToDailyOps: () -> Unit = {},
+    lastSyncAtMillis: Long = 0L,
+    onRefreshSync: (() -> Unit)? = null,
+    pendingSyncCount: Int = 0,
+    isSyncingPending: Boolean = false,
+    onSyncPendingClick: (() -> Unit)? = null,
+    onOpenMoreDetailsForRole: ((
+        role: com.example.crm.PostCallRole,
+        call: CrmCallRecord,
+        prefilledName: String,
+        prefilledNotes: String,
+        linkedEntityId: String?,
+        subRole: String
+    ) -> Unit)? = null,
+    onOpenCaptureBrokerUnit: ((brokerName: String, brokerPhone: String, callNote: String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -99,45 +147,6 @@ fun DashboardScreen(
         }
     }
 
-    // All accessible active properties loaded automatically (excluding ARCHIVED)
-    val activeProperties = remember(properties) {
-        properties.filter { it.archiveStatus != ArchiveStatus.ARCHIVED }
-    }
-
-    val commercialProperties = remember(activeProperties) {
-        activeProperties.filter { it.propertyCategory == PropertyCategory.COMMERCIAL }
-    }
-    val residentialProperties = remember(activeProperties) {
-        activeProperties.filter { it.propertyCategory == PropertyCategory.RESIDENTIAL }
-    }
-    val commercialCount = commercialProperties.size
-    val residentialCount = residentialProperties.size
-    val commercialAvailableCount = remember(commercialProperties) {
-        commercialProperties.count { it.status == AvailabilityStatus.AVAILABLE }
-    }
-    val residentialAvailableCount = remember(residentialProperties) {
-        residentialProperties.count { it.status == AvailabilityStatus.AVAILABLE }
-    }
-    val availableCount = remember(activeProperties) {
-        activeProperties.count { it.status == AvailabilityStatus.AVAILABLE }
-    }
-    val leaseCount = remember(activeProperties) {
-        activeProperties.count {
-            StandardTransactionType.fromString(it.transactionType, it.tab) == StandardTransactionType.LEASE
-        }
-    }
-    val saleCount = remember(activeProperties) {
-        activeProperties.count {
-            val tx = StandardTransactionType.fromString(it.transactionType, it.tab)
-            tx == StandardTransactionType.SALE || tx == StandardTransactionType.PRE_LEASED_SALE
-        }
-    }
-    val recentlyAddedInventory = remember(activeProperties) {
-        activeProperties
-            .sortedByDescending { it.rowNumber }
-            .take(5)
-    }
-
     // Asia/Kolkata Timestamps
     val kolkataTz = remember { TimeZone.getTimeZone("Asia/Kolkata") }
     val currentDateDisplay = remember(refreshTrigger) {
@@ -151,13 +160,11 @@ fun DashboardScreen(
         userProfile.role == UserRole.COMMERCIAL_MANAGER ||
         userProfile.role == UserRole.RESIDENTIAL_MANAGER
 
-    val eligibleEmployees: List<EmployeeEligibilityItem> = remember(context, refreshTrigger) {
-        CrmPipelineAndWorkloadEngine.loadEligibleEmployees(context)
-    }
+    var computedState by remember { mutableStateOf(DashboardComputedState()) }
 
-    val projection = remember(
+    LaunchedEffect(
         context,
-        activeProperties,
+        properties,
         userProfile,
         businessView,
         selectedPeriod,
@@ -165,53 +172,136 @@ fun DashboardScreen(
         customEndDate,
         selectedEmployeeFilter,
         pendingApprovals.size,
+        todayIso,
         refreshTrigger
     ) {
-        CrmPipelineAndWorkloadEngine.computeDashboardProjection(
-            context = context,
-            scopedProperties = activeProperties,
-            userProfile = userProfile,
-            businessView = businessView,
-            period = selectedPeriod,
-            customStartDate = customStartDate,
-            customEndDate = customEndDate,
-            selectedEmployeeScopeIds = selectedEmployeeFilter?.let { listOf(it) } ?: emptyList(),
-            pendingApprovalsCount = pendingApprovals.size
-        )
-    }
+        computedState = withContext(Dispatchers.IO) {
+            val activeProperties = properties.filter { it.archiveStatus != ArchiveStatus.ARCHIVED }
+            val commercialProps = activeProperties.filter { it.propertyCategory == PropertyCategory.COMMERCIAL }
+            val residentialProps = activeProperties.filter { it.propertyCategory == PropertyCategory.RESIDENTIAL }
+            val commAvail = commercialProps.count { it.status == AvailabilityStatus.AVAILABLE }
+            val resAvail = residentialProps.count { it.status == AvailabilityStatus.AVAILABLE }
+            val radarCount = activeProperties.count { RenewalRadar90dHelper.matchesRenewalRadar90d(it) }
+            val availCount = activeProperties.count { it.status == AvailabilityStatus.AVAILABLE }
+            val lCount = activeProperties.count {
+                PropertyPrecomputedCache.get(it).stdTx == StandardTransactionType.LEASE
+            }
+            val sCount = activeProperties.count {
+                val tx = PropertyPrecomputedCache.get(it).stdTx
+                tx == StandardTransactionType.SALE || tx == StandardTransactionType.PRE_LEASED_SALE
+            }
+            val recent = activeProperties.sortedByDescending { it.rowNumber }.take(5)
+            val eligible = CrmPipelineAndWorkloadEngine.loadEligibleEmployees(context)
+            val proj = CrmPipelineAndWorkloadEngine.computeDashboardProjection(
+                context = context,
+                scopedProperties = activeProperties,
+                userProfile = userProfile,
+                businessView = businessView,
+                period = selectedPeriod,
+                customStartDate = customStartDate,
+                customEndDate = customEndDate,
+                selectedEmployeeScopeIds = selectedEmployeeFilter?.let { listOf(it) } ?: emptyList(),
+                pendingApprovalsCount = pendingApprovals.size
+            )
+            val crmLeads = runCatching { readCrmLeads(context) }.getOrDefault(emptyList())
+            val leadFollowUpsDue = crmLeads.count { lead ->
+                !lead.followUpCompleted &&
+                    !lead.status.equals("Closed", ignoreCase = true) &&
+                    !lead.status.equals("Archived", ignoreCase = true) &&
+                    (lead.nextFollowUp.contains("Today", ignoreCase = true) ||
+                        (lead.nextFollowUp.length >= 10 && lead.nextFollowUp.take(10) <= todayIso))
+            }
+            val followUpsDue = maxOf(leadFollowUpsDue, proj.todayOpenTasks + proj.overdueOpenTasks)
+            val unloggedQueue = CrmCallManager.getUnloggedCallQueue(context)
+            val unlinkedSavedCalls = CrmCallManager.readCalls(context).filter {
+                !it.isLinked &&
+                    !CrmCallManager.isCallSkipped(context, it) &&
+                    !CrmCallManager.isInternalTeamCall(context, it)
+            }
+            val mergedUnlinkedQueue = (unloggedQueue + unlinkedSavedCalls)
+                .distinctBy { it.id }
+                .filter {
+                    !it.isLinked &&
+                        !CrmCallManager.isCallSkipped(context, it) &&
+                        !CrmCallManager.isInternalTeamCall(context, it)
+                }
+            val unloggedCount = mergedUnlinkedQueue.size
+            val recheckFromActive = activeProperties.count { prop ->
+                prop.status == AvailabilityStatus.AVAILABLE &&
+                    PropertyPrecomputedCache.get(prop).verificationAgeState == VerificationAgeState.DUE
+            }
+            val recheckDue = maxOf(recheckFromActive, proj.reverificationDue)
 
-    // Batch 9: Real-Time Live Counters from CRM Leads, CrmCallManager, and Active Inventory
-    val liveCrmLeads = remember(context, refreshTrigger) {
-        runCatching { readCrmLeads(context) }.getOrDefault(emptyList())
-    }
-    val liveClientAndOwnerFollowUpsDue = remember(liveCrmLeads, projection.todayOpenTasks, projection.overdueOpenTasks, todayIso) {
-        val leadFollowUpsDue = liveCrmLeads.count { lead ->
-            !lead.followUpCompleted &&
-                !lead.status.equals("Closed", ignoreCase = true) &&
-                !lead.status.equals("Archived", ignoreCase = true) &&
-                (lead.nextFollowUp.contains("Today", ignoreCase = true) ||
-                    (lead.nextFollowUp.length >= 10 && lead.nextFollowUp.take(10) <= todayIso))
+            DashboardComputedState(
+                activeProperties = activeProperties,
+                liveCrmLeads = crmLeads,
+                commercialCount = commercialProps.size,
+                residentialCount = residentialProps.size,
+                commercialAvailableCount = commAvail,
+                residentialAvailableCount = resAvail,
+                renewalRadar90dCount = radarCount,
+                availableCount = availCount,
+                leaseCount = lCount,
+                saleCount = sCount,
+                recentlyAddedInventory = recent,
+                eligibleEmployees = eligible,
+                projection = proj,
+                liveClientAndOwnerFollowUpsDue = followUpsDue,
+                unloggedQueueCalls = mergedUnlinkedQueue,
+                liveUnloggedCallsCount = unloggedCount,
+                live60DayRecheckDueCount = recheckDue
+            )
         }
-        maxOf(leadFollowUpsDue, projection.todayOpenTasks + projection.overdueOpenTasks)
     }
 
-    val unloggedQueueCalls = remember(context, refreshTrigger) {
-        CrmCallManager.getUnloggedCallQueue(context)
-    }
-    val liveUnloggedCallsCount = remember(context, unloggedQueueCalls, refreshTrigger) {
-        val unlinkedSavedIds = CrmCallManager.readCalls(context)
-            .filter { !it.isLinked }
-            .map { it.id }
-        (unloggedQueueCalls.map { it.id } + unlinkedSavedIds).distinct().size
-    }
+    val activeProperties = computedState.activeProperties
+    val liveCrmLeads = computedState.liveCrmLeads
+    val commercialCount = computedState.commercialCount
+    val residentialCount = computedState.residentialCount
+    val commercialAvailableCount = computedState.commercialAvailableCount
+    val residentialAvailableCount = computedState.residentialAvailableCount
+    val renewalRadar90dCount = computedState.renewalRadar90dCount
+    val availableCount = computedState.availableCount
+    val leaseCount = computedState.leaseCount
+    val saleCount = computedState.saleCount
+    val recentlyAddedInventory = computedState.recentlyAddedInventory
+    val eligibleEmployees = computedState.eligibleEmployees
+    val projection = computedState.projection
+    val liveClientAndOwnerFollowUpsDue = computedState.liveClientAndOwnerFollowUpsDue
+    val unloggedQueueCalls = computedState.unloggedQueueCalls
+    val liveUnloggedCallsCount = computedState.liveUnloggedCallsCount
+    val live60DayRecheckDueCount = computedState.live60DayRecheckDueCount
     var activePostCallRecord by remember { mutableStateOf<CrmCallRecord?>(null) }
+    var postCallQueue by remember { mutableStateOf<List<CrmCallRecord>>(emptyList()) }
+    var postCallQueueIndex by remember { mutableIntStateOf(0) }
 
-    val live60DayRecheckDueCount = remember(activeProperties, projection.reverificationDue) {
-        val fromActiveAvailable = activeProperties.count { prop ->
-            prop.status == AvailabilityStatus.AVAILABLE &&
-                getVerificationAgeState(prop, 60) == VerificationAgeState.DUE
+    val advanceDashboardPostCallQueue: () -> Unit = {
+        val nextIdx = postCallQueueIndex + 1
+        if (nextIdx < postCallQueue.size) {
+            postCallQueueIndex = nextIdx
+            activePostCallRecord = postCallQueue[nextIdx]
+        } else {
+            activePostCallRecord = null
+            postCallQueue = emptyList()
+            postCallQueueIndex = 0
         }
-        maxOf(fromActiveAvailable, projection.reverificationDue)
+        refreshTrigger++
+    }
+
+    var tickerNowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(lastSyncAtMillis) {
+        tickerNowMillis = System.currentTimeMillis()
+        while (true) {
+            delay(30_000L)
+            tickerNowMillis = System.currentTimeMillis()
+        }
+    }
+    val syncedAgoLabel = remember(lastSyncAtMillis, tickerNowMillis) {
+        if (lastSyncAtMillis > 0L) {
+            SheetsRepository.formatSyncedAgoLabel(lastSyncAtMillis, tickerNowMillis)
+        } else {
+            "Updated: ${projection.lastSuccessfulRefreshAt.ifBlank { "Just now" }}"
+        }
     }
 
     val approverEmployee = remember(userProfile) {
@@ -236,7 +326,7 @@ fun DashboardScreen(
             .padding(bottom = 88.dp)
             .testTag("dashboard_screen")
     ) {
-        // 1. Compact Header: Greeting, Asia/Kolkata Date, Refresh Caption & Role Badge
+        // 1. Compact Header: Greeting, Asia/Kolkata Date, Sync Timestamp & Role Badge
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -259,9 +349,10 @@ fun DashboardScreen(
                     letterSpacing = 0.5.sp
                 )
                 Text(
-                    text = "Updated: ${projection.lastSuccessfulRefreshAt.ifBlank { "Just now" }} • ${projection.dataState.label}",
+                    text = "$syncedAgoLabel • ${projection.dataState.label}",
                     color = SecondaryText,
-                    fontSize = 10.sp
+                    fontSize = 10.sp,
+                    modifier = Modifier.testTag("dashboard_synced_ago_label")
                 )
             }
 
@@ -270,7 +361,10 @@ fun DashboardScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 IconButton(
-                    onClick = { refreshTrigger++ },
+                    onClick = {
+                        refreshTrigger++
+                        onRefreshSync?.invoke()
+                    },
                     modifier = Modifier
                         .size(48.dp)
                         .testTag("dashboard_refresh_btn")
@@ -280,6 +374,57 @@ fun DashboardScreen(
                         contentDescription = "Refresh Dashboard Metrics",
                         tint = PrimaryActionOrange
                     )
+                }
+
+                // Compact clickable Pending Sync pill next to role badge
+                val hasPending = pendingSyncCount > 0
+                val syncBg = if (hasPending) Color(0xFFFFF4E6) else SuccessGreenSubtle
+                val syncBorder = if (hasPending) PrimaryActionOrange else StatusSuccessGreen
+                val syncContentColor = if (hasPending) Color(0xFFC2410C) else StatusSuccessGreen
+                Surface(
+                    onClick = {
+                        refreshTrigger++
+                        if (onSyncPendingClick != null) {
+                            onSyncPendingClick()
+                        } else {
+                            onRefreshSync?.invoke()
+                        }
+                    },
+                    shape = RoundedCornerShape(999.dp),
+                    color = syncBg,
+                    border = BorderStroke(1.dp, syncBorder),
+                    modifier = Modifier
+                        .heightIn(min = 34.dp)
+                        .testTag("dashboard_pending_sync_chip")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (isSyncingPending) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 2.dp,
+                                color = syncContentColor
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (hasPending) Icons.Default.Sync else Icons.Default.CheckCircle,
+                                contentDescription = if (hasPending) "Retry Pending Syncs" else "All Synced",
+                                tint = syncContentColor,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                        Text(
+                            text = pendingSyncCount.toString(),
+                            color = syncContentColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
                 }
 
                 Surface(
@@ -292,6 +437,8 @@ fun DashboardScreen(
                         color = FocusOutlineColor,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                        softWrap = false,
                         modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
                     )
                 }
@@ -404,6 +551,148 @@ fun DashboardScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // 2B. Prominent Daily POA / EOD Entry Card (Accessible to ALL roles including Admin)
+        val myDailyName = userProfile.username.ifBlank { "Executive" }
+        val myDailyEmpId = userProfile.employeeId.ifBlank {
+            "EMP-${myDailyName.uppercase(Locale.ENGLISH).replace(Regex("[^A-Z0-9]"), "").take(8)}"
+        }
+        val todayUserReport = remember(dailyReports, todayIso, myDailyName, myDailyEmpId) {
+            dailyReports.firstOrNull { rep ->
+                rep.date == todayIso && (
+                    rep.employeeId.equals(myDailyEmpId, ignoreCase = true) ||
+                        rep.employeeName.equals(myDailyName, ignoreCase = true)
+                    )
+            }
+        }
+        val poaStatus = evaluateCutoff(todayUserReport?.poaSubmittedAt.orEmpty(), LocalTime.of(10, 30))
+        val eodStatus = evaluateCutoff(todayUserReport?.eodSubmittedAt.orEmpty(), LocalTime.of(19, 30))
+
+        Surface(
+            onClick = onNavigateToDailyOps,
+            color = SurfaceWhite,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, PrimaryActionOrange.copy(alpha = 0.45f)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("dashboard_daily_ops_card")
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(11.dp))
+                            .background(SelectedContainerFill),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.EventNote,
+                            contentDescription = "Daily POA and EOD",
+                            tint = PrimaryActionOrange,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Daily POA / EOD",
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.horizontalScroll(rememberScrollState())
+                        ) {
+                            val poaBg = when (poaStatus) {
+                                CutoffStatus.ON_TIME -> SuccessGreenSubtle
+                                CutoffStatus.LATE -> WarningAmberSubtle
+                                CutoffStatus.PENDING -> SelectedContainerFill
+                            }
+                            val poaFg = when (poaStatus) {
+                                CutoffStatus.ON_TIME -> StatusSuccessGreen
+                                CutoffStatus.LATE -> StatusWarningAmber
+                                CutoffStatus.PENDING -> PrimaryActionOrange
+                            }
+                            Surface(color = poaBg, shape = RoundedCornerShape(6.dp)) {
+                                Text(
+                                    text = if (todayUserReport?.poaSubmittedAt?.isNotBlank() == true) {
+                                        "POA · ${todayUserReport.poaSubmittedAt}"
+                                    } else {
+                                        "POA Due 10:30 AM IST"
+                                    },
+                                    color = poaFg,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+
+                            val eodBg = when (eodStatus) {
+                                CutoffStatus.ON_TIME -> SuccessGreenSubtle
+                                CutoffStatus.LATE -> WarningAmberSubtle
+                                CutoffStatus.PENDING -> SurfaceTint
+                            }
+                            val eodFg = when (eodStatus) {
+                                CutoffStatus.ON_TIME -> StatusSuccessGreen
+                                CutoffStatus.LATE -> StatusWarningAmber
+                                CutoffStatus.PENDING -> SecondaryText
+                            }
+                            Surface(color = eodBg, shape = RoundedCornerShape(6.dp)) {
+                                Text(
+                                    text = if (todayUserReport?.eodSubmittedAt?.isNotBlank() == true) {
+                                        "EOD · ${todayUserReport.eodSubmittedAt}"
+                                    } else {
+                                        "EOD Due 7:30 PM IST"
+                                    },
+                                    color = eodFg,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = onNavigateToDailyOps,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimaryActionOrange,
+                        contentColor = OnPrimaryActionColor
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("dashboard_daily_ops_btn")
+                ) {
+                    Text(
+                        text = if (todayUserReport == null) "Submit" else "Update",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+        PendingLoopsQueueCard(
+            testTagPrefix = "dashboard_pending_loops"
+        )
+
         if (projection.dataState == DashboardDataState.ERROR && projection.errorMessage != null) {
             Spacer(modifier = Modifier.height(10.dp))
             Surface(
@@ -466,12 +755,27 @@ fun DashboardScreen(
                     .weight(1f)
                     .testTag("metric_unlogged_calls_live"),
                 onClick = {
-                    val nextQueued = unloggedQueueCalls.firstOrNull()
-                        ?: CrmCallManager.readCalls(context).firstOrNull { !it.isLinked }
-                    if (nextQueued != null) {
-                        activePostCallRecord = nextQueued
+                    if (unloggedQueueCalls.isNotEmpty()) {
+                        postCallQueue = unloggedQueueCalls
+                        postCallQueueIndex = 0
+                        activePostCallRecord = unloggedQueueCalls.first()
                     } else {
-                        onNavigateToCalls()
+                        coroutineScope.launch {
+                            val nextUnlinkedList = withContext(Dispatchers.IO) {
+                                CrmCallManager.readCalls(context).filter {
+                                    !it.isLinked &&
+                                        !CrmCallManager.isCallSkipped(context, it) &&
+                                        !CrmCallManager.isInternalTeamCall(context, it)
+                                }
+                            }
+                            if (nextUnlinkedList.isNotEmpty()) {
+                                postCallQueue = nextUnlinkedList
+                                postCallQueueIndex = 0
+                                activePostCallRecord = nextUnlinkedList.first()
+                            } else {
+                                onNavigateToCalls()
+                            }
+                        }
                     }
                 }
             )
@@ -938,6 +1242,30 @@ fun DashboardScreen(
             onClick = onNavigateToCrm
         )
 
+        Spacer(modifier = Modifier.height(8.dp))
+
+        PrimaryWorkspaceShortcutCard(
+            title = "🔔 Renewal Radar (90d)",
+            subtitle = "$renewalRadar90dCount leased / pre-leased units with lease or lock-in expiring within 90 days",
+            badgeText = "90D RADAR",
+            icon = Icons.Default.NotificationsActive,
+            accentColor = StatusWarningAmber,
+            testTag = "shortcut_renewal_radar_90d",
+            onClick = { onSearchInventory("RENEWAL_RADAR_90D") }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        PrimaryWorkspaceShortcutCard(
+            title = "Deal Pipeline & LOI / Brokerage",
+            subtitle = "LOI / Token → Agreement → Registration → Billed → Commission + 1-Tap LOI PDF",
+            badgeText = "DEALS & LOI",
+            icon = Icons.Default.Handshake,
+            accentColor = StatusSuccessGreen,
+            testTag = "shortcut_deal_pipeline",
+            onClick = onNavigateToDeals
+        )
+
         Spacer(modifier = Modifier.height(16.dp))
 
         // 7. Quick Operational Actions Row
@@ -1252,11 +1580,21 @@ fun DashboardScreen(
         )
     }
 
-    // Batch 9: In-place PostCallSmartSheet queue when tapping Unlogged Calls counter on Home Dashboard
+    // Batch 9 + 18: In-place PostCallSmartSheet queue when tapping Unlogged Calls counter on Home Dashboard
     activePostCallRecord?.let { callItem ->
         val dirProjects = remember(context) {
             runCatching { ProjectDirectoryStore.read(context) }.getOrDefault(emptyList())
         }
+        val settingsMgr = remember(context) { UserSettingsManager(context) }
+        val autoSaveContactsEnabled by settingsMgr.autoSaveGoogleContacts.collectAsState()
+        val revealPhonesForExec by settingsMgr.revealConfidentialPhonesForExec.collectAsState()
+        val canViewFullConfidentialPhones = remember(userProfile, revealPhonesForExec) {
+            PhoneMaskingUtils.canViewUnmaskedConfidentialPhone(userProfile, revealPhonesForExec)
+        }
+        val cachedTenants = remember(context, refreshTrigger) { OfflineDiskCache.loadTenants(context) }
+        val cachedBrokers = remember(context, refreshTrigger) { OfflineDiskCache.loadBrokersVendors(context) }
+        val postCallRepo = remember(context) { SheetsRepository(context.applicationContext, startForegroundSync = false) }
+        val postCallSyncScope = rememberCoroutineScope()
         PostCallSmartSheet(
             call = callItem,
             leads = liveCrmLeads,
@@ -1265,37 +1603,37 @@ fun DashboardScreen(
             underConstProjects = underConstProjects,
             employeeName = userProfile.username.ifBlank { "TLC-1 Team" },
             employeeMobile = userProfile.mobileNumber.ifBlank { "9766880099" },
-            onDismissLater = {
-                activePostCallRecord = null
-                refreshTrigger++
+            onDismissLater = { skippedCall ->
+                CrmCallManager.markCallSkipped(context, skippedCall)
+                CrmCallManager.removeFromUnloggedQueue(context, skippedCall)
+                advanceDashboardPostCallQueue()
             },
             onMarkPersonalIgnore = { ignoredCall ->
                 com.example.crm.IgnoredNumbersManager.markPersonalIgnored(context, ignoredCall.phoneNumber)
                 CrmCallManager.removeFromUnloggedQueue(context, ignoredCall)
-                activePostCallRecord = null
-                refreshTrigger++
+                advanceDashboardPostCallQueue()
             },
             onSaveLeadAndSync = { updatedLead, activityType, activityNotes ->
-                val currentLeads = readCrmLeads(context).toMutableList()
-                val idx = currentLeads.indexOfFirst { it.id == updatedLead.id }
-                if (idx >= 0) currentLeads[idx] = updatedLead else currentLeads.add(0, updatedLead)
-                saveCrmLeads(context, currentLeads)
-                CrmCallManager.logActivity(
+                val persisted = upsertCrmLeadFromPostCall(
                     context = context,
-                    entityId = updatedLead.id,
-                    type = activityType,
-                    summary = "${updatedLead.displayClientTitle()} • $activityType",
-                    details = activityNotes,
-                    author = userProfile.username.ifBlank { "TLC-1 Team" }
+                    lead = updatedLead,
+                    activityType = activityType,
+                    activityNotes = activityNotes,
+                    performer = userProfile.username.ifBlank { "TLC-1 Team" }
                 )
+                postCallSyncScope.launch(Dispatchers.IO) {
+                    postCallRepo.pushCrmLeadToMasterSheet(persisted)
+                }
                 refreshTrigger++
             },
             onShareMatchingProps = {
                 activePostCallRecord = null
+                postCallQueue = emptyList()
                 onNavigateToCrm()
             },
             onScheduleSiteVisit = {
                 activePostCallRecord = null
+                postCallQueue = emptyList()
                 onNavigateToVisits()
             },
             onUpdateOwnerPropertyStatus = { prop, newStatus, _, updatedPrice ->
@@ -1303,7 +1641,8 @@ fun DashboardScreen(
                 onEditProperty(
                     prop.copy(
                         status = newStatus,
-                        priceOrRent = updatedPrice ?: prop.priceOrRent
+                        priceOrRent = updatedPrice ?: prop.priceOrRent,
+                        pocType = prop.pocType
                     )
                 )
                 true
@@ -1312,7 +1651,8 @@ fun DashboardScreen(
                 onEditProperty(
                     prop.copy(
                         ownerName = ownerNameInput.ifBlank { prop.ownerName },
-                        ownerContact = callRec.phoneNumber.ifBlank { prop.ownerContact }
+                        ownerContact = callRec.phoneNumber.ifBlank { prop.ownerContact },
+                        pocType = prop.pocType
                     )
                 )
                 true
@@ -1323,12 +1663,70 @@ fun DashboardScreen(
             },
             onOpenFullAddProperty = {
                 activePostCallRecord = null
+                postCallQueue = emptyList()
                 onNavigateToAddProperty()
             },
             onCallResolved = { resolvedCall ->
                 CrmCallManager.removeFromUnloggedQueue(context, resolvedCall)
-                activePostCallRecord = null
+                advanceDashboardPostCallQueue()
+            },
+            tenants = cachedTenants,
+            brokersVendors = cachedBrokers,
+            canViewFullConfidentialPhones = canViewFullConfidentialPhones,
+            autoSaveGoogleContactsEnabled = autoSaveContactsEnabled,
+            onSaveTenantAndSync = { tenantRec ->
+                postCallRepo.saveTenantLocalAndSync(tenantRec)
                 refreshTrigger++
+            },
+            onSaveBrokerVendorAndSync = { bvRec ->
+                postCallRepo.saveBrokerVendorLocalAndSync(bvRec)
+                refreshTrigger++
+            },
+            onOpenMoreDetailsForRole = { role, callRec, prefilledName, prefilledNotes, linkedId, subRole ->
+                CrmCallManager.removeFromUnloggedQueue(context, callRec)
+                activePostCallRecord = null
+                postCallQueue = emptyList()
+                postCallQueueIndex = 0
+                refreshTrigger++
+                if (onOpenMoreDetailsForRole != null) {
+                    onOpenMoreDetailsForRole(role, callRec, prefilledName, prefilledNotes, linkedId, subRole)
+                } else {
+                    when (role) {
+                        com.example.crm.PostCallRole.CLIENT_LEAD -> onNavigateToCrm()
+                        com.example.crm.PostCallRole.PROPERTY_OWNER -> onNavigateToAddProperty()
+                        com.example.crm.PostCallRole.DEVELOPER_POC -> onNavigateToProjects()
+                        else -> onNavigateToCrm()
+                    }
+                }
+            },
+            queuePosition = (postCallQueueIndex + 1).coerceAtLeast(1),
+            queueTotal = postCallQueue.size.coerceAtLeast(1),
+            onCloseQueueDone = {
+                activePostCallRecord = null
+                postCallQueue = emptyList()
+                postCallQueueIndex = 0
+                refreshTrigger++
+            },
+            onMissedCallWaCallback = { handledCall ->
+                CrmCallManager.removeFromUnloggedQueue(context, handledCall)
+                advanceDashboardPostCallQueue()
+            },
+            onProjectCreated = { createdProject ->
+                postCallSyncScope.launch(Dispatchers.IO) {
+                    postCallRepo.pushDirectoryProjectToMasterSheet(createdProject)
+                }
+                refreshTrigger++
+            },
+            onOpenCaptureBrokerUnit = { bName, bPhone, cNote ->
+                activePostCallRecord = null
+                postCallQueue = emptyList()
+                postCallQueueIndex = 0
+                refreshTrigger++
+                if (onOpenCaptureBrokerUnit != null) {
+                    onOpenCaptureBrokerUnit(bName, bPhone, cNote)
+                } else {
+                    onNavigateToAddProperty()
+                }
             }
         )
     }
@@ -1400,7 +1798,10 @@ private fun DashboardDrillDownBottomSheet(
                         .heightIn(max = 320.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(visibleItems) { (primaryTitle, secondarySubtitle) ->
+                    itemsIndexed(
+                        items = visibleItems,
+                        key = { idx, item -> "${idx}_${item.first}_${item.second.hashCode()}" }
+                    ) { _, (primaryTitle, secondarySubtitle) ->
                         Surface(
                             onClick = onOpenWorkspace,
                             shape = RoundedCornerShape(10.dp),

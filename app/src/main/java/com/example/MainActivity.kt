@@ -1,17 +1,21 @@
 package com.example
 
+import android.Manifest
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -50,6 +54,7 @@ import com.example.callintelligence.CallReviewDatabase
 import com.example.callintelligence.CallReviewEntity
 import com.example.callintelligence.CallReviewScreen
 import com.example.crm.*
+import com.example.data.OfflineDiskCache
 import com.example.data.SheetsRepository
 import com.example.data.ActualDataBootstrap
 import com.example.data.OneTapSyncCoordinator
@@ -57,6 +62,9 @@ import com.example.data.UserSettingsManager
 import com.example.data.projects.DirectoryProject
 import com.example.data.projects.ProjectDirectoryStore
 import com.example.model.*
+import com.example.notifications.AlertTargetType
+import com.example.notifications.TeamAlertStore
+import com.example.notifications.TeamNotificationManager
 import com.example.ui.components.*
 import com.example.ui.screens.*
 import com.example.ui.shortlist.ShortlistReviewBottomSheet
@@ -66,24 +74,68 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+data class NotificationAlertDeepLink(
+    val alertId: String,
+    val targetType: AlertTargetType,
+    val targetId: String
+)
+
 class MainActivity : ComponentActivity() {
+    private var pendingAlertDeepLink by mutableStateOf<NotificationAlertDeepLink?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        TeamNotificationManager.ensureChannelsCreated(this)
+        extractAlertDeepLink(intent)?.let { pendingAlertDeepLink = it }
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
-                MainAppPortal()
+                MainAppPortal(
+                    pendingAlertDeepLink = pendingAlertDeepLink,
+                    onConsumeAlertDeepLink = { pendingAlertDeepLink = null }
+                )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        extractAlertDeepLink(intent)?.let { pendingAlertDeepLink = it }
+    }
+
+    private fun extractAlertDeepLink(intent: Intent?): NotificationAlertDeepLink? {
+        if (intent == null) return null
+        val alertId = intent.getStringExtra(TeamNotificationManager.EXTRA_ALERT_ID).orEmpty()
+        val typeRaw = intent.getStringExtra(TeamNotificationManager.EXTRA_TARGET_TYPE).orEmpty()
+        val targetId = intent.getStringExtra(TeamNotificationManager.EXTRA_TARGET_ID).orEmpty()
+        if (alertId.isBlank() && targetId.isBlank()) return null
+        return NotificationAlertDeepLink(
+            alertId = alertId,
+            targetType = AlertTargetType.fromString(typeRaw),
+            targetId = targetId
+        )
     }
 }
 
 @Composable
-fun MainAppPortal() {
+fun MainAppPortal(
+    pendingAlertDeepLink: NotificationAlertDeepLink? = null,
+    onConsumeAlertDeepLink: () -> Unit = {}
+) {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val repository = remember(context) {
-        ActualDataBootstrap.seedCrm(context)
-        SheetsRepository(context).also { it.bootstrapBundledActualInventory() }
+        SheetsRepository(context, deferInitialDiskLoad = true)
+    }
+    LaunchedEffect(repository) {
+        withContext(Dispatchers.IO) {
+            TeamNotificationManager.ensureChannelsCreated(context)
+            TeamAlertStore.hydrate(context)
+            ActualDataBootstrap.seedCrm(context)
+            repository.ensureLoadedFromDisk()
+            repository.bootstrapBundledActualInventory()
+            com.example.data.BackgroundSyncScheduler.ensureMasterAutoSyncScheduled(context)
+        }
     }
     val userSettingsManager = remember(context) { UserSettingsManager(context) }
 
@@ -93,13 +145,28 @@ fun MainAppPortal() {
     val comparisonIds by repository.comparisonIds.collectAsState()
     val isLiveConnected by repository.isLiveConnected.collectAsState()
     val lastSyncTimestamp by repository.lastSyncTimestamp.collectAsState()
+    val lastSyncAtMillis by repository.lastSyncAtMillis.collectAsState()
+    val syncRevision by repository.syncRevision.collectAsState()
+    val whatsappUnreadCount by WhatsAppFollowUpStore.unreadCount.collectAsState()
+    val dailyReports by repository.dailyReports.collectAsState()
+    val tenantsList by repository.tenants.collectAsState()
+    val brokersVendorsList by repository.brokersVendors.collectAsState()
 
     val userProfile by userSettingsManager.userProfile.collectAsState()
     val isLoggedIn by userSettingsManager.isLoggedIn.collectAsState()
     val savedScriptUrl by repository.sheetsScriptUrl.collectAsState()
+    val pendingSyncOps by repository.pendingSyncOps.collectAsState()
+    val pendingSyncWritesCount by repository.pendingSyncCount.collectAsState()
+    val availableAppUpdate by repository.availableAppUpdate.collectAsState()
+    var isSyncingPending by remember { mutableStateOf(false) }
+    val totalPendingSyncCount = remember(pendingSyncOps, pendingSyncWritesCount) {
+        maxOf(pendingSyncOps.size, pendingSyncWritesCount)
+    }
     val brandLogos by userSettingsManager.brandLogos.collectAsState()
     val activeBrandScope by userSettingsManager.activeBrand.collectAsState()
     val currentThemeMode by userSettingsManager.themeMode.collectAsState()
+    val autoSaveContactsEnabled by userSettingsManager.autoSaveGoogleContacts.collectAsState()
+    val revealConfidentialPhonesForExec by userSettingsManager.revealConfidentialPhonesForExec.collectAsState()
 
     // Navigation and Drawer State
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -119,7 +186,7 @@ fun MainAppPortal() {
     var crmExternalRefreshTick by remember { mutableIntStateOf(0) }
     var callsExternalRefreshTick by remember { mutableIntStateOf(0) }
     var activePostCall by remember { mutableStateOf<CrmCallRecord?>(null) }
-    var unloggedCallQueue by remember { mutableStateOf(CrmCallManager.getUnloggedCallQueue(context)) }
+    var unloggedCallQueue by remember { mutableStateOf<List<CrmCallRecord>>(emptyList()) }
     var postCallMatchTargetLead by remember { mutableStateOf<CrmLead?>(null) }
     var postCallVisitTargetLead by remember { mutableStateOf<CrmLead?>(null) }
 
@@ -130,7 +197,91 @@ fun MainAppPortal() {
     var comparisonNotice by remember { mutableStateOf<String?>(null) }
     var resolvedComparisonProps by remember { mutableStateOf<List<PropertyItem>>(emptyList()) }
     var mapTargetProperty by remember { mutableStateOf<PropertyItem?>(null) }
+    var pendingProjectDirectoryId by remember { mutableStateOf<String?>(null) }
     var clientMatcherInitialRequirement by remember { mutableStateOf<String?>(null) }
+    var pendingTenantLinkProperty by remember { mutableStateOf<PropertyItem?>(null) }
+    var pendingTenantId by remember { mutableStateOf<String?>(null) }
+    var pendingTenantDraft by remember { mutableStateOf<OfflineDiskCache.TenantCacheRecord?>(null) }
+    var pendingBrokerVendorDraft by remember { mutableStateOf<BrokerVendorRecord?>(null) }
+    var pendingTenantsTabIndex by remember { mutableIntStateOf(0) }
+    var pendingCrmPrefillLead by remember { mutableStateOf<CrmLead?>(null) }
+    var pendingCrmSelectedLeadId by remember { mutableStateOf<String?>(null) }
+    var showTeamAlertsSheet by remember { mutableStateOf(false) }
+    val teamAlerts by TeamAlertStore.alerts.collectAsState()
+    val unreadAlertCount = remember(teamAlerts) { teamAlerts.count { !it.isRead } }
+
+    val postNotificationsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { /* Gracefully handled whether granted or denied */ }
+
+    LaunchedEffect(isLoggedIn) {
+        if (isLoggedIn && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val prefs = context.getSharedPreferences("ascend_aurea_user_settings", Context.MODE_PRIVATE)
+            val alreadyPrompted = prefs.getBoolean("notif_permission_prompted_v1", false)
+            if (!alreadyPrompted && !TeamNotificationManager.hasNotificationPermission(context)) {
+                prefs.edit().putBoolean("notif_permission_prompted_v1", true).apply()
+                runCatching { postNotificationsLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
+            }
+        }
+    }
+
+    val navigateToAlertTarget: (String, AlertTargetType, String) -> Unit = { alertId, targetType, targetId ->
+        if (alertId.isNotBlank()) {
+            TeamAlertStore.markRead(context, alertId)
+        }
+        showTeamAlertsSheet = false
+        showComparisonScreen = false
+        activeDetailProject = null
+        editingPropertyTarget = null
+        when (targetType) {
+            AlertTargetType.PROPERTY -> {
+                val matched = allProperties.firstOrNull {
+                    it.id.equals(targetId, ignoreCase = true) ||
+                        it.recordId.equals(targetId, ignoreCase = true) ||
+                        it.propertyCode.equals(targetId, ignoreCase = true)
+                }
+                if (matched != null) {
+                    activeDetailProperty = matched
+                } else {
+                    activeDetailProperty = null
+                    currentDestination = DrawerDestination.SEARCH_PROPERTIES
+                }
+            }
+            AlertTargetType.LEAD -> {
+                activeDetailProperty = null
+                pendingCrmSelectedLeadId = targetId.takeIf { it.isNotBlank() }
+                currentDestination = DrawerDestination.CRM_WORKSPACE
+            }
+            AlertTargetType.TENANT -> {
+                activeDetailProperty = null
+                pendingTenantId = targetId.takeIf { it.isNotBlank() }
+                pendingTenantsTabIndex = 0
+                currentDestination = DrawerDestination.TENANTS_LEASES
+            }
+            AlertTargetType.NONE -> {
+                activeDetailProperty = null
+                currentDestination = DrawerDestination.INVENTORY_DASHBOARD
+            }
+        }
+    }
+
+    LaunchedEffect(pendingAlertDeepLink, isLoggedIn, allProperties.size) {
+        val dl = pendingAlertDeepLink ?: return@LaunchedEffect
+        if (!isLoggedIn) return@LaunchedEffect
+        // Wait for property list if targeting a property and list is still loading
+        if (dl.targetType == AlertTargetType.PROPERTY && allProperties.isEmpty()) return@LaunchedEffect
+        navigateToAlertTarget(dl.alertId, dl.targetType, dl.targetId)
+        onConsumeAlertDeepLink()
+    }
+
+    var pendingAddPropertyName by remember { mutableStateOf("") }
+    var pendingAddPropertyPhone by remember { mutableStateOf("") }
+    var pendingAddPropertyNote by remember { mutableStateOf("") }
+    var pendingAddPropertyPocType by remember { mutableStateOf("Property Owner") }
+    var pendingAddPropertyFromCall by remember { mutableStateOf(false) }
+    var postCallQueue by remember { mutableStateOf<List<CrmCallRecord>>(emptyList()) }
+    var postCallQueueIndex by remember { mutableIntStateOf(0) }
+    var pendingCallNavigation by remember { mutableStateOf<PendingCallNavigation?>(null) }
     val shortlistViewModel: ShortlistViewModel = viewModel()
     val shortlistState by shortlistViewModel.state.collectAsState()
 
@@ -165,17 +316,143 @@ fun MainAppPortal() {
     val lifecycleOwner = LocalLifecycleOwner.current
     val refreshAndPromptPostCall: () -> Unit = {
         if (isLoggedIn && !sessionState.isPinLocked) {
-            val newCalls = CrmCallManager.checkForNewUnloggedDeviceCalls(context)
-            unloggedCallQueue = CrmCallManager.getUnloggedCallQueue(context)
-            if (newCalls.isNotEmpty()) {
-                callsExternalRefreshTick++
-                if (activePostCall == null) {
-                    val nextCall = newCalls.first()
-                    CrmCallManager.markPostCallPopupShown(context, nextCall)
-                    activePostCall = nextCall
+            coroutineScope.launch {
+                val (newCalls, updatedQueue) = withContext(Dispatchers.IO) {
+                    val detected = CrmCallManager.checkForNewUnloggedDeviceCalls(context)
+                    val queue = CrmCallManager.getUnloggedCallQueue(context)
+                    Pair(detected, queue)
+                }
+                unloggedCallQueue = updatedQueue
+                if (newCalls.isNotEmpty()) {
+                    callsExternalRefreshTick++
+                    if (activePostCall == null) {
+                        val nextCall = newCalls.first()
+                        withContext(Dispatchers.IO) {
+                            CrmCallManager.markPostCallPopupShown(context, nextCall)
+                        }
+                        postCallQueue = updatedQueue.ifEmpty { newCalls }
+                        postCallQueueIndex = postCallQueue.indexOfFirst { it.id == nextCall.id }.coerceAtLeast(0)
+                        activePostCall = nextCall
+                    }
                 }
             }
         }
+    }
+
+    var showDealPipelineScreen by remember { mutableStateOf(false) }
+
+    // Batch 20: Top-level LaunchedEffect(pendingCallNavigation) for "Add More Details →"
+    LaunchedEffect(pendingCallNavigation) {
+        val nav = pendingCallNavigation ?: return@LaunchedEffect
+        activePostCall = null
+        postCallQueue = emptyList()
+        postCallQueueIndex = 0
+        activeDetailProperty = null
+        activeDetailProject = null
+        showComparisonScreen = false
+        showDealPipelineScreen = false
+
+        when (nav.role) {
+            PostCallRole.CLIENT_LEAD, PostCallRole.FRESH_UNKNOWN -> {
+                val existingLeads = withContext(Dispatchers.IO) { readCrmLeads(context) }
+                val phone10 = CrmCallManager.last10Digits(nav.prefillPhone)
+                val matchedLead = existingLeads.firstOrNull { lead ->
+                    (!nav.taggedPropertyId.isNullOrBlank() && lead.id == nav.taggedPropertyId) ||
+                        (phone10.length >= 7 && (
+                            CrmCallManager.last10Digits(lead.phone) == phone10 ||
+                                CrmCallManager.last10Digits(lead.alternatePhone) == phone10
+                            ))
+                }
+                pendingCrmPrefillLead = matchedLead ?: CrmLead(
+                    id = nav.taggedPropertyId?.takeIf { it.startsWith("LD-", true) }.orEmpty(),
+                    name = nav.prefillName,
+                    phone = nav.prefillPhone,
+                    segment = "Commercial",
+                    requirement = nav.prefillNote.ifBlank { "Inbound Call Inquiry" },
+                    location = "",
+                    budget = "",
+                    status = "New Lead",
+                    verificationStatus = "Verified Live",
+                    nextFollowUp = "",
+                    notes = nav.prefillNote
+                )
+                crmExternalRefreshTick++
+                currentDestination = DrawerDestination.CRM_WORKSPACE
+            }
+            PostCallRole.PROPERTY_OWNER -> {
+                val matchedProp = nav.taggedPropertyId?.let { id ->
+                    allProperties.firstOrNull { it.id == id || it.propertyCode.equals(id, true) }
+                }
+                if (matchedProp != null) {
+                    editingPropertyTarget = matchedProp.copy(
+                        ownerName = nav.prefillName.ifBlank { matchedProp.ownerName.orEmpty() },
+                        ownerContact = nav.prefillPhone.ifBlank { matchedProp.ownerContact.orEmpty() },
+                        remarks = if (nav.prefillNote.isNotBlank() && !matchedProp.remarks.orEmpty().contains(nav.prefillNote)) {
+                            listOfNotNull(matchedProp.remarks?.takeIf { it.isNotBlank() }, nav.prefillNote).joinToString(" | ")
+                        } else {
+                            matchedProp.remarks
+                        }
+                    )
+                } else {
+                    pendingAddPropertyName = nav.prefillName
+                    pendingAddPropertyPhone = nav.prefillPhone
+                    pendingAddPropertyNote = nav.prefillNote
+                    pendingAddPropertyPocType = "Property Owner"
+                    pendingAddPropertyFromCall = true
+                    currentDestination = DrawerDestination.ADD_PROPERTY
+                }
+            }
+            PostCallRole.DEVELOPER_POC -> {
+                pendingProjectDirectoryId = nav.taggedPropertyId
+                currentDestination = DrawerDestination.PROJECT_DIRECTORY
+            }
+            PostCallRole.TENANT -> {
+                val existingTenant = nav.taggedPropertyId?.let { id ->
+                    tenantsList.firstOrNull { it.id == id || it.propertyCode.equals(id, true) }
+                }
+                val linkedProp = nav.taggedPropertyId?.let { id ->
+                    allProperties.firstOrNull { it.id == id || it.propertyCode.equals(id, true) }
+                }
+                pendingTenantDraft = existingTenant ?: OfflineDiskCache.TenantCacheRecord(
+                    id = nav.taggedPropertyId?.takeIf { it.startsWith("TNT-", true) }
+                        ?: "TNT-${java.util.UUID.randomUUID().toString().take(8).uppercase(java.util.Locale.US)}",
+                    tenantName = nav.prefillName,
+                    contactNumber = nav.prefillPhone,
+                    propertyCode = linkedProp?.propertyCode ?: nav.taggedPropertyId.orEmpty(),
+                    projectName = linkedProp?.projectName.orEmpty(),
+                    unitNumber = linkedProp?.unitNumber.orEmpty(),
+                    location = linkedProp?.location.orEmpty(),
+                    notes = nav.prefillNote,
+                    status = "Active"
+                )
+                pendingTenantId = existingTenant?.id
+                pendingTenantLinkProperty = null
+                pendingBrokerVendorDraft = null
+                pendingTenantsTabIndex = 0
+                currentDestination = DrawerDestination.TENANTS_LEASES
+            }
+            PostCallRole.BROKER, PostCallRole.OPS_VENDOR -> {
+                val isOps = nav.role == PostCallRole.OPS_VENDOR
+                val existingBv = nav.taggedPropertyId?.let { id ->
+                    brokersVendorsList.firstOrNull { it.id == id }
+                }
+                pendingBrokerVendorDraft = existingBv ?: BrokerVendorRecord(
+                    id = nav.taggedPropertyId?.takeIf { it.startsWith("BV-", true) }
+                        ?: "BV-${java.util.UUID.randomUUID().toString().take(8).uppercase(java.util.Locale.US)}",
+                    name = nav.prefillName,
+                    phone = nav.prefillPhone,
+                    roleCategory = if (isOps) "Ops / Vendor" else "Broker / CP",
+                    subRole = nav.subRole.ifBlank { if (isOps) BrokerVendorRecord.opsSubRoles.first() else "Channel Partner" },
+                    notes = nav.prefillNote
+                )
+                pendingTenantId = null
+                pendingTenantDraft = null
+                pendingTenantLinkProperty = null
+                pendingTenantsTabIndex = 2
+                currentDestination = DrawerDestination.TENANTS_LEASES
+            }
+        }
+        pendingCallNavigation = null
     }
     DisposableEffect(lifecycleOwner, sessionManager, isLoggedIn, sessionState.isPinLocked) {
         val unregisterCallMonitor = CrmCallManager.registerCallStateMonitor(context) {
@@ -190,6 +467,7 @@ fun MainAppPortal() {
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     refreshAndPromptPostCall()
+                    repository.syncIfStaleInBackground()
                 }
                 else -> Unit
             }
@@ -209,13 +487,25 @@ fun MainAppPortal() {
         effectiveUserProfile.username.equals("Pawan Patil", ignoreCase = true) ||
             effectiveUserProfile.role == UserRole.ADMIN
         )
-    val allowCommercial = isLoggedIn && (
+    // Core team (Super Admin, Admin, Commercial/Residential/Inventory Managers, Sales Executives)
+    // always see 100% of Live Commercial & Residential properties with full Owner/Tenant contacts.
+    val isCoreTeamMember = isLoggedIn && (
         isSuperAdmin ||
+            effectiveUserProfile.role in setOf(
+                UserRole.ADMIN,
+                UserRole.COMMERCIAL_MANAGER,
+                UserRole.RESIDENTIAL_MANAGER,
+                UserRole.INVENTORY_MANAGER,
+                UserRole.SALES_EXECUTIVE
+            )
+        )
+    val allowCommercial = isLoggedIn && (
+        isCoreTeamMember ||
             effectiveUserProfile.division.contains("Commercial", ignoreCase = true) ||
             !effectiveUserProfile.division.contains("Residential", ignoreCase = true)
         )
     val allowResidential = isLoggedIn && (
-        isSuperAdmin ||
+        isCoreTeamMember ||
             effectiveUserProfile.division.contains("Residential", ignoreCase = true) ||
             !effectiveUserProfile.division.contains("Commercial", ignoreCase = true)
         )
@@ -226,24 +516,42 @@ fun MainAppPortal() {
 
     var pendingExploreSearchQuery by remember { mutableStateOf("") }
 
-    val scopedProperties = remember(allProperties, isLoggedIn, allowCommercial, allowResidential) {
-        if (!isLoggedIn) {
-            emptyList()
-        } else {
-            allProperties.filter { prop ->
-                val isRes = prop.isResidential()
-                val isComm = prop.isCommercial()
-                when {
-                    allowCommercial && allowResidential -> true
-                    allowCommercial -> !isRes
-                    allowResidential -> !isComm
-                    else -> false
-                }
-            }
-        }
-    }
+    var scopedProperties by remember { mutableStateOf<List<PropertyItem>>(emptyList()) }
+    var commercialCount by remember { mutableIntStateOf(0) }
+    var residentialCount by remember { mutableIntStateOf(0) }
+    var unclassifiedCount by remember { mutableIntStateOf(0) }
     val scopedUnderConstProjects = remember(allUnderConstProjects, isLoggedIn, allowResidential) {
         if (!isLoggedIn || !allowResidential) emptyList() else allUnderConstProjects
+    }
+
+    LaunchedEffect(allProperties, isLoggedIn, allowCommercial, allowResidential, scopedUnderConstProjects) {
+        if (!isLoggedIn) {
+            scopedProperties = emptyList()
+            commercialCount = 0
+            residentialCount = 0
+            unclassifiedCount = 0
+        } else {
+            val result = withContext(Dispatchers.Default) {
+                val filtered = allProperties.filter { prop ->
+                    val isRes = prop.isResidential()
+                    val isComm = prop.isCommercial()
+                    when {
+                        allowCommercial && allowResidential -> true
+                        allowCommercial -> !isRes
+                        allowResidential -> !isComm
+                        else -> false
+                    }
+                }
+                val comm = filtered.count { it.isCommercial() }
+                val res = filtered.count { it.isResidential() } + scopedUnderConstProjects.size
+                val uncl = filtered.count { it.isUnclassified() }
+                Pair(filtered, Triple(comm, res, uncl))
+            }
+            scopedProperties = result.first
+            commercialCount = result.second.first
+            residentialCount = result.second.second
+            unclassifiedCount = result.second.third
+        }
     }
 
     LaunchedEffect(scopedProperties) {
@@ -284,10 +592,31 @@ fun MainAppPortal() {
                     currentEmployee?.loginMobile
                 )).distinct()
                 IgnoredNumbersManager.syncInternalEmployeeNumbers(context, allEmpPhones)
-                runCatching { ProjectDirectoryStore.read(context) }.getOrDefault(emptyList())
+                CrmCallManager.retagInternalTeamCalls(context)
+                com.example.crm.TeamHandoverStore.reconcileWithCallLogs(context)
+                val dir = runCatching { ProjectDirectoryStore.read(context) }.getOrDefault(emptyList())
+                val queue = CrmCallManager.getUnloggedCallQueue(context)
+                Pair(dir, queue)
             }
-            directoryProjects = loadedDir
-            unloggedCallQueue = CrmCallManager.getUnloggedCallQueue(context)
+            directoryProjects = loadedDir.first
+            unloggedCallQueue = loadedDir.second
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            WhatsAppFollowUpStore.refreshUnreadCount(context)
+        }
+    }
+
+    LaunchedEffect(syncRevision) {
+        if (syncRevision > 0) {
+            val reloadedProjects = withContext(Dispatchers.IO) {
+                runCatching { ProjectDirectoryStore.read(context) }.getOrDefault(directoryProjects)
+            }
+            directoryProjects = reloadedProjects
+            crmExternalRefreshTick++
+            callsExternalRefreshTick++
         }
     }
 
@@ -315,10 +644,16 @@ fun MainAppPortal() {
             UserRole.READ_ONLY -> EmployeeAccessRole.READ_ONLY
             else -> EmployeeAccessRole.SALES_EXECUTIVE
         }
-        val superAdmin = authenticatedProfile.username.equals("Pawan Patil", ignoreCase = true) ||
-            mappedRole == EmployeeAccessRole.ADMIN
-        val hasComm = superAdmin || authenticatedProfile.division.contains("Commercial", ignoreCase = true)
-        val hasRes = superAdmin || authenticatedProfile.division.contains("Residential", ignoreCase = true)
+        val isCoreTeamFullAccess = authenticatedProfile.username.equals("Pawan Patil", ignoreCase = true) ||
+            mappedRole in setOf(
+                EmployeeAccessRole.ADMIN,
+                EmployeeAccessRole.COMMERCIAL_MANAGER,
+                EmployeeAccessRole.RESIDENTIAL_MANAGER,
+                EmployeeAccessRole.INVENTORY_MANAGER,
+                EmployeeAccessRole.SALES_EXECUTIVE
+            )
+        val hasComm = isCoreTeamFullAccess || authenticatedProfile.division.contains("Commercial", ignoreCase = true)
+        val hasRes = isCoreTeamFullAccess || authenticatedProfile.division.contains("Residential", ignoreCase = true)
         val mappedScopes = buildList {
             if (hasComm) add(BusinessDivisionScope.ASCEND_COMMERCIAL)
             if (hasRes) add(BusinessDivisionScope.AUREA_RESIDENTIAL)
@@ -347,7 +682,7 @@ fun MainAppPortal() {
             )
         }
         selectedBrand = when {
-            superAdmin || (hasComm && hasRes) -> null
+            isCoreTeamFullAccess || (hasComm && hasRes) -> null
             hasComm -> Brand.COMMERCIAL
             hasRes -> Brand.RESIDENTIAL
             else -> null
@@ -452,7 +787,7 @@ fun MainAppPortal() {
     }
 
     val handleVerifyProperty: (PropertyItem, AvailabilityStatus?, String, String) -> Unit = { prop, avail, method, notes ->
-        val res = repository.verifyAndPublishProperty(
+        val res = repository.verifyAndPublishPropertyAsync(
             propertyId = prop.id,
             availabilityStatus = avail,
             method = method,
@@ -471,10 +806,37 @@ fun MainAppPortal() {
         if (goLive) {
             handleVerifyProperty(prop, prop.status, "Verification Switch", "")
         } else {
-            val ok = repository.unverifyAndArchiveProperty(prop.id)
+            val ok = repository.movePropertyToPendingAsync(prop.id)
             if (ok) {
-                Toast.makeText(context, "Moved back to Archive", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Moved to Pending (Off-Market) — Saved & syncing", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    val handleInlineUpdateProperty: (PropertyItem, Boolean) -> Unit = { updatedProp, promoteToLive ->
+        val finalProp = if (promoteToLive) {
+            updatedProp.copy(
+                verificationStatus = VerificationStatus.VERIFIED,
+                archiveStatus = ArchiveStatus.ACTIVE,
+                lastVerifiedDateClean = java.time.LocalDate.now().toString(),
+                verifiedBy = effectiveUserProfile.username.ifBlank { updatedProp.verifiedBy }
+            )
+        } else {
+            updatedProp
+        }
+        val summary = if (promoteToLive) "Inline Completeness Completed & Published Live" else "Inline Completeness Update"
+        val saved = repository.updatePropertyAsync(finalProp, summary)
+        if (saved) {
+            if (activeDetailProperty?.id == finalProp.id) {
+                activeDetailProperty = finalProp
+            }
+            Toast.makeText(
+                context,
+                if (promoteToLive) "Completed & published Live — syncing in background" else "Details saved — syncing in background",
+                Toast.LENGTH_SHORT
+            ).show()
+        } else {
+            Toast.makeText(context, "Saved locally", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -548,12 +910,7 @@ fun MainAppPortal() {
         }
     }
 
-    // Real-time counts within employee scope
-    val commercialCount = remember(scopedProperties) { scopedProperties.count { it.isCommercial() } }
-    val residentialCount = remember(scopedProperties, scopedUnderConstProjects) {
-        scopedProperties.count { it.isResidential() } + scopedUnderConstProjects.size
-    }
-    val unclassifiedCount = remember(scopedProperties) { scopedProperties.count { it.isUnclassified() } }
+    // Real-time counts within employee scope are computed off Main thread above alongside scopedProperties
 
     // Handle back button for sub-screens & drawer
     BackHandler(
@@ -616,6 +973,7 @@ fun MainAppPortal() {
                             when (destination) {
                                 DrawerDestination.CRM_WORKSPACE -> crmWorkspaceSelected = true
                                 DrawerDestination.SEARCH_PROPERTIES, DrawerDestination.INVENTORY_DASHBOARD,
+                                DrawerDestination.DAILY_OPS,
                                 DrawerDestination.COMMERCIAL, DrawerDestination.RESIDENTIAL,
                                 DrawerDestination.ADD_PROPERTY, DrawerDestination.SAVED_PROPERTIES,
                                 DrawerDestination.COMPARE_PROPERTIES, DrawerDestination.MASTER_SYNC,
@@ -654,7 +1012,8 @@ fun MainAppPortal() {
                                 newMode,
                                 effectiveUserProfile.employeeId.ifBlank { currentEmployee?.employeeId }
                             )
-                        }
+                        },
+                        whatsappUnreadCount = whatsappUnreadCount
                     )
                 }
                 HorizontalDivider(color = BorderGrey, thickness = 1.dp)
@@ -674,6 +1033,31 @@ fun MainAppPortal() {
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(bottom = 6.dp)
                         )
+                        val isAdminUser = effectiveUserProfile.username.equals("Pawan", true) ||
+                            effectiveUserProfile.role == UserRole.ADMIN ||
+                            (currentEmployee != null && currentEmployee.role == EmployeeAccessRole.ADMIN)
+                        if (isAdminUser) {
+                            OutlinedButton(
+                                onClick = { com.example.ui.screens.shareAppApk(context) },
+                                border = BorderStroke(1.dp, PrimaryActionOrange),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryActionOrange),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 44.dp)
+                                    .testTag("drawer_share_apk_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Android,
+                                    contentDescription = "Share APK",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Share App APK", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            Spacer(Modifier.height(6.dp))
+                        }
+
                         OutlinedButton(
                             onClick = performFullSignOut,
                             border = BorderStroke(1.dp, ErrorRed),
@@ -708,8 +1092,10 @@ fun MainAppPortal() {
 
                     val resolvedScreenTitle = when (currentDestination) {
                         DrawerDestination.INVENTORY_DASHBOARD -> "Dashboard"
+                        DrawerDestination.DAILY_OPS -> "Daily POA & EOD"
                         DrawerDestination.CRM_WORKSPACE -> "CRM Workspace"
                         DrawerDestination.CRM_CALLS -> "Call Intelligence"
+                        DrawerDestination.WHATSAPP_FOLLOWUPS -> "WhatsApp Follow-ups"
                         DrawerDestination.CLIENT_MATCHER -> "Client Matcher"
                         DrawerDestination.PROJECT_DIRECTORY -> "Project Directory"
                         DrawerDestination.SAVED_PROPERTIES -> "Saved Properties"
@@ -802,7 +1188,9 @@ fun MainAppPortal() {
                         onOpenProfile = {
                             settingsInitialTab = 1
                             currentDestination = DrawerDestination.SETTINGS
-                        }
+                        },
+                        unreadAlertCount = unreadAlertCount,
+                        onOpenAlerts = { showTeamAlertsSheet = true }
                     )
                 }
             },
@@ -811,7 +1199,8 @@ fun MainAppPortal() {
                 if (!isDesktop && activeDetailProperty == null && activeDetailProject == null && !showComparisonScreen) {
                     PortalBottomNavBar(
                         selectedTab = when (currentDestination) {
-                            DrawerDestination.INVENTORY_DASHBOARD -> PortalNavTab.HOME
+                            DrawerDestination.INVENTORY_DASHBOARD,
+                            DrawerDestination.DAILY_OPS -> PortalNavTab.HOME
                             DrawerDestination.PROJECT_DIRECTORY -> PortalNavTab.PROJECTS
                             DrawerDestination.CRM_WORKSPACE -> PortalNavTab.CRM
                             DrawerDestination.CRM_CALLS -> PortalNavTab.CALLS
@@ -845,8 +1234,12 @@ fun MainAppPortal() {
                         onClick = {
                             val nextCall = unloggedCallQueue.firstOrNull()
                             if (nextCall != null) {
-                                CrmCallManager.markPostCallPopupShown(context, nextCall)
+                                postCallQueue = unloggedCallQueue
+                                postCallQueueIndex = 0
                                 activePostCall = nextCall
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    CrmCallManager.markPostCallPopupShown(context, nextCall)
+                                }
                             }
                         },
                         color = SelectedSurfaceContainer,
@@ -937,8 +1330,8 @@ fun MainAppPortal() {
                                 handleVerifyProperty(currentDetail, currentDetail.status, "Detail Screen", "")
                             },
                             onStatusChange = { newStatus ->
-                                repository.updateAvailability(currentDetail.id, newStatus)
-                                activeDetailProperty = allProperties.find { it.id == currentDetail.id }
+                                repository.updateAvailabilityAsync(currentDetail.id, newStatus)
+                                activeDetailProperty = currentDetail.copy(status = newStatus)
                             },
                             onPropertySelect = { selected ->
                                 repository.markViewed(selected.id)
@@ -947,12 +1340,20 @@ fun MainAppPortal() {
                             onEditProperty = {
                                 editingPropertyTarget = currentDetail
                             },
-                            onDeleteProperty = {
-                                val id = currentDetail.id
-                                val deleted = repository.deleteProperty(id)
-                                if (deleted) activeDetailProperty = null
-                                Toast.makeText(context, if(deleted) "Property archived." else "Delete blocked or save failed.", Toast.LENGTH_SHORT).show()
-                            },
+                            onDeleteProperty = if (isSuperAdmin) {
+                                {
+                                    val deleted = repository.permanentlyDeleteProperty(currentDetail)
+                                    if (deleted) {
+                                        activeDetailProperty = null
+                                        if (editingPropertyTarget?.id == currentDetail.id) editingPropertyTarget = null
+                                    }
+                                    Toast.makeText(
+                                        context,
+                                        if (deleted) "Deleted ${currentDetail.propertyCode.ifBlank { currentDetail.projectName }} permanently" else "Delete blocked or save failed.",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            } else null,
                             onViewOnMap = { prop ->
                                 mapTargetProperty = prop
                                 activeDetailProperty = null
@@ -966,6 +1367,15 @@ fun MainAppPortal() {
                             onCopyLocation = { prop, onResult ->
                                 val d = repository.resolvePropertyMapDestination(prop.id, effectiveUserProfile)
                                 copyLocationSafely(d?.copyableText.orEmpty(), onResult)
+                            },
+                            sheetsRepository = repository,
+                            onLinkOrViewTenant = { prop ->
+                                pendingTenantLinkProperty = prop
+                                pendingTenantId = null
+                                pendingBrokerVendorDraft = null
+                                pendingTenantsTabIndex = 0
+                                activeDetailProperty = null
+                                currentDestination = DrawerDestination.TENANTS_LEASES
                             }
                         )
                     }
@@ -996,7 +1406,33 @@ fun MainAppPortal() {
                             onViewOnMap = { proj ->
                                 activeDetailProject = null
                                 currentDestination = DrawerDestination.FIND_ON_MAP
-                            }
+                            },
+                            onPromoteUnit = { newUnit ->
+                                val saved = repository.addPropertyAsync(newUnit)
+                                if (saved) {
+                                    Toast.makeText(
+                                        context,
+                                        "Unit ${newUnit.unitNumber} promoted to Direct Inventory & syncing",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    Toast.makeText(context, "Unable to save promoted unit", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            onDeleteProjectPermanently = if (isSuperAdmin) { proj ->
+                                val deleted = repository.permanentlyDeleteUnderConstProject(proj)
+                                if (deleted) {
+                                    activeDetailProject = null
+                                    coroutineScope.launch(Dispatchers.IO) {
+                                        directoryProjects = runCatching { ProjectDirectoryStore.read(context) }.getOrDefault(directoryProjects)
+                                    }
+                                }
+                                Toast.makeText(
+                                    context,
+                                    if (deleted) "Deleted ${proj.projectName} permanently" else "Delete blocked or failed.",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else null
                         )
                     }
 
@@ -1040,19 +1476,64 @@ fun MainAppPortal() {
                         )
                     }
 
+                    showDealPipelineScreen -> {
+                        CrmDealPipelineScreen(
+                            inventory = scopedProperties,
+                            onBack = { showDealPipelineScreen = false }
+                        )
+                    }
+
                     // Primary Navigation Screens
                     else -> {
                         saveableStateHolder.SaveableStateProvider("main_dest_${currentDestination.name}") {
                         when (currentDestination) {
                             DrawerDestination.PROJECT_DIRECTORY -> {
-                                ProjectDirectoryScreen(inventory = scopedProperties, onOpenProperty = { activeDetailProperty = it })
+                                ProjectDirectoryScreen(
+                                    inventory = scopedProperties,
+                                    onOpenProperty = { activeDetailProperty = it },
+                                    onPromoteUnit = { newUnit, proj ->
+                                        val saved = repository.addPropertyAsync(newUnit)
+                                        if (saved) {
+                                            coroutineScope.launch(Dispatchers.IO) {
+                                                runCatching { ProjectDirectoryStore.linkUnit(context, proj.id, newUnit.id) }
+                                            }
+                                            Toast.makeText(
+                                                context,
+                                                "Unit ${newUnit.unitNumber} promoted to Direct Inventory & syncing",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        } else {
+                                            Toast.makeText(context, "Unable to save promoted unit", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    generatePropertyCode = { tab -> repository.generateNextCode(tab) },
+                                    initialSelectedProjectId = pendingProjectDirectoryId,
+                                    onConsumeInitialProjectId = { pendingProjectDirectoryId = null },
+                                    onDeleteProjectPermanently = if (isSuperAdmin) { proj ->
+                                        val deleted = repository.permanentlyDeleteDirectoryProject(proj)
+                                        if (deleted) {
+                                            directoryProjects = directoryProjects.filterNot { it.id.equals(proj.id, ignoreCase = true) }
+                                        }
+                                    } else null
+                                )
                             }
                             DrawerDestination.CRM_WORKSPACE -> {
                                 CrmFoundationScreen(
                                     inventory = scopedProperties,
                                     onNavigateToCalls = { currentDestination = DrawerDestination.CRM_CALLS },
                                     onPushCrmLeadToSheet = { lead -> repository.pushCrmLeadToMasterSheet(lead) },
-                                    externalRefreshTick = crmExternalRefreshTick
+                                    onDeleteCrmLeadFromSheet = { leadId ->
+                                        repository.deleteRecordPermanently(
+                                            tabName = "CRM",
+                                            keyHeader = "Lead ID",
+                                            keyValue = leadId
+                                        )
+                                    },
+                                    externalRefreshTick = crmExternalRefreshTick,
+                                    initialPrefillLead = pendingCrmPrefillLead,
+                                    onConsumeInitialPrefillLead = { pendingCrmPrefillLead = null },
+                                    initialSelectedLeadId = pendingCrmSelectedLeadId,
+                                    onConsumeInitialSelectedLeadId = { pendingCrmSelectedLeadId = null }
                                 )
                             }
 
@@ -1126,12 +1607,22 @@ fun MainAppPortal() {
                                     CrmCallsScreen(
                                         inventory = scopedProperties,
                                         onAddPropertyToInventory = { newProp ->
-                                            repository.addProperty(newProp)
+                                            repository.addPropertyAsync(newProp)
                                         },
                                         onNavigateToClients = { currentDestination = DrawerDestination.CRM_WORKSPACE },
                                         onNewCallReview = { showCallReview = true },
                                         onOpenSavedReviews = { showSavedCallReviews = true },
-                                        onOpenPostCallSheet = { clickedCall -> activePostCall = clickedCall },
+                                        onOpenPostCallSheet = { clickedCall ->
+                                            postCallQueue = listOf(clickedCall)
+                                            postCallQueueIndex = 0
+                                            activePostCall = clickedCall
+                                        },
+                                        onOpenPostCallQueue = { queueList, startIdx ->
+                                            val safeIdx = startIdx.coerceIn(0, (queueList.size - 1).coerceAtLeast(0))
+                                            postCallQueue = queueList
+                                            postCallQueueIndex = safeIdx
+                                            activePostCall = queueList.getOrNull(safeIdx)
+                                        },
                                         externalRefreshTick = callsExternalRefreshTick
                                     )
                                 }
@@ -1179,7 +1670,95 @@ fun MainAppPortal() {
                                         pendingExploreSearchQuery = query
                                         selectedBrand = null
                                         currentDestination = DrawerDestination.SEARCH_PROPERTIES
+                                    },
+                                    onNavigateToDeals = {
+                                        showDealPipelineScreen = true
+                                    },
+                                    dailyReports = dailyReports,
+                                    onNavigateToDailyOps = {
+                                        currentDestination = DrawerDestination.DAILY_OPS
+                                    },
+                                    lastSyncAtMillis = lastSyncAtMillis,
+                                    onRefreshSync = {
+                                        oneTapSyncCoordinator.triggerOneTapSync(sessionState.currentEmployee)
+                                    },
+                                    pendingSyncCount = totalPendingSyncCount,
+                                    isSyncingPending = isSyncingPending,
+                                    onSyncPendingClick = {
+                                        if (!isSyncingPending) {
+                                            isSyncingPending = true
+                                            coroutineScope.launch {
+                                                val summary = repository.retryAllPendingSyncsAndPull()
+                                                isSyncingPending = false
+                                                Toast.makeText(context, summary, Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    },
+                                    onOpenMoreDetailsForRole = { role, savedCall, prefilledName, prefilledNotes, linkedEntityId, subRole ->
+                                        pendingCallNavigation = PendingCallNavigation.fromPostCallAction(
+                                            role = role,
+                                            call = savedCall,
+                                            prefilledName = prefilledName,
+                                            prefilledNotes = prefilledNotes,
+                                            linkedEntityId = linkedEntityId,
+                                            subRole = subRole
+                                        )
+                                    },
+                                    onOpenCaptureBrokerUnit = { bName, bPhone, cNote ->
+                                        pendingAddPropertyName = bName
+                                        pendingAddPropertyPhone = bPhone
+                                        pendingAddPropertyNote = cNote
+                                        pendingAddPropertyPocType = "Broker"
+                                        pendingAddPropertyFromCall = true
+                                        currentDestination = DrawerDestination.ADD_PROPERTY
                                     }
+                                )
+                            }
+
+                            DrawerDestination.DAILY_OPS -> {
+                                DailyOpsScreen(
+                                    userProfile = effectiveUserProfile,
+                                    properties = scopedProperties,
+                                    dailyReports = dailyReports,
+                                    onSaveDailyReport = { report -> repository.pushDailyReport(report) },
+                                    onRefreshSync = {
+                                        oneTapSyncCoordinator.triggerOneTapSync(sessionState.currentEmployee)
+                                    }
+                                )
+                            }
+
+                            DrawerDestination.TENANTS_LEASES -> {
+                                val canViewFullPhone = remember(effectiveUserProfile, revealConfidentialPhonesForExec) {
+                                    PhoneMaskingUtils.canViewUnmaskedConfidentialPhone(
+                                        userProfile = effectiveUserProfile,
+                                        revealToggleOn = revealConfidentialPhonesForExec
+                                    )
+                                }
+                                TenantsManagementScreen(
+                                    tenants = tenantsList,
+                                    brokersVendors = brokersVendorsList,
+                                    inventory = scopedProperties,
+                                    userProfile = effectiveUserProfile,
+                                    canViewFullConfidentialPhones = canViewFullPhone,
+                                    autoSaveGoogleContactsEnabled = autoSaveContactsEnabled,
+                                    prefilledTenantProperty = pendingTenantLinkProperty,
+                                    prefilledTenantId = pendingTenantId,
+                                    prefilledTenantDraft = pendingTenantDraft,
+                                    prefilledBrokerVendorDraft = pendingBrokerVendorDraft,
+                                    initialTabIndex = pendingTenantsTabIndex,
+                                    onConsumePrefills = {
+                                        pendingTenantLinkProperty = null
+                                        pendingTenantId = null
+                                        pendingTenantDraft = null
+                                        pendingBrokerVendorDraft = null
+                                    },
+                                    onSaveTenant = { savedTenant ->
+                                        repository.saveTenantLocalAndSync(savedTenant)
+                                    },
+                                    onSaveBrokerVendor = { savedPartner ->
+                                        repository.saveBrokerVendorLocalAndSync(savedPartner)
+                                    },
+                                    onBack = { currentDestination = DrawerDestination.INVENTORY_DASHBOARD }
                                 )
                             }
 
@@ -1217,7 +1796,7 @@ fun MainAppPortal() {
                                     onToggleFavorite = { repository.toggleFavorite(it) },
                                     onToggleCompare = { handleToggleCompare(it) },
                                     onShareWhatsApp = triggerPropertyShare,
-                                    onStatusChange = { id, st -> repository.updateAvailability(id, st) },
+                                    onStatusChange = { id, st -> repository.updateAvailabilityAsync(id, st) },
                                     onOpenAddProperty = { currentDestination = DrawerDestination.ADD_PROPERTY },
                                     onOpenImport = { currentDestination = DrawerDestination.MASTER_SYNC },
                                     isLiveConnected = isLiveConnected,
@@ -1248,7 +1827,11 @@ fun MainAppPortal() {
                                             handleVerifyProperty(prop, status, method, notes)
                                         }
                                     },
-                                    onToggleVerifyLive = handleToggleVerifyLive
+                                    onToggleVerifyLive = handleToggleVerifyLive,
+                                    onInlineUpdateProperty = handleInlineUpdateProperty,
+                                    onUploadPhoto = { propId, fileName, mime, bytes ->
+                                        repository.uploadMediaToDrive(propId, fileName, mime, bytes)
+                                    }
                                 )
                             }
 
@@ -1273,7 +1856,7 @@ fun MainAppPortal() {
                                     onToggleFavorite = { repository.toggleFavorite(it) },
                                     onToggleCompare = { handleToggleCompare(it) },
                                     onShareWhatsApp = triggerPropertyShare,
-                                    onStatusChange = { id, st -> repository.updateAvailability(id, st) },
+                                    onStatusChange = { id, st -> repository.updateAvailabilityAsync(id, st) },
                                     onOpenAddProperty = { currentDestination = DrawerDestination.ADD_PROPERTY },
                                     onOpenImport = { currentDestination = DrawerDestination.MASTER_SYNC },
                                     isLiveConnected = isLiveConnected,
@@ -1300,14 +1883,23 @@ fun MainAppPortal() {
                                             handleVerifyProperty(prop, status, method, notes)
                                         }
                                     },
-                                    onToggleVerifyLive = handleToggleVerifyLive
+                                    onToggleVerifyLive = handleToggleVerifyLive,
+                                    onInlineUpdateProperty = handleInlineUpdateProperty,
+                                    onUploadPhoto = { propId, fileName, mime, bytes ->
+                                        repository.uploadMediaToDrive(propId, fileName, mime, bytes)
+                                    }
                                 )
                             }
 
                             DrawerDestination.ADD_PROPERTY -> {
                                 AddPropertyScreen(
                                     onSaveProperty = { newProp ->
-                                        repository.addProperty(newProp)
+                                        pendingAddPropertyName = ""
+                                        pendingAddPropertyPhone = ""
+                                        pendingAddPropertyNote = ""
+                                        pendingAddPropertyPocType = "Property Owner"
+                                        pendingAddPropertyFromCall = false
+                                        repository.addPropertyAsync(newProp)
                                     },
                                     onCheckDuplicates = { code, proj, unit ->
                                         repository.findPotentialDuplicates(code, proj, unit)
@@ -1316,6 +1908,11 @@ fun MainAppPortal() {
                                         repository.generateNextCode(tab)
                                     },
                                     onCancel = {
+                                        pendingAddPropertyName = ""
+                                        pendingAddPropertyPhone = ""
+                                        pendingAddPropertyNote = ""
+                                        pendingAddPropertyPocType = "Property Owner"
+                                        pendingAddPropertyFromCall = false
                                         currentDestination = DrawerDestination.INVENTORY_DASHBOARD
                                     },
                                     onUploadMediaToDrive = { propId, fileName, mime, bytes ->
@@ -1323,7 +1920,12 @@ fun MainAppPortal() {
                                     },
                                     onPushPropertyToSheet = { prop ->
                                         repository.pushPropertyToMasterSheet(prop)
-                                    }
+                                    },
+                                    initialOwnerName = pendingAddPropertyName,
+                                    initialOwnerPhone = pendingAddPropertyPhone,
+                                    initialRemarks = pendingAddPropertyNote,
+                                    initialPocType = pendingAddPropertyPocType,
+                                    fromCallIntelligence = pendingAddPropertyFromCall || pendingAddPropertyPhone.isNotBlank()
                                 )
                             }
 
@@ -1339,6 +1941,11 @@ fun MainAppPortal() {
                                     onViewMatchesOnMap = { matchedList ->
                                         mapTargetProperty = matchedList.firstOrNull()
                                         currentDestination = DrawerDestination.FIND_ON_MAP
+                                    },
+                                    directoryProjects = directoryProjects,
+                                    onOpenProjectById = { projId ->
+                                        pendingProjectDirectoryId = projId
+                                        currentDestination = DrawerDestination.PROJECT_DIRECTORY
                                     }
                                 )
                             }
@@ -1348,7 +1955,7 @@ fun MainAppPortal() {
                                     inventory = scopedProperties,
                                     isInternalMode = isInternalMode,
                                     onSaveNewProperty = { newProp ->
-                                        repository.addProperty(newProp)
+                                        repository.addPropertyAsync(newProp)
                                     },
                                     onPropertyClick = { prop ->
                                         activeDetailProperty = prop
@@ -1422,6 +2029,42 @@ fun MainAppPortal() {
                                     oneTapSyncCoordinator.showResultSheet()
                                     currentDestination = DrawerDestination.INVENTORY_DASHBOARD
                                 }
+                            }
+
+                            DrawerDestination.WHATSAPP_FOLLOWUPS -> {
+                                WhatsAppFollowUpsScreen(
+                                    inventory = scopedProperties,
+                                    employeeName = effectiveUserProfile.username,
+                                    onOpenLeadInCrm = {
+                                        crmWorkspaceSelected = true
+                                        currentDestination = DrawerDestination.CRM_WORKSPACE
+                                    },
+                                    onOpenPropertyDetail = { prop ->
+                                        repository.markViewed(prop.id)
+                                        activeDetailProperty = prop
+                                    },
+                                    onPublishLiveProperty = { liveProp ->
+                                        repository.addPropertyAsync(liveProp)
+                                    },
+                                    onSaveCrmLead = { lead, actType, actNotes ->
+                                        coroutineScope.launch {
+                                            val persisted = withContext(Dispatchers.IO) {
+                                                upsertCrmLeadFromPostCall(
+                                                    context = context,
+                                                    lead = lead,
+                                                    activityType = actType,
+                                                    activityNotes = actNotes,
+                                                    performer = effectiveUserProfile.username
+                                                )
+                                            }
+                                            crmExternalRefreshTick++
+                                            repository.pushCrmLeadToMasterSheet(persisted)
+                                        }
+                                    },
+                                    onGeneratePropertyCode = { tab ->
+                                        repository.generateNextCode(tab)
+                                    }
+                                )
                             }
 
                             DrawerDestination.PUNE_INTELLIGENCE -> {
@@ -1507,7 +2150,7 @@ fun MainAppPortal() {
         EditPropertyScreen(
             property = editingPropertyTarget!!,
             onSave = { updated, auditText ->
-                val saved = repository.updateProperty(updated, auditText)
+                val saved = repository.updatePropertyAsync(updated, auditText)
                 if (saved) {
                     if (activeDetailProperty?.id == updated.id) activeDetailProperty = updated
                 }
@@ -1519,7 +2162,24 @@ fun MainAppPortal() {
             },
             onPushPropertyToSheet = { prop ->
                 repository.pushPropertyToMasterSheet(prop)
-            }
+            },
+            onDeletePermanently = if (isSuperAdmin) {
+                {
+                    val target = editingPropertyTarget
+                    if (target != null) {
+                        val deleted = repository.permanentlyDeleteProperty(target)
+                        if (deleted) {
+                            editingPropertyTarget = null
+                            if (activeDetailProperty?.id == target.id) activeDetailProperty = null
+                        }
+                        Toast.makeText(
+                            context,
+                            if (deleted) "Deleted ${target.propertyCode.ifBlank { target.projectName }} permanently" else "Delete blocked or save failed.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            } else null
         )
     }
 
@@ -1555,6 +2215,24 @@ fun MainAppPortal() {
         SyncResultBottomSheet(
             report = oneTapSyncReport,
             onDismiss = { oneTapSyncCoordinator.dismissResultSheet() }
+        )
+    }
+
+    // Batch 40: 48-Hour Team Alerts Feed Bottom Sheet
+    if (showTeamAlertsSheet) {
+        TeamAlertsBottomSheet(
+            alerts = teamAlerts,
+            onDismiss = { showTeamAlertsSheet = false },
+            onAlertClick = { alert ->
+                navigateToAlertTarget(alert.id, alert.targetType, alert.targetId)
+            },
+            onMarkAllRead = { TeamAlertStore.markAllRead(context) },
+            onOpenAlertSettings = {
+                settingsInitialTab = 8
+                activeDetailProperty = null
+                activeDetailProject = null
+                currentDestination = DrawerDestination.SETTINGS
+            }
         )
     }
 
@@ -1601,9 +2279,24 @@ fun MainAppPortal() {
         }
     }
 
-    // Batch 5: Smart Post-Call Pop-Up Bottom Sheet Overlay
+    // Batch 5 + Batch 20: Smart Post-Call Pop-Up Bottom Sheet Overlay with Sequential Clear Queue Mode
+    val advanceMainPostCallQueue: () -> Unit = {
+        val nextIdx = postCallQueueIndex + 1
+        if (nextIdx < postCallQueue.size) {
+            postCallQueueIndex = nextIdx
+            activePostCall = postCallQueue[nextIdx]
+        } else {
+            activePostCall = null
+            postCallQueue = emptyList()
+            postCallQueueIndex = 0
+        }
+    }
+
     activePostCall?.let { currentCall ->
-        val currentLeads = remember(currentCall.id, crmExternalRefreshTick) { readCrmLeads(context) }
+        var currentLeads by remember(currentCall.id) { mutableStateOf<List<CrmLead>>(emptyList()) }
+        LaunchedEffect(currentCall.id, crmExternalRefreshTick) {
+            currentLeads = withContext(Dispatchers.IO) { readCrmLeads(context) }
+        }
         PostCallSmartSheet(
             call = currentCall,
             leads = currentLeads,
@@ -1613,28 +2306,44 @@ fun MainAppPortal() {
             employeeName = effectiveUserProfile.username,
             employeeMobile = effectiveUserProfile.mobileNumber,
             onDismissLater = { c ->
-                CrmCallManager.enqueueUnloggedCall(context, c)
-                CrmCallManager.markPostCallPopupShown(context, c)
-                unloggedCallQueue = CrmCallManager.getUnloggedCallQueue(context)
-                activePostCall = null
+                CrmCallManager.markCallSkipped(context, c)
+                advanceMainPostCallQueue()
+                coroutineScope.launch {
+                    val refreshedQueue = withContext(Dispatchers.IO) {
+                        CrmCallManager.removeFromUnloggedQueue(context, c)
+                        CrmCallManager.markPostCallPopupShown(context, c)
+                        CrmCallManager.getUnloggedCallQueue(context)
+                    }
+                    unloggedCallQueue = refreshedQueue
+                    callsExternalRefreshTick++
+                }
             },
             onMarkPersonalIgnore = { c ->
-                IgnoredNumbersManager.markPersonalIgnored(context, c.phoneNumber)
-                CrmCallManager.markPostCallPopupShown(context, c)
-                unloggedCallQueue = CrmCallManager.getUnloggedCallQueue(context)
-                activePostCall = null
                 Toast.makeText(context, "Muted future pop-ups for ${c.phoneNumber}", Toast.LENGTH_SHORT).show()
+                advanceMainPostCallQueue()
+                coroutineScope.launch {
+                    val refreshedQueue = withContext(Dispatchers.IO) {
+                        IgnoredNumbersManager.markPersonalIgnored(context, c.phoneNumber)
+                        CrmCallManager.removeFromUnloggedQueue(context, c)
+                        CrmCallManager.markPostCallPopupShown(context, c)
+                        CrmCallManager.getUnloggedCallQueue(context)
+                    }
+                    unloggedCallQueue = refreshedQueue
+                    callsExternalRefreshTick++
+                }
             },
             onSaveLeadAndSync = { lead, actType, actNotes ->
-                val persisted = upsertCrmLeadFromPostCall(
-                    context = context,
-                    lead = lead,
-                    activityType = actType,
-                    activityNotes = actNotes,
-                    performer = effectiveUserProfile.username
-                )
-                crmExternalRefreshTick++
                 coroutineScope.launch {
+                    val persisted = withContext(Dispatchers.IO) {
+                        upsertCrmLeadFromPostCall(
+                            context = context,
+                            lead = lead,
+                            activityType = actType,
+                            activityNotes = actNotes,
+                            performer = effectiveUserProfile.username
+                        )
+                    }
+                    crmExternalRefreshTick++
                     repository.pushCrmLeadToMasterSheet(persisted)
                 }
             },
@@ -1650,7 +2359,8 @@ fun MainAppPortal() {
                     newStatus = newStatus,
                     callNote = callNote,
                     confirmedBy = effectiveUserProfile.username,
-                    updatedRentOrSale = updatedPrice
+                    updatedRentOrSale = updatedPrice,
+                    pocType = prop.pocType.takeIf { it.isNotBlank() }
                 )
                 Toast.makeText(
                     context,
@@ -1664,7 +2374,8 @@ fun MainAppPortal() {
                     propertyId = prop.id,
                     ownerPhone = callRec.phoneNumber,
                     ownerName = ownerNameInput,
-                    callNote = callRec.notes
+                    callNote = callRec.notes,
+                    pocType = prop.pocType.takeIf { it.isNotBlank() }
                 )
                 Toast.makeText(
                     context,
@@ -1674,10 +2385,7 @@ fun MainAppPortal() {
                 ok
             },
             onAddNewProperty = { newProp ->
-                val ok = repository.addProperty(newProp)
-                if (ok) {
-                    coroutineScope.launch { repository.pushPropertyToMasterSheet(newProp) }
-                }
+                val ok = repository.addPropertyAsync(newProp)
                 Toast.makeText(
                     context,
                     if (ok) "Property saved & synced" else "Unable to save property",
@@ -1686,25 +2394,107 @@ fun MainAppPortal() {
                 ok
             },
             onOpenFullAddProperty = { ownerPhone ->
-                runCatching {
-                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    cm?.setPrimaryClip(ClipData.newPlainText("Owner Phone", ownerPhone))
-                }
+                pendingAddPropertyPhone = ownerPhone
+                pendingAddPropertyFromCall = true
                 activePostCall = null
+                postCallQueue = emptyList()
+                postCallQueueIndex = 0
                 currentDestination = DrawerDestination.ADD_PROPERTY
-                Toast.makeText(
-                    context,
-                    "Owner phone ($ownerPhone) copied — paste in Owner Phone",
-                    Toast.LENGTH_LONG
-                ).show()
             },
             onCallResolved = { resolvedCall ->
-                CrmCallManager.markPostCallPopupShown(context, resolvedCall)
-                CrmCallManager.removeFromUnloggedQueue(context, resolvedCall)
-                unloggedCallQueue = CrmCallManager.getUnloggedCallQueue(context)
-                callsExternalRefreshTick++
-                activePostCall = null
                 Toast.makeText(context, "Call logged & synced", Toast.LENGTH_SHORT).show()
+                advanceMainPostCallQueue()
+                coroutineScope.launch {
+                    val refreshedQueue = withContext(Dispatchers.IO) {
+                        CrmCallManager.markPostCallPopupShown(context, resolvedCall)
+                        CrmCallManager.removeFromUnloggedQueue(context, resolvedCall)
+                        CrmCallManager.getUnloggedCallQueue(context)
+                    }
+                    unloggedCallQueue = refreshedQueue
+                    callsExternalRefreshTick++
+                }
+            },
+            tenants = tenantsList,
+            brokersVendors = brokersVendorsList,
+            canViewFullConfidentialPhones = PhoneMaskingUtils.canViewUnmaskedConfidentialPhone(
+                userProfile = effectiveUserProfile,
+                revealToggleOn = revealConfidentialPhonesForExec
+            ),
+            autoSaveGoogleContactsEnabled = autoSaveContactsEnabled,
+            onSaveTenantAndSync = { savedTenant ->
+                repository.saveTenantLocalAndSync(savedTenant)
+            },
+            onSaveBrokerVendorAndSync = { savedPartner ->
+                repository.saveBrokerVendorLocalAndSync(savedPartner)
+            },
+            onOpenMoreDetailsForRole = { role, savedCall, prefilledName, prefilledNotes, linkedEntityId, subRole ->
+                activePostCall = null
+                postCallQueue = emptyList()
+                postCallQueueIndex = 0
+                coroutineScope.launch {
+                    val refreshedQueue = withContext(Dispatchers.IO) {
+                        CrmCallManager.markPostCallPopupShown(context, savedCall)
+                        CrmCallManager.removeFromUnloggedQueue(context, savedCall)
+                        CrmCallManager.getUnloggedCallQueue(context)
+                    }
+                    unloggedCallQueue = refreshedQueue
+                    callsExternalRefreshTick++
+                }
+                pendingCallNavigation = PendingCallNavigation.fromPostCallAction(
+                    role = role,
+                    call = savedCall,
+                    prefilledName = prefilledName,
+                    prefilledNotes = prefilledNotes,
+                    linkedEntityId = linkedEntityId,
+                    subRole = subRole
+                )
+            },
+            queuePosition = (postCallQueueIndex + 1).coerceAtLeast(1),
+            queueTotal = postCallQueue.size.coerceAtLeast(1),
+            onCloseQueueDone = {
+                activePostCall = null
+                postCallQueue = emptyList()
+                postCallQueueIndex = 0
+                coroutineScope.launch {
+                    val refreshedQueue = withContext(Dispatchers.IO) {
+                        CrmCallManager.getUnloggedCallQueue(context)
+                    }
+                    unloggedCallQueue = refreshedQueue
+                    callsExternalRefreshTick++
+                }
+            },
+            onMissedCallWaCallback = { handledCall ->
+                advanceMainPostCallQueue()
+                coroutineScope.launch {
+                    val refreshedQueue = withContext(Dispatchers.IO) {
+                        CrmCallManager.markPostCallPopupShown(context, handledCall)
+                        CrmCallManager.removeFromUnloggedQueue(context, handledCall)
+                        CrmCallManager.getUnloggedCallQueue(context)
+                    }
+                    unloggedCallQueue = refreshedQueue
+                    callsExternalRefreshTick++
+                }
+            },
+            onProjectCreated = { newProject ->
+                coroutineScope.launch {
+                    val reloaded = withContext(Dispatchers.IO) {
+                        ProjectDirectoryStore.invalidateCache()
+                        runCatching { ProjectDirectoryStore.read(context) }.getOrDefault(directoryProjects)
+                    }
+                    directoryProjects = reloaded
+                    repository.pushDirectoryProjectToMasterSheet(newProject)
+                }
+            },
+            onOpenCaptureBrokerUnit = { bName, bPhone, cNote ->
+                activePostCall = null
+                postCallQueue = emptyList()
+                postCallQueueIndex = 0
+                pendingAddPropertyName = bName
+                pendingAddPropertyPhone = bPhone
+                pendingAddPropertyNote = cNote
+                pendingAddPropertyPocType = "Broker"
+                pendingAddPropertyFromCall = true
+                currentDestination = DrawerDestination.ADD_PROPERTY
             }
         )
     }
@@ -1727,6 +2517,13 @@ fun MainAppPortal() {
                 postCallVisitTargetLead = null
                 crmExternalRefreshTick++
             }
+        )
+    }
+
+    availableAppUpdate?.let { updateInfo ->
+        com.example.ui.components.AppUpdateDialog(
+            updateInfo = updateInfo,
+            onDismiss = { repository.dismissAvailableAppUpdate() }
         )
     }
     }

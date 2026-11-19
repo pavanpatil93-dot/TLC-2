@@ -35,11 +35,14 @@ enum class DrawerDestination(
     val isComingSoon: Boolean = false
 ) {
     INVENTORY_DASHBOARD("Inventory Dashboard", Icons.Default.Dashboard),
+    DAILY_OPS("Daily POA & EOD", Icons.Default.EventNote),
     CRM_WORKSPACE("CRM Workspace", Icons.Default.Groups),
     CRM_CALLS("Call Intelligence", Icons.Default.Call),
+    TENANTS_LEASES("Tenants & Leases", Icons.Default.VpnKey),
+    WHATSAPP_FOLLOWUPS("WhatsApp Follow-ups", Icons.Default.MarkChatUnread),
     SEARCH_PROPERTIES("Search & Filter Properties", Icons.Default.Search),
-    COMMERCIAL("Commercial Portfolio", Icons.Default.Business),
-    RESIDENTIAL("Residential Portfolio", Icons.Default.Apartment),
+    COMMERCIAL("Commercial Inventory", Icons.Default.Business),
+    RESIDENTIAL("Residential Inventory", Icons.Default.Apartment),
     ADD_PROPERTY("Add Property", Icons.Default.AddCircleOutline),
     CLIENT_MATCHER("Client Requirement Matcher", Icons.Default.PersonSearch),
     AI_SEARCH("AI Inventory Search", Icons.Default.AutoAwesome),
@@ -70,7 +73,8 @@ fun AppDrawerContent(
     isDesktopCompact: Boolean = false,
     onToggleDesktopCompact: (() -> Unit)? = null,
     themeMode: TlcThemeMode = TlcThemeController.themeMode,
-    onThemeModeChange: ((TlcThemeMode) -> Unit)? = null
+    onThemeModeChange: ((TlcThemeMode) -> Unit)? = null,
+    whatsappUnreadCount: Int = 0
 ) {
     Surface(
         color = BackgroundSoft,
@@ -265,85 +269,31 @@ fun AppDrawerContent(
                             }
                         }
                     }
+                }
 
-                    Text(
-                        text = if (crmMode) "CRM WORKSPACE" else "INVENTORY WORKSPACE",
-                        color = PrimaryActionOrange,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                    )
-                    OutlinedButton(
-                        onClick = {
-                            onNavigate(if (crmMode) DrawerDestination.SEARCH_PROPERTIES else DrawerDestination.CRM_WORKSPACE)
-                            onCloseDrawer()
-                        },
-                        border = BorderStroke(1.dp, BorderGrey),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = SurfaceWhite,
-                            contentColor = TextPrimary
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp)
-                    ) {
-                        Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = PrimaryActionOrange)
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = if (crmMode) "Switch to Inventory" else "Switch to CRM",
-                            fontWeight = FontWeight.SemiBold
-                        )
+                val isAdminOrManager = userProfile.role == UserRole.ADMIN ||
+                    userProfile.role == UserRole.COMMERCIAL_MANAGER ||
+                    userProfile.role == UserRole.RESIDENTIAL_MANAGER
+                val workspaceDestinations = buildList {
+                    add(DrawerDestination.DAILY_OPS)
+                    add(DrawerDestination.TENANTS_LEASES)
+                    add(DrawerDestination.WHATSAPP_FOLLOWUPS)
+                    add(DrawerDestination.SAVED_PROPERTIES)
+                    add(DrawerDestination.COMPARE_PROPERTIES)
+                    add(DrawerDestination.FIND_ON_MAP)
+                    add(DrawerDestination.MASTER_SYNC)
+                    if (isAdminOrManager) {
+                        add(DrawerDestination.TEAM_ADMIN)
                     }
-                    Spacer(Modifier.height(6.dp))
                 }
-
-                val adminItems = if (userProfile.role == UserRole.ADMIN) {
-                    listOf(DrawerDestination.TEAM_ADMIN)
-                } else {
-                    emptyList()
-                }
-                val workspaceDestinations = if (crmMode) listOf(
-                    DrawerDestination.CRM_WORKSPACE,
-                    DrawerDestination.CRM_CALLS,
-                    DrawerDestination.CLIENT_MATCHER,
-                    DrawerDestination.PROJECT_DIRECTORY
-                ) + adminItems + listOf(DrawerDestination.SETTINGS) else listOf(
-                    DrawerDestination.SEARCH_PROPERTIES,
-                    DrawerDestination.PROJECT_DIRECTORY,
-                    DrawerDestination.SAVED_PROPERTIES,
-                    DrawerDestination.COMPARE_PROPERTIES,
-                    DrawerDestination.FIND_ON_MAP,
-                    DrawerDestination.MASTER_SYNC
-                ) + adminItems + listOf(DrawerDestination.SETTINGS)
 
                 workspaceDestinations.forEach { destination ->
-                    if (!isDesktopCompact && destination == DrawerDestination.SETTINGS) {
-                        Spacer(Modifier.height(10.dp))
-                        HorizontalDivider(color = BorderGrey)
-                        Text(
-                            text = "COMMON SETTINGS & TECHNICAL",
-                            color = SecondaryText,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)
-                        )
-                    }
-                    if (!isDesktopCompact && destination == DrawerDestination.CLIENT_MATCHER) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = "CLIENT & PROPERTY MATCHING",
-                            color = SecondaryText,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
-                    }
                     val isSelected = currentDestination == destination
 
                     val badgeText = when (destination) {
                         DrawerDestination.COMMERCIAL -> "$commercialCount"
                         DrawerDestination.RESIDENTIAL -> "$residentialCount"
+                        DrawerDestination.WHATSAPP_FOLLOWUPS -> if (whatsappUnreadCount > 0) "$whatsappUnreadCount" else null
                         DrawerDestination.COMPARE_PROPERTIES -> if (comparisonCount > 0) "$comparisonCount" else null
                         DrawerDestination.SAVED_PROPERTIES -> if (savedCount > 0) "$savedCount" else null
                         else -> null
@@ -511,19 +461,30 @@ fun AppDrawerContent(
                             }
                         }
 
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(SelectedContainerColor)
-                                .border(0.8.dp, FocusOutlineColor, RoundedCornerShape(6.dp))
-                                .padding(horizontal = 7.dp, vertical = 3.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(
-                                text = userProfile.role.label.uppercase(),
-                                color = TextPrimary,
-                                fontSize = 8.5.sp,
-                                fontWeight = FontWeight.Black,
-                                letterSpacing = 0.5.sp
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(SelectedContainerColor)
+                                    .border(0.8.dp, FocusOutlineColor, RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 7.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = userProfile.role.label.uppercase(),
+                                    color = TextPrimary,
+                                    fontSize = 8.5.sp,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Open Settings",
+                                tint = SecondaryText,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     }

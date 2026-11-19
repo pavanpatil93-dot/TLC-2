@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import java.net.URLEncoder
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -12,6 +13,9 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -42,6 +46,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.example.crm.CrmCallManager
+import com.example.crm.LastCalledByBanner
 import com.example.data.FileStorageManager
 import com.example.data.SheetsRepository
 import com.example.data.UserSettingsManager
@@ -57,6 +63,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 import java.util.UUID
+import com.example.loi.LoiDraftFactory
+import com.example.ui.components.LoiBuilderBottomSheet
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -83,13 +91,19 @@ fun PropertyDetailScreen(
     canEditLocation: Boolean = isInternalMode && onEditProperty != null,
     onViewMapExternal: ((PropertyItem) -> Unit)? = null,
     onDirectionsExternal: ((PropertyItem) -> Unit)? = null,
-    onCopyLocation: ((PropertyItem, (String) -> Unit) -> Unit)? = null
+    onCopyLocation: ((PropertyItem, (String) -> Unit) -> Unit)? = null,
+    sheetsRepository: SheetsRepository? = null,
+    onLinkOrViewTenant: ((PropertyItem) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val sheetsRepository = remember(context) { SheetsRepository(context.applicationContext) }
+    val activeRepository = remember(context, sheetsRepository) {
+        sheetsRepository ?: SheetsRepository(context.applicationContext, startForegroundSync = false)
+    }
     val userSettingsManager = remember(context) { UserSettingsManager(context) }
     val userProfile by userSettingsManager.userProfile.collectAsState()
+    val revealConfidentialExecToggle by userSettingsManager.revealConfidentialPhonesForExec.collectAsState()
+    var localRevealPhone by remember(property.id) { mutableStateOf(false) }
 
     // ── PERSISTENT SCROLL & PAGER STATE ──
     val listState = rememberSaveable(property.id, saver = LazyListState.Saver) { LazyListState() }
@@ -98,12 +112,59 @@ fun PropertyDetailScreen(
     var showDeleteConfirmationDialog by remember { mutableStateOf(false) }
     var showVerifyConfirmationDialog by remember { mutableStateOf(false) }
     var showCompletenessDialog by remember { mutableStateOf(false) }
+    var showDetailedVerificationLogSheet by remember { mutableStateOf(false) }
+    var showFetchPhotoPicker by remember { mutableStateOf(false) }
+    var isSearchingOnlinePhotos by remember { mutableStateOf(false) }
+    var onlinePhotoError by remember { mutableStateOf<String?>(null) }
+    var onlinePhotoCandidates by remember { mutableStateOf<List<OnlineProjectPhotoCandidate>>(emptyList()) }
+    var selectedOnlineCandidate by remember { mutableStateOf<OnlineProjectPhotoCandidate?>(null) }
     var detailActionsOpen by remember { mutableStateOf(false) }
+    var showFbMarketplaceSheet by remember { mutableStateOf(false) }
+    var showStatusFlyerSheet by remember { mutableStateOf(false) }
+    var showLoiBuilderSheet by remember { mutableStateOf(false) }
 
     var liveImages by remember(property.id, property.images) { mutableStateOf(property.images) }
     var liveAttachments by remember(property.id, property.attachments) { mutableStateOf(property.attachments) }
     var isUploadingToDrive by remember { mutableStateOf(false) }
     var driveUploadStatusText by remember { mutableStateOf("") }
+
+    val defaultSearchQuery = remember(property) {
+        val cleanLoc = property.location.substringBefore(",").trim()
+        if (cleanLoc.isNotBlank()) "${property.projectName.trim()} $cleanLoc Pune" else "${property.projectName.trim()} Pune"
+    }
+    var onlineSearchQuery by remember(property) { mutableStateOf(defaultSearchQuery) }
+
+    val launchOnlinePhotoSearch: () -> Unit = {
+        showFetchPhotoPicker = true
+        isSearchingOnlinePhotos = true
+        onlinePhotoError = null
+        selectedOnlineCandidate = null
+        val userCustomQuery = onlineSearchQuery.trim().takeIf {
+            it.isNotBlank() && !it.equals(defaultSearchQuery.trim(), ignoreCase = true)
+        }
+        coroutineScope.launch {
+            val res = activeRepository.searchOnlineProjectPhotos(
+                projectName = property.projectName,
+                location = property.location,
+                customQuery = userCustomQuery,
+                latitude = property.latitude,
+                longitude = property.longitude,
+                googleMapsUrl = property.googleMapsUrl
+            )
+            isSearchingOnlinePhotos = false
+            res.onSuccess { list ->
+                onlinePhotoCandidates = list
+                if (list.isEmpty()) {
+                    onlinePhotoError = "No photos found online for '$onlineSearchQuery'. Try tweaking keywords or use Google Images below."
+                } else {
+                    selectedOnlineCandidate = list.firstOrNull()
+                }
+            }.onFailure { err ->
+                onlinePhotoCandidates = emptyList()
+                onlinePhotoError = err.localizedMessage ?: "Online photo search failed."
+            }
+        }
+    }
 
     val detailPhotoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 20)
@@ -123,7 +184,7 @@ fun PropertyDetailScreen(
                         val resolvedUrl = withContext(Dispatchers.IO) {
                             val file = File(localPath.removePrefix("file://"))
                             if (file.exists() && file.length() > 0L) {
-                                sheetsRepository.uploadMediaToDrive(
+                                activeRepository.uploadMediaToDrive(
                                     propertyId = propCodeOrId,
                                     fileName = "photo_${System.currentTimeMillis()}_${idx + 1}.jpg",
                                     mimeType = "image/jpeg",
@@ -142,9 +203,9 @@ fun PropertyDetailScreen(
                         attachments = liveAttachments,
                         listingLink = property.listingLink ?: updatedPhotos.firstOrNull { it.startsWith("http", ignoreCase = true) }
                     )
-                    sheetsRepository.updateProperty(updatedProp, "Uploaded photos to Google Drive")
+                    activeRepository.updateProperty(updatedProp, "Uploaded photos to Google Drive")
                     withContext(Dispatchers.IO) {
-                        sheetsRepository.pushPropertyToMasterSheet(updatedProp)
+                        activeRepository.pushPropertyToMasterSheet(updatedProp)
                     }
                     Toast.makeText(context, "Uploaded ${uploadedUrls.size} photo(s) to Google Drive & synced!", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
@@ -174,7 +235,7 @@ fun PropertyDetailScreen(
                     val resolvedUrl = withContext(Dispatchers.IO) {
                         val file = File(savedPath.removePrefix("file://"))
                         if (file.exists() && file.length() > 0L) {
-                            sheetsRepository.uploadMediaToDrive(
+                            activeRepository.uploadMediaToDrive(
                                 propertyId = propCodeOrId,
                                 fileName = fileName,
                                 mimeType = mime,
@@ -198,9 +259,9 @@ fun PropertyDetailScreen(
                         images = liveImages,
                         attachments = updatedAttachments
                     )
-                    sheetsRepository.updateProperty(updatedProp, "Uploaded PDF brochure to Google Drive")
+                    activeRepository.updateProperty(updatedProp, "Uploaded PDF brochure to Google Drive")
                     withContext(Dispatchers.IO) {
-                        sheetsRepository.pushPropertyToMasterSheet(updatedProp)
+                        activeRepository.pushPropertyToMasterSheet(updatedProp)
                     }
                     Toast.makeText(context, "Uploaded $fileName to Google Drive & synced!", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
@@ -346,6 +407,14 @@ fun PropertyDetailScreen(
                                 onDismissRequest = { detailActionsOpen = false }
                             ) {
                                 DropdownMenuItem(
+                                    text = { Text("Detailed Verification Log") },
+                                    onClick = {
+                                        detailActionsOpen = false
+                                        showDetailedVerificationLogSheet = true
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.History, contentDescription = null, tint = PrimaryActionOrange) }
+                                )
+                                DropdownMenuItem(
                                     text = { Text("Verify Availability") },
                                     onClick = {
                                         detailActionsOpen = false
@@ -361,14 +430,28 @@ fun PropertyDetailScreen(
                                     },
                                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.CompareArrows, contentDescription = null, tint = PrimaryActionOrange) }
                                 )
-                                if (isInternalMode && onDeleteProperty != null) {
+                                if (isInternalMode && userProfile.isAdminOrSuperAdmin && onDeleteProperty != null) {
+                                    HorizontalDivider(color = BorderSubtle)
                                     DropdownMenuItem(
-                                        text = { Text("Delete Property", color = StatusDangerRed) },
+                                        text = {
+                                            Text(
+                                                "Delete Permanently",
+                                                color = StatusDangerRed,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        },
                                         onClick = {
                                             detailActionsOpen = false
                                             showDeleteConfirmationDialog = true
                                         },
-                                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = StatusDangerRed) }
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.DeleteForever,
+                                                contentDescription = null,
+                                                tint = StatusDangerRed
+                                            )
+                                        },
+                                        modifier = Modifier.testTag("property_detail_delete_permanently_menu_item")
                                     )
                                 }
                             }
@@ -615,6 +698,21 @@ fun PropertyDetailScreen(
                             )
                         }
 
+                        // Batch 20: Team "Last Called By" History Banner
+                        val lastPropertyCall = remember(property.id, property.propertyCode, property.ownerContact, property.brokerContact) {
+                            CrmCallManager.findLastCallForTarget(
+                                context = context,
+                                phones = listOfNotNull(property.ownerContact, property.brokerContact),
+                                entityIds = listOf(property.id, property.propertyCode)
+                            )
+                        }
+                        if (lastPropertyCall != null) {
+                            LastCalledByBanner(
+                                lastCall = lastPropertyCall,
+                                testTag = "property_last_called_by_banner"
+                            )
+                        }
+
                         HorizontalDivider(color = BorderGrey)
 
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -631,6 +729,169 @@ fun PropertyDetailScreen(
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("Status", fontSize = 11.sp, color = SecondaryText)
                                 Text(property.status.label, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = PrimaryActionOrange)
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { showDetailedVerificationLogSheet = true },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, BorderGrey),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 44.dp)
+                                    .testTag("detail_verification_log_btn")
+                            ) {
+                                Icon(Icons.Default.History, contentDescription = null, tint = PrimaryActionOrange, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Verification Log",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (isAuthorized) {
+                                Button(
+                                    onClick = launchOnlinePhotoSearch,
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = PrimaryActionOrange.copy(alpha = 0.14f),
+                                        contentColor = PrimaryActionOrange
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 44.dp)
+                                        .testTag("detail_fetch_project_photo_btn")
+                                ) {
+                                    Icon(Icons.Default.ImageSearch, contentDescription = null, tint = PrimaryActionOrange, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Fetch Project Photo",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+
+                        // Marketing Collateral Row: FB Marketplace Ad + Luxury Navy & Gold Status Flyer
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { showFbMarketplaceSheet = true },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, FocusOutlineColor.copy(alpha = 0.65f)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .testTag("detail_fb_ad_btn")
+                            ) {
+                                Icon(Icons.Default.Campaign, contentDescription = null, tint = FocusOutlineColor, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "FB Marketplace Ad",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Button(
+                                onClick = { showStatusFlyerSheet = true },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF0B1B2B),
+                                    contentColor = Color(0xFFD4AF37)
+                                ),
+                                border = BorderStroke(1.dp, Color(0xFFD4AF37)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .testTag("detail_status_flyer_btn")
+                            ) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFD4AF37), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Status Flyer",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        val isLeasedOrPreLeased = property.status == AvailabilityStatus.LEASED ||
+                            property.tab == InventoryTab.PRE_LEASED ||
+                            property.transactionType.contains("Pre-Leased", ignoreCase = true) ||
+                            !property.tenantName.isNullOrBlank()
+                        if (isAuthorized && isLeasedOrPreLeased && onLinkOrViewTenant != null) {
+                            OutlinedButton(
+                                onClick = { onLinkOrViewTenant(property) },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, PrimaryActionOrange.copy(alpha = 0.6f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .testTag("detail_link_view_tenant_btn")
+                            ) {
+                                Icon(Icons.Default.VpnKey, contentDescription = null, tint = PrimaryActionOrange, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "+ Link / View Tenant",
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryActionOrange
+                                )
+                            }
+                        }
+
+                        val isLeaseOrNegotiationForLoi = remember(property, isAuthorized) {
+                            isAuthorized && (
+                                property.tab.isRental ||
+                                    property.transactionType.contains("Lease", ignoreCase = true) ||
+                                    property.transactionType.contains("Rent", ignoreCase = true) ||
+                                    property.status == AvailabilityStatus.UNDER_NEGOTIATION ||
+                                    property.hasDualSaleAndLeaseOffer ||
+                                    (property.rent ?: 0.0) > 0.0
+                                )
+                        }
+                        if (isLeaseOrNegotiationForLoi) {
+                            Button(
+                                onClick = { showLoiBuilderSheet = true },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = PrimaryActionOrange,
+                                    contentColor = OnPrimaryActionColor
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .testTag("detail_generate_loi_pdf_btn")
+                            ) {
+                                Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(17.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Generate LOI PDF",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
 
@@ -693,7 +954,7 @@ fun PropertyDetailScreen(
                 ) {
                     Text("3. Offer Details & Financials", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TextPrimary)
 
-                    val saleVal = property.priceSale ?: property.priceOrRent
+                    val saleVal = CalculationUtils.effectiveSaleAmount(property)
                     val showSaleCard = saleVal > 0.0 || property.hasDualSaleAndLeaseOffer
                     val showLeaseCard = (property.rent != null && property.rent > 0.0) || property.hasDualSaleAndLeaseOffer
 
@@ -985,6 +1246,19 @@ fun PropertyDetailScreen(
                                             Text("+ Drive PDF", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = FocusOutlineColor, maxLines = 1)
                                         }
                                     }
+                                    OutlinedButton(
+                                        onClick = launchOnlinePhotoSearch,
+                                        enabled = !isUploadingToDrive,
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, PrimaryActionOrange.copy(alpha = 0.5f)),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(40.dp)
+                                    ) {
+                                        Icon(Icons.Default.ImageSearch, contentDescription = null, tint = PrimaryActionOrange, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Fetch Project Photo Online (Applies to All Project Units)", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = PrimaryActionOrange, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
                                 }
                                 if (isUploadingToDrive) {
                                     Row(
@@ -1100,7 +1374,7 @@ fun PropertyDetailScreen(
                                 ) {
                                     Column(
                                         modifier = Modifier.weight(1f),
-                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         Text("Contact Person", fontSize = 11.sp, color = SecondaryText)
                                         Text(
@@ -1111,20 +1385,78 @@ fun PropertyDetailScreen(
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis
                                         )
+                                        val resolvedPocBadge = normalizePocType(property.pocType).ifBlank {
+                                            when (InventoryQuality.resolveSourceInfo(property, isAuthorized = true).type) {
+                                                com.example.inventory.SourceBadgeType.CP_BROKER -> "Broker"
+                                                com.example.inventory.SourceBadgeType.DEVELOPER -> "Developer Sales Team"
+                                                com.example.inventory.SourceBadgeType.OWNER ->
+                                                    if (!property.ownerName.isNullOrBlank()) "Property Owner" else ""
+                                            }
+                                        }
+                                        if (resolvedPocBadge.isNotBlank()) {
+                                            val badgeColor = when (resolvedPocBadge) {
+                                                "Broker" -> StatusInfoBlue
+                                                "Developer Sales Team" -> PrimaryActionOrange
+                                                else -> StatusSuccessGreen
+                                            }
+                                            Surface(
+                                                color = badgeColor.copy(alpha = 0.12f),
+                                                shape = RoundedCornerShape(6.dp),
+                                                border = BorderStroke(0.75.dp, badgeColor.copy(alpha = 0.4f)),
+                                                modifier = Modifier.testTag("detail_poc_type_badge")
+                                            ) {
+                                                Text(
+                                                    text = resolvedPocBadge,
+                                                    color = badgeColor,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
                                     }
                                     Column(
                                         modifier = Modifier.weight(1f),
                                         verticalArrangement = Arrangement.spacedBy(2.dp)
                                     ) {
-                                        Text("Contact Phone", fontSize = 11.sp, color = SecondaryText)
-                                        Text(
-                                            text = property.ownerContact.orEmpty().ifBlank { property.brokerContact.orEmpty().ifBlank { "N/A" } },
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
-                                            color = PrimaryActionOrange,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                        val rawPhone = property.ownerContact.orEmpty().ifBlank { property.brokerContact.orEmpty() }
+                                        val canViewFull = PhoneMaskingUtils.canViewUnmaskedConfidentialPhone(
+                                            userProfile = userProfile,
+                                            revealToggleOn = revealConfidentialExecToggle || localRevealPhone
                                         )
+                                        val displayPhone = if (rawPhone.isBlank()) {
+                                            "N/A"
+                                        } else {
+                                            PhoneMaskingUtils.formatPhoneForRole(rawPhone, canViewFull)
+                                        }
+                                        Text("Contact Phone", fontSize = 11.sp, color = SecondaryText)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = displayPhone,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = PrimaryActionOrange,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier
+                                                    .weight(1f, fill = false)
+                                                    .testTag("detail_confidential_phone_text")
+                                            )
+                                            if (rawPhone.isNotBlank() && !PhoneMaskingUtils.canViewUnmaskedConfidentialPhone(userProfile, false)) {
+                                                IconButton(
+                                                    onClick = { localRevealPhone = !localRevealPhone },
+                                                    modifier = Modifier.size(36.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (canViewFull) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                        contentDescription = if (canViewFull) "Mask Phone" else "Reveal Phone",
+                                                        tint = PrimaryActionOrange,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                                 HorizontalDivider(color = BorderSubtle)
@@ -1270,24 +1602,49 @@ fun PropertyDetailScreen(
 
     // ── DIALOGS ──
     if (showDeleteConfirmationDialog && onDeleteProperty != null) {
+        val deleteDisplayTitle = listOf(
+            property.projectName.ifBlank { property.propertyType },
+            property.propertyCode.ifBlank { property.recordId.ifBlank { property.id } }
+        ).filter { it.isNotBlank() }.distinct().joinToString(" / ")
         AlertDialog(
             onDismissRequest = { showDeleteConfirmationDialog = false },
-            title = { Text("Delete Property") },
-            text = { Text("Are you sure you want to delete this property record? This action cannot be undone.") },
+            containerColor = SurfaceWhite,
+            title = {
+                Text(
+                    "Delete Permanently",
+                    color = StatusDangerRed,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    "Permanently delete $deleteDisplayTitle from this device and the Master Google Sheet? This cannot be undone.",
+                    color = TextPrimary
+                )
+            },
             confirmButton = {
                 Button(
                     onClick = {
                         showDeleteConfirmationDialog = false
                         onDeleteProperty()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = StatusDangerRed,
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("property_confirm_permanent_delete_btn")
                 ) {
-                    Text("Delete", color = Color.White)
+                    Text("Delete Permanently", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirmationDialog = false }) {
-                    Text("Cancel")
+                TextButton(
+                    onClick = { showDeleteConfirmationDialog = false },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text("Cancel", color = TextPrimary)
                 }
             }
         )
@@ -1317,6 +1674,439 @@ fun PropertyDetailScreen(
                     Text("Cancel", color = TextPrimary)
                 }
             }
+        )
+    }
+
+    // ── DETAILED VERIFICATION LOG SHEET ──
+    if (showDetailedVerificationLogSheet) {
+        val ageState = remember(property) { getVerificationAgeState(property, validityDays = 60) }
+        val isStrictLive = remember(property) { InventoryQuality.isStrictlyLive(property) }
+        ModalBottomSheet(
+            onDismissRequest = { showDetailedVerificationLogSheet = false },
+            containerColor = SurfaceWhite,
+            modifier = Modifier.testTag("detailed_verification_log_sheet")
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Detailed Verification Log", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = TextPrimary)
+                        Text(
+                            text = "${property.propertyCode.ifBlank { property.id }} · ${property.projectName.ifBlank { "Unit" }}",
+                            fontSize = 12.sp,
+                            color = SecondaryText
+                        )
+                    }
+                    Surface(
+                        color = if (isStrictLive) StatusSuccessGreen.copy(alpha = 0.14f) else StatusWarningAmber.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = if (isStrictLive) "Verified Live" else "Pending Review",
+                            color = if (isStrictLive) StatusSuccessGreen else StatusWarningAmber,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = BorderGrey)
+
+                DetailRow(label = "Availability Status", value = property.status.label)
+                DetailRow(label = "Verification State", value = property.verificationStatus.label)
+                DetailRow(
+                    label = "60-Day Policy Status",
+                    value = when (ageState) {
+                        VerificationAgeState.CURRENT -> "Current (< 60 days)"
+                        VerificationAgeState.DUE -> "Due for 60-Day Recheck"
+                        VerificationAgeState.PENDING -> "Pending Verification"
+                    }
+                )
+                DetailRow(label = "Last Verified Date", value = property.lastVerifiedDateClean.ifBlank { "Not yet verified" })
+                DetailRow(label = "Verified By", value = property.verifiedBy.orEmpty().ifBlank { "Not recorded" })
+                DetailRow(label = "Updated By", value = property.updatedBy.ifBlank { "System" })
+
+                if (property.editHistory.isNotEmpty()) {
+                    HorizontalDivider(color = BorderGrey)
+                    Text("Audit & Change Trail (${property.editHistory.size})", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
+                    property.editHistory.asReversed().take(20).forEach { entry ->
+                        Surface(
+                            color = SurfaceMuted,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(0.5.dp, BorderSubtle),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(entry.summary.ifBlank { "Record updated" }, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                                Text(
+                                    text = entry.timestamp,
+                                    fontSize = 11.sp,
+                                    color = SecondaryText
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    HorizontalDivider(color = BorderGrey)
+                    Text("No historical edits recorded yet.", fontSize = 12.sp, color = SecondaryText)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { showDetailedVerificationLogSheet = false },
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                    ) {
+                        Text("Close", color = TextPrimary)
+                    }
+                    Button(
+                        onClick = {
+                            showDetailedVerificationLogSheet = false
+                            showVerifyConfirmationDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryActionOrange,
+                            contentColor = OnPrimaryActionColor
+                        ),
+                        modifier = Modifier
+                            .weight(1.4f)
+                            .heightIn(min = 48.dp)
+                    ) {
+                        Icon(Icons.Default.Verified, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Verify Now", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    // ── FETCH PROJECT PHOTO PICKER MODAL ──
+    if (showFetchPhotoPicker) {
+        Dialog(
+            onDismissRequest = { if (!isSearchingOnlinePhotos) showFetchPhotoPicker = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                color = SurfaceWhite,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth(0.94f)
+                    .fillMaxHeight(0.84f)
+                    .testTag("fetch_project_photo_dialog")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Fetch Project Photo", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = TextPrimary)
+                            Text(
+                                text = "Preview & approve photo for all units in ${property.projectName.ifBlank { "this project" }}",
+                                fontSize = 12.sp,
+                                color = SecondaryText,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(
+                            onClick = { showFetchPhotoPicker = false },
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = TextPrimary)
+                        }
+                    }
+
+                    HorizontalDivider(color = BorderGrey)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = onlineSearchQuery,
+                            onValueChange = { onlineSearchQuery = it },
+                            placeholder = { Text("Search query...") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = launchOnlinePhotoSearch,
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryActionOrange, contentColor = OnPrimaryActionColor),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.heightIn(min = 52.dp)
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Search", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when {
+                            isSearchingOnlinePhotos -> {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    CircularProgressIndicator(color = PrimaryActionOrange)
+                                    Text("Searching online photos for ${property.projectName}...", fontSize = 13.sp, color = SecondaryText)
+                                }
+                            }
+                            onlinePhotoError != null -> {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier.padding(16.dp)
+                                ) {
+                                    Icon(Icons.Default.ImageNotSupported, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(36.dp))
+                                    Text(onlinePhotoError.orEmpty(), fontSize = 13.sp, color = TextPrimary, textAlign = TextAlign.Center)
+                                    OutlinedButton(onClick = launchOnlinePhotoSearch) {
+                                        Text("Retry Search", color = PrimaryActionOrange, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                            else -> {
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(2),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    items(onlinePhotoCandidates) { candidate ->
+                                        val isSelected = selectedOnlineCandidate?.imageUrl == candidate.imageUrl
+                                        Card(
+                                            shape = RoundedCornerShape(10.dp),
+                                            border = BorderStroke(
+                                                width = if (isSelected) 2.5.dp else 1.dp,
+                                                color = if (isSelected) PrimaryActionOrange else BorderGrey
+                                            ),
+                                            colors = CardDefaults.cardColors(containerColor = SurfaceMuted),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { selectedOnlineCandidate = candidate }
+                                        ) {
+                                            Column {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(118.dp)
+                                                        .background(SurfaceMuted)
+                                                ) {
+                                                    AsyncImage(
+                                                        model = candidate.thumbnailUrl,
+                                                        contentDescription = candidate.title,
+                                                        contentScale = ContentScale.Crop,
+                                                        modifier = Modifier.fillMaxSize()
+                                                    )
+                                                    if (isSelected) {
+                                                        Surface(
+                                                            color = PrimaryActionOrange,
+                                                            shape = CircleShape,
+                                                            modifier = Modifier
+                                                                .align(Alignment.TopEnd)
+                                                                .padding(6.dp)
+                                                                .size(24.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Check,
+                                                                contentDescription = "Selected",
+                                                                tint = OnPrimaryActionColor,
+                                                                modifier = Modifier.padding(4.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                Column(
+                                                    modifier = Modifier.padding(8.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = candidate.title,
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = TextPrimary,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    Text(
+                                                        text = candidate.source,
+                                                        fontSize = 10.sp,
+                                                        color = SecondaryText,
+                                                        maxLines = 1
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val cleanProject = property.projectName.trim()
+                            val cleanLoc = property.location.substringBefore(",").trim()
+                            val browserQuery = if (onlineSearchQuery.trim().equals(defaultSearchQuery.trim(), ignoreCase = true) && cleanProject.isNotBlank()) {
+                                if (cleanLoc.isNotBlank()) "\"$cleanProject\" \"$cleanLoc\" Pune" else "\"$cleanProject\" Pune"
+                            } else {
+                                onlineSearchQuery.trim()
+                            }
+                            val encodedGq = URLEncoder.encode(browserQuery, "UTF-8")
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?tbm=isch&q=$encodedGq"))
+                            context.startActivity(intent)
+                        },
+                        border = BorderStroke(1.dp, PrimaryActionOrange),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("fetch_photo_open_google_images_btn")
+                    ) {
+                        Icon(Icons.Default.OpenInNew, contentDescription = null, tint = PrimaryActionOrange, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Open Google Images", color = PrimaryActionOrange, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showFetchPhotoPicker = false },
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                        ) {
+                            Text("Cancel", color = TextPrimary)
+                        }
+                        Button(
+                            onClick = {
+                                val chosen = selectedOnlineCandidate
+                                if (chosen != null) {
+                                    isSearchingOnlinePhotos = true
+                                    coroutineScope.launch {
+                                        val compressedBytes = withContext(Dispatchers.IO) {
+                                            com.example.data.BingImageSearchEngine.downloadAndResizeImageBytes(chosen.imageUrl, maxMegaBytes = 1.0)
+                                        }
+                                        val finalUrl = if (compressedBytes != null && compressedBytes.isNotEmpty()) {
+                                            val propCodeOrId = property.propertyCode.ifBlank { property.id }
+                                            val uploadRes = activeRepository.uploadMediaToDrive(
+                                                propertyId = propCodeOrId,
+                                                fileName = "project_photo_${System.currentTimeMillis()}.jpg",
+                                                mimeType = "image/jpeg",
+                                                bytes = compressedBytes
+                                            )
+                                            uploadRes.getOrDefault(chosen.imageUrl)
+                                        } else {
+                                            chosen.imageUrl
+                                        }
+
+                                        isSearchingOnlinePhotos = false
+                                        val count = activeRepository.applyProjectPhotoToAllMatchingUnits(
+                                            projectName = property.projectName,
+                                            projectId = property.projectId,
+                                            photoUrl = finalUrl,
+                                            targetPropertyId = property.id
+                                        )
+                                        liveImages = (listOf(finalUrl) + liveImages.filterNot {
+                                            it.equals(finalUrl, ignoreCase = true) || it.equals(chosen.imageUrl, ignoreCase = true)
+                                        }).distinct()
+                                        selectedImageIndex = 0
+                                        showFetchPhotoPicker = false
+                                        Toast.makeText(
+                                            context,
+                                            "Uploaded to Drive & applied photo to ${maxOf(1, count)} unit(s) in ${property.projectName.ifBlank { "this project" }} & synced!",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
+                            },
+                            enabled = selectedOnlineCandidate != null && !isSearchingOnlinePhotos,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PrimaryActionOrange,
+                                contentColor = OnPrimaryActionColor
+                            ),
+                            modifier = Modifier
+                                .weight(1.5f)
+                                .heightIn(min = 48.dp)
+                                .testTag("approve_fetched_project_photo_btn")
+                        ) {
+                            Icon(Icons.Default.DoneAll, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Approve & Apply", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    val liveEmployeeName = userProfile.username.ifBlank { "TLC Executive" }
+    val liveEmployeeMobile = userProfile.mobileNumber
+    val livePropertyForCollateral = remember(property, liveImages, liveAttachments) {
+        property.copy(images = liveImages, attachments = liveAttachments)
+    }
+
+    if (showFbMarketplaceSheet) {
+        FbMarketplaceAdModalSheet(
+            property = livePropertyForCollateral,
+            employeeName = liveEmployeeName,
+            employeeMobile = liveEmployeeMobile,
+            onDismiss = { showFbMarketplaceSheet = false }
+        )
+    }
+
+    if (showStatusFlyerSheet) {
+        LuxuryStatusFlyerModalSheet(
+            property = livePropertyForCollateral,
+            employeeName = liveEmployeeName,
+            employeeMobile = liveEmployeeMobile,
+            onDismiss = { showStatusFlyerSheet = false }
+        )
+    }
+
+    if (showLoiBuilderSheet) {
+        val crmLeadsForLoi = remember(context) {
+            runCatching { readCrmLeads(context) }.getOrDefault(emptyList())
+        }
+        LoiBuilderBottomSheet(
+            initialDraft = LoiDraftFactory.fromProperty(livePropertyForCollateral),
+            availableLeads = crmLeadsForLoi,
+            availableProperties = allProperties,
+            onDismiss = { showLoiBuilderSheet = false }
         )
     }
 }

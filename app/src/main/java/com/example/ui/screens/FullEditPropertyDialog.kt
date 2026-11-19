@@ -14,6 +14,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDone
+import androidx.compose.material.icons.filled.Contacts
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,6 +37,7 @@ import com.example.data.pune.LocationEntity
 import com.example.data.pune.PuneIntelligenceRepository
 import com.example.model.*
 import com.example.ui.components.CompactDropdownField
+import com.example.ui.components.PocTypeChipSelector
 import com.example.ui.components.PropertyMediaUploadSection
 import com.example.ui.components.SearchableDropdownField
 import com.example.ui.theme.*
@@ -72,7 +75,8 @@ fun FullEditPropertyDialog(
     onDismiss: () -> Unit,
     onSaveReliable: ((expectedVersion: Int, changedFields: Set<String>, draft: PropertyItem, mutationId: String) -> PropertyEditOutcome)? = null,
     onUploadMediaToDrive: (suspend (propertyId: String, fileName: String, mimeType: String, bytes: ByteArray) -> Result<String>)? = null,
-    onPushPropertyToSheet: (suspend (PropertyItem) -> Result<Unit>)? = null
+    onPushPropertyToSheet: (suspend (PropertyItem) -> Result<Unit>)? = null,
+    onDeletePermanently: (() -> Unit)? = null
 ) {
     EditPropertyScreen(
         property = property,
@@ -80,7 +84,8 @@ fun FullEditPropertyDialog(
         onDismiss = onDismiss,
         onSaveReliable = onSaveReliable,
         onUploadMediaToDrive = onUploadMediaToDrive,
-        onPushPropertyToSheet = onPushPropertyToSheet
+        onPushPropertyToSheet = onPushPropertyToSheet,
+        onDeletePermanently = onDeletePermanently
     )
 }
 
@@ -91,11 +96,16 @@ fun EditPropertyScreen(
     onDismiss: () -> Unit,
     onSaveReliable: ((expectedVersion: Int, changedFields: Set<String>, draft: PropertyItem, mutationId: String) -> PropertyEditOutcome)? = null,
     onUploadMediaToDrive: (suspend (propertyId: String, fileName: String, mimeType: String, bytes: ByteArray) -> Result<String>)? = null,
-    onPushPropertyToSheet: (suspend (PropertyItem) -> Result<Unit>)? = null
+    onPushPropertyToSheet: (suspend (PropertyItem) -> Result<Unit>)? = null,
+    onDeletePermanently: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val fallbackRepository = remember(context) { SheetsRepository(context.applicationContext) }
+    val userSettingsManager = remember(context) { com.example.data.UserSettingsManager(context) }
+    val userProfile by userSettingsManager.userProfile.collectAsState()
+    val canPermanentDelete = userProfile.isAdminOrSuperAdmin && onDeletePermanently != null
+    var showPermanentDeleteDialog by remember { mutableStateOf(false) }
 
     val effectiveUploadMediaToDrive: suspend (String, String, String, ByteArray) -> Result<String> =
         remember(onUploadMediaToDrive, fallbackRepository) {
@@ -175,6 +185,20 @@ fun EditPropertyScreen(
     var ownerContact by remember(baseProperty) {
         mutableStateOf(baseProperty.ownerContact?.takeIf { it.isNotBlank() } ?: baseProperty.brokerContact ?: "")
     }
+    var pocType by remember(baseProperty) {
+        val resolved = normalizePocType(baseProperty.pocType).ifBlank {
+            when {
+                !baseProperty.brokerContact.isNullOrBlank() ||
+                    baseProperty.sourceInfo?.contains("broker", ignoreCase = true) == true ||
+                    baseProperty.sourceInfo?.contains("channel partner", ignoreCase = true) == true -> "Broker"
+                baseProperty.sourceInfo?.contains("developer", ignoreCase = true) == true ||
+                    baseProperty.sourceInfo?.contains("builder", ignoreCase = true) == true -> "Developer Sales Team"
+                else -> "Property Owner"
+            }
+        }
+        mutableStateOf(resolved)
+    }
+    var pocTypeModified by remember(baseProperty) { mutableStateOf(false) }
     var source by remember(baseProperty) { mutableStateOf(baseProperty.sourceInfo ?: "") }
     var remarks by remember(baseProperty) { mutableStateOf(baseProperty.remarks ?: "") }
     var listingLink by remember(baseProperty) {
@@ -225,6 +249,7 @@ fun EditPropertyScreen(
         vacancy != baseProperty.upcomingVacancyDate ||
         ownerName != initialOwnerText ||
         ownerContact != initialOwnerContactText ||
+        (pocTypeModified || (normalizePocType(baseProperty.pocType).isNotBlank() && pocType != normalizePocType(baseProperty.pocType))) ||
         source != (baseProperty.sourceInfo ?: "") ||
         remarks != (baseProperty.remarks ?: "") ||
         listingLink != initialLinkText ||
@@ -350,7 +375,9 @@ fun EditPropertyScreen(
         }
 
         val trimmedLink = listingLink.trim().takeIf { it.isNotBlank() }
-        val isBrokerSource = source.contains("Broker", ignoreCase = true) ||
+        val normalizedSelectedPoc = normalizePocType(pocType).ifBlank { "Property Owner" }
+        val isBrokerSource = normalizedSelectedPoc.equals("Broker", ignoreCase = true) ||
+            source.contains("Broker", ignoreCase = true) ||
             source.contains("Channel Partner", ignoreCase = true)
         val trimmedOwner = ownerName.trim().takeIf { it.isNotBlank() }
         val trimmedPhone = ownerContact.trim().takeIf { it.isNotBlank() }
@@ -379,10 +406,11 @@ fun EditPropertyScreen(
             status = status,
             leaseExpiryDate = expiry.trim(),
             upcomingVacancyDate = vacancy.trim(),
-            ownerName = if (!isBrokerSource) trimmedOwner else baseProperty.ownerName,
-            ownerContact = if (!isBrokerSource) trimmedPhone else baseProperty.ownerContact,
-            brokerName = if (isBrokerSource) trimmedOwner else baseProperty.brokerName,
-            brokerContact = if (isBrokerSource) trimmedPhone else baseProperty.brokerContact,
+            ownerName = if (!isBrokerSource) trimmedOwner else null,
+            ownerContact = if (!isBrokerSource) trimmedPhone else null,
+            brokerName = if (isBrokerSource) trimmedOwner else null,
+            brokerContact = if (isBrokerSource) trimmedPhone else null,
+            pocType = normalizedSelectedPoc,
             sourceInfo = source.trim().takeIf { it.isNotBlank() },
             remarks = remarks.trim().takeIf { it.isNotBlank() },
             listingLink = trimmedLink,
@@ -419,6 +447,7 @@ fun EditPropertyScreen(
             if (updated.ownerContact != baseProperty.ownerContact) add("ownerContact")
             if (updated.brokerName != baseProperty.brokerName) add("brokerName")
             if (updated.brokerContact != baseProperty.brokerContact) add("brokerContact")
+            if (updated.pocType != baseProperty.pocType || (pocTypeModified && baseProperty.pocType.isBlank())) add("pocType")
             if (updated.sourceInfo != baseProperty.sourceInfo) add("sourceInfo")
             if (updated.remarks != baseProperty.remarks) add("remarks")
             if (updated.listingLink != baseProperty.listingLink) add("listingLink")
@@ -1196,12 +1225,52 @@ fun EditPropertyScreen(
                         modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = "CONFIDENTIAL INTERNAL DETAILS",
-                            color = EditTeal,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 0.6.sp
+                        val pickEditContact = com.example.crm.rememberPickContactCallback { pickedName, cleanPhone ->
+                            if (pickedName.isNotBlank()) ownerName = pickedName
+                            if (cleanPhone.isNotBlank()) ownerContact = cleanPhone
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "CONFIDENTIAL INTERNAL DETAILS",
+                                color = EditTeal,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.6.sp
+                            )
+                            TextButton(
+                                onClick = pickEditContact,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.testTag("edit_pick_from_contacts_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Contacts,
+                                    contentDescription = "Pick from Contacts",
+                                    tint = PrimaryActionOrange,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = "Pick from Contacts",
+                                    color = PrimaryActionOrange,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        PocTypeChipSelector(
+                            selectedPocType = pocType,
+                            onSelect = {
+                                pocType = it
+                                pocTypeModified = true
+                            },
+                            title = "Type of POC",
+                            testTagPrefix = "edit_poc_chip"
                         )
 
                         Row(
@@ -1269,9 +1338,84 @@ fun EditPropertyScreen(
                     }
                 }
 
+                if (canPermanentDelete) {
+                    OutlinedButton(
+                        onClick = { showPermanentDeleteDialog = true },
+                        enabled = !isSavingAndPushing,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, StatusDangerRed),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = ErrorRedSubtle,
+                            contentColor = StatusDangerRed
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("edit_property_delete_permanently_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteForever,
+                            contentDescription = null,
+                            tint = StatusDangerRed,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Delete Permanently", fontWeight = FontWeight.Bold)
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
+    }
+
+    if (showPermanentDeleteDialog && onDeletePermanently != null) {
+        val deleteDisplayTitle = listOf(
+            baseProperty.projectName.ifBlank { baseProperty.propertyType },
+            baseProperty.propertyCode.ifBlank { baseProperty.recordId.ifBlank { baseProperty.id } }
+        ).filter { it.isNotBlank() }.distinct().joinToString(" / ")
+        AlertDialog(
+            onDismissRequest = { showPermanentDeleteDialog = false },
+            containerColor = SurfaceWhite,
+            title = {
+                Text(
+                    "Delete Permanently",
+                    color = StatusDangerRed,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    "Permanently delete $deleteDisplayTitle from this device and the Master Google Sheet? This cannot be undone.",
+                    color = TextPrimary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showPermanentDeleteDialog = false
+                        onDeletePermanently()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = StatusDangerRed,
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("edit_property_confirm_permanent_delete_btn")
+                ) {
+                    Text("Delete Permanently", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showPermanentDeleteDialog = false },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text("Cancel", color = TextPrimary)
+                }
+            }
+        )
     }
 
     if (showQuickAddProjectDialog) {

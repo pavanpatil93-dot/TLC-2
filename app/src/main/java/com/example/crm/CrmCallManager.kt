@@ -16,8 +16,10 @@ import android.telephony.PhoneStateListener
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
 import androidx.core.content.ContextCompat
+import com.example.data.OfflineDiskCache
 import com.example.data.PropertiesLocalDatabase
 import com.example.data.projects.DirectoryProject
+import com.example.model.BrokerVendorRecord
 import com.example.model.PropertyItem
 import com.example.model.UnderConstProject
 import com.example.ui.screens.CrmLead
@@ -25,12 +27,16 @@ import com.example.ui.screens.displayClientTitle
 import com.example.ui.screens.isBrokerLead
 import com.example.ui.screens.isOwnerLead
 import com.example.ui.screens.readCrmLeads
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 enum class CallType(val label: String) {
     INCOMING("Incoming"),
@@ -57,9 +63,15 @@ data class CrmCallRecord(
     val leadStatus: String = "Active", // Active, Pending Follow-up, Site Visit Scheduled, Negotiation, Closed
     val stagingStatus: String = "Live", // Live, Draft / Pending Review
     val isLinked: Boolean = false,
-    val linkedOpportunityType: String? = null, // "Client", "Owner", "Broker"
+    val linkedOpportunityType: String? = null, // "Client", "Owner", "Broker", "Tenant", "Developer POC", "Ops / Vendor"
     val linkedOpportunityTitle: String? = null,
-    val linkedOpportunityId: String? = null
+    val linkedOpportunityId: String? = null,
+    val waLogged: Boolean = false,
+    val pocSubRole: String = "",
+    val handoverStatus: String = "",
+    val handoverAssignedTo: String = "",
+    val handedOverAt: Long = 0L,
+    val handoverCallbackAt: Long = 0L
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -78,6 +90,12 @@ data class CrmCallRecord(
         put("linkedOpportunityType", linkedOpportunityType.orEmpty())
         put("linkedOpportunityTitle", linkedOpportunityTitle.orEmpty())
         put("linkedOpportunityId", linkedOpportunityId.orEmpty())
+        put("waLogged", waLogged)
+        put("pocSubRole", pocSubRole)
+        put("handoverStatus", handoverStatus)
+        put("handoverAssignedTo", handoverAssignedTo)
+        put("handedOverAt", handedOverAt)
+        put("handoverCallbackAt", handoverCallbackAt)
     }
 
     companion object {
@@ -97,7 +115,13 @@ data class CrmCallRecord(
             isLinked = obj.optBoolean("isLinked", false),
             linkedOpportunityType = obj.optString("linkedOpportunityType").ifBlank { null },
             linkedOpportunityTitle = obj.optString("linkedOpportunityTitle").ifBlank { null },
-            linkedOpportunityId = obj.optString("linkedOpportunityId").ifBlank { null }
+            linkedOpportunityId = obj.optString("linkedOpportunityId").ifBlank { null },
+            waLogged = obj.optBoolean("waLogged", false),
+            pocSubRole = obj.optString("pocSubRole", ""),
+            handoverStatus = obj.optString("handoverStatus", ""),
+            handoverAssignedTo = obj.optString("handoverAssignedTo", ""),
+            handedOverAt = obj.optLong("handedOverAt", 0L),
+            handoverCallbackAt = obj.optLong("handoverCallbackAt", 0L)
         )
     }
 }
@@ -140,7 +164,9 @@ object CrmCallManager {
     private const val KEY_ACTIVITIES = "activity_logs"
 
     fun readCalls(context: Context): List<CrmCallRecord> {
-        return runCatching {
+        val diskCached = com.example.data.OfflineDiskCache.loadCallLogs(context)
+        if (diskCached.isNotEmpty()) return diskCached
+        val fromPrefs = runCatching {
             val raw = com.example.data.auditedCrmPreferences(context, PREFS_NAME, Context.MODE_PRIVATE)
                 .getString(KEY_CALLS, "[]") ?: "[]"
             val array = JSONArray(raw)
@@ -148,9 +174,14 @@ object CrmCallManager {
                 CrmCallRecord.fromJson(array.getJSONObject(i))
             }
         }.getOrDefault(emptyList())
+        if (fromPrefs.isNotEmpty()) {
+            com.example.data.OfflineDiskCache.saveCallLogs(context, fromPrefs)
+        }
+        return fromPrefs
     }
 
     fun saveCalls(context: Context, calls: List<CrmCallRecord>) {
+        com.example.data.OfflineDiskCache.saveCallLogs(context, calls)
         val array = JSONArray()
         calls.forEach { array.put(it.toJson()) }
         com.example.data.auditedCrmPreferences(context, PREFS_NAME, Context.MODE_PRIVATE)
@@ -159,15 +190,56 @@ object CrmCallManager {
             .apply()
     }
 
+    private val callSyncScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
+    )
+
+    private fun pushCallAsync(context: Context, call: CrmCallRecord) {
+        val appContext = context.applicationContext ?: context
+        callSyncScope.launch {
+            runCatching {
+                com.example.data.SheetsRepository(appContext, startForegroundSync = false)
+                    .pushCallLogToMasterSheet(call)
+            }
+        }
+    }
+
     fun addOrUpdateCall(context: Context, call: CrmCallRecord) {
+        val taggedCall = tagInternalTeamCallIfNeeded(context, call)
         val current = readCalls(context).toMutableList()
-        val index = current.indexOfFirst { it.id == call.id }
+        val index = current.indexOfFirst { it.id == taggedCall.id }
         if (index >= 0) {
-            current[index] = call
+            current[index] = taggedCall
         } else {
-            current.add(0, call)
+            current.add(0, taggedCall)
         }
         saveCalls(context, current)
+        if (taggedCall.callType == CallType.OUTGOING || (taggedCall.callType == CallType.INCOMING && taggedCall.durationSeconds > 0)) {
+            runCatching { TeamHandoverStore.reconcileWithCallLogs(context, current) }
+        }
+        pushCallAsync(context, taggedCall)
+    }
+
+    /**
+     * Batch 18: Header WhatsApp Auto-Log.
+     * Tapping the green WhatsApp button in PostCallSmartSheet automatically logs/updates the call
+     * with "Connected on WhatsApp" and marks `waLogged = true`.
+     */
+    fun logWhatsAppTouchOnCall(context: Context, call: CrmCallRecord): CrmCallRecord {
+        val existingNotes = call.notes.trim()
+        val updatedNotes = if (existingNotes.contains("Connected on WhatsApp", ignoreCase = true)) {
+            existingNotes
+        } else if (existingNotes.isBlank() || existingNotes.equals("Imported from device call log", ignoreCase = true)) {
+            "Connected on WhatsApp"
+        } else {
+            "$existingNotes • Connected on WhatsApp"
+        }
+        val updated = call.copy(
+            notes = updatedNotes,
+            waLogged = true
+        )
+        addOrUpdateCall(context, updated)
+        return updated
     }
 
     @Synchronized
@@ -185,9 +257,11 @@ object CrmCallManager {
         val current = calls[index]
         if (current.isLinked && !current.linkedOpportunityId.isNullOrBlank() && current.linkedOpportunityId != oppId) return false
         if (current.isLinked && current.linkedOpportunityId == oppId) return true
-        calls[index] = current.copy(isLinked = true, linkedOpportunityType = oppType, linkedOpportunityTitle = oppTitle, linkedOpportunityId = oppId)
+        val updated = current.copy(isLinked = true, linkedOpportunityType = oppType, linkedOpportunityTitle = oppTitle, linkedOpportunityId = oppId)
+        calls[index] = updated
         saveCalls(context, calls)
         logActivity(context, oppId, "Opportunity Created", "Linked saved $oppType Opportunity from Call ($oppTitle)", "Linked to Call ID: $callId")
+        pushCallAsync(context, updated)
         return true
     }
 
@@ -722,7 +796,7 @@ object CrmCallManager {
             }
         }
 
-        if (resolvedPhone.isNotBlank() && IgnoredNumbersManager.isIgnoredOrInternal(context, resolvedPhone)) {
+        if (resolvedPhone.isNotBlank() && IgnoredNumbersManager.isPersonalIgnored(context, resolvedPhone)) {
             return null
         }
 
@@ -735,7 +809,7 @@ object CrmCallManager {
             }
         }
 
-        val record = CrmCallRecord(
+        val baseRecord = CrmCallRecord(
             id = "wa_call_$timestampMs",
             callerName = cleanTitle,
             phoneNumber = resolvedPhone,
@@ -749,8 +823,11 @@ object CrmCallManager {
             linkedOpportunityId = resolvedOppId
         )
 
+        val record = tagInternalTeamCallIfNeeded(context, baseRecord)
         addOrUpdateCall(context, record)
-        enqueueUnloggedCall(context, record)
+        if (!isInternalTeamCall(context, record)) {
+            enqueueUnloggedCall(context, record)
+        }
         return record
     }
 
@@ -801,13 +878,17 @@ object CrmCallManager {
             (0 until arr.length()).mapNotNull { i ->
                 arr.optJSONObject(i)?.let { CrmCallRecord.fromJson(it) }
             }.filterNot {
-                IgnoredNumbersManager.isIgnoredOrInternal(context, it.phoneNumber)
+                IgnoredNumbersManager.isIgnoredOrInternal(context, it.phoneNumber) ||
+                    isInternalTeamCall(context, it) ||
+                    isCallSkipped(context, it)
             }.sortedByDescending { it.timestamp }
         }.getOrDefault(emptyList())
     }
 
     fun enqueueUnloggedCall(context: Context, call: CrmCallRecord) {
         if (IgnoredNumbersManager.isIgnoredOrInternal(context, call.phoneNumber)) return
+        if (isInternalTeamCall(context, call)) return
+        if (isCallSkipped(context, call)) return
         val key = callDedupKey(call)
         val existing = getUnloggedCallQueue(context).toMutableList()
         val alreadyQueued = existing.any { it.id == call.id || callDedupKey(it) == key }
@@ -939,12 +1020,13 @@ object CrmCallManager {
     }
 
     /**
-     * 4-Role Database Matcher:
+     * 6-Role Database Matcher:
      * 1. CRM Leads (Client)
-     * 2. Property Inventory (Owner / Landlord)
-     * 3. Brokers / Channel Partners
-     * 4. Projects (Developer Sales POC)
-     * 5. Fresh / Unknown Number
+     * 2. Tenants (Post-Lease Management)
+     * 3. Property Inventory (Owner / Landlord)
+     * 4. Brokers / Channel Partners & Ops / Vendors
+     * 5. Projects (Developer Sales POC / Sourcing Mgr)
+     * 6. Fresh / Unknown Number
      */
     fun matchCallToDatabase(
         context: Context,
@@ -952,7 +1034,9 @@ object CrmCallManager {
         leads: List<CrmLead>,
         inventory: List<PropertyItem>,
         directoryProjects: List<DirectoryProject>,
-        underConstProjects: List<UnderConstProject> = emptyList()
+        underConstProjects: List<UnderConstProject> = emptyList(),
+        tenants: List<OfflineDiskCache.TenantCacheRecord> = OfflineDiskCache.loadTenants(context),
+        brokersVendors: List<BrokerVendorRecord> = OfflineDiskCache.loadBrokersVendors(context)
     ): PostCallMatchResult {
         val phoneKey = last10Digits(call.phoneNumber)
         val callerNameClean = call.callerName.trim()
@@ -973,6 +1057,18 @@ object CrmCallManager {
                         subtitle = "${leadByName.status.ifBlank { "New" }} • $req"
                     )
                 }
+                val tenantByName = tenants.firstOrNull { t ->
+                    t.tenantName.trim().equals(callerNameClean, ignoreCase = true)
+                }
+                if (tenantByName != null) {
+                    return PostCallMatchResult(
+                        call = call.copy(phoneNumber = call.phoneNumber.ifBlank { tenantByName.contactNumber }),
+                        role = PostCallRole.TENANT,
+                        matchedTenant = tenantByName,
+                        displayTitle = tenantByName.tenantName,
+                        subtitle = "Tenant • ${tenantByName.projectName.ifBlank { tenantByName.propertyCode }}"
+                    )
+                }
                 val ownerPropsByName = inventory.filter { prop ->
                     !prop.ownerName.isNullOrBlank() && prop.ownerName.trim().equals(callerNameClean, ignoreCase = true)
                 }
@@ -984,6 +1080,19 @@ object CrmCallManager {
                         matchedProperties = ownerPropsByName,
                         displayTitle = first.ownerName ?: callerNameClean,
                         subtitle = "${first.projectName} • ${first.unitNumber.ifBlank { first.propertyCode }}"
+                    )
+                }
+                val bvByName = brokersVendors.firstOrNull { bv ->
+                    bv.name.trim().equals(callerNameClean, ignoreCase = true)
+                }
+                if (bvByName != null) {
+                    val isOps = bvByName.roleCategory.contains("Ops", true) || bvByName.roleCategory.contains("Vendor", true)
+                    return PostCallMatchResult(
+                        call = call.copy(phoneNumber = call.phoneNumber.ifBlank { bvByName.phone }),
+                        role = if (isOps) PostCallRole.OPS_VENDOR else PostCallRole.BROKER,
+                        matchedBrokerVendor = bvByName,
+                        displayTitle = bvByName.name,
+                        subtitle = "${bvByName.subRole.ifBlank { bvByName.roleCategory }} • ${bvByName.firmName.ifBlank { bvByName.operatingAreas }}".trimEnd(' ', '•')
                     )
                 }
                 val brokerPropsByName = inventory.filter { prop ->
@@ -1026,7 +1135,25 @@ object CrmCallManager {
             )
         }
 
-        // 2. Property Inventory (Owner / Landlord matching ownerContact)
+        // 2. Tenants (Post-Lease Management)
+        val matchedTenant = tenants.firstOrNull { tenant ->
+            phoneKey in extractCandidatePhoneKeys(tenant.contactNumber)
+        }
+        if (matchedTenant != null) {
+            val tenantTitle = matchedTenant.tenantName.ifBlank { callerNameClean.ifBlank { "Tenant" } }
+            val unitLabel = listOf(matchedTenant.projectName, matchedTenant.unitNumber.ifBlank { matchedTenant.propertyCode })
+                .filter { it.isNotBlank() }
+                .joinToString(" • ")
+            return PostCallMatchResult(
+                call = call,
+                role = PostCallRole.TENANT,
+                matchedTenant = matchedTenant,
+                displayTitle = tenantTitle,
+                subtitle = if (unitLabel.isNotBlank()) "Tenant • $unitLabel" else "Active Tenant"
+            )
+        }
+
+        // 3. Property Inventory (Owner / Landlord matching ownerContact)
         val ownerProps = inventory.filter { prop ->
             phoneKey in extractCandidatePhoneKeys(prop.ownerContact)
         }
@@ -1049,15 +1176,57 @@ object CrmCallManager {
             )
         }
 
-        // 3. Brokers / Channel Partners (brokerContact or saved broker calls/registry)
+        // 4. Brokers & Vendors Directory (Master Sheet + Local)
+        val matchedBv = brokersVendors.firstOrNull { bv ->
+            phoneKey in extractCandidatePhoneKeys(bv.phone)
+        }
+        if (matchedBv != null) {
+            val isOps = matchedBv.roleCategory.contains("Ops", ignoreCase = true) ||
+                matchedBv.roleCategory.contains("Vendor", ignoreCase = true)
+            val bvProps = if (!isOps) {
+                inventory.filter { prop -> phoneKey in extractCandidatePhoneKeys(prop.brokerContact) }
+            } else emptyList()
+            return PostCallMatchResult(
+                call = call,
+                role = if (isOps) PostCallRole.OPS_VENDOR else PostCallRole.BROKER,
+                matchedProperties = bvProps,
+                matchedBroker = if (!isOps) BrokerContactEntry(
+                    phoneKey = phoneKey,
+                    name = matchedBv.name,
+                    firm = matchedBv.firmName,
+                    notes = matchedBv.notes
+                ) else null,
+                matchedBrokerVendor = matchedBv,
+                displayTitle = matchedBv.name.ifBlank { if (isOps) "Ops / Vendor" else "Channel Partner" },
+                subtitle = listOf(matchedBv.subRole.ifBlank { matchedBv.roleCategory }, matchedBv.firmName.ifBlank { matchedBv.operatingAreas })
+                    .filter { it.isNotBlank() }
+                    .joinToString(" • ")
+            )
+        }
+
+        // 5. Legacy Brokers / Channel Partners (brokerContact or saved broker calls/registry)
         val savedBrokers = getBrokerContacts(context)
         val brokerEntry = savedBrokers[phoneKey]
         val brokerProps = inventory.filter { prop ->
             phoneKey in extractCandidatePhoneKeys(prop.brokerContact)
         }
-        val pastBrokerCall = readCalls(context).firstOrNull { existing ->
-            last10Digits(existing.phoneNumber) == phoneKey &&
-                existing.linkedOpportunityType?.contains("Broker", ignoreCase = true) == true
+        val pastCallsForPhone = readCalls(context).filter { existing ->
+            last10Digits(existing.phoneNumber) == phoneKey
+        }
+        val pastOpsCall = pastCallsForPhone.firstOrNull {
+            it.linkedOpportunityType?.contains("Ops", ignoreCase = true) == true ||
+                it.linkedOpportunityType?.contains("Vendor", ignoreCase = true) == true
+        }
+        if (pastOpsCall != null) {
+            return PostCallMatchResult(
+                call = call,
+                role = PostCallRole.OPS_VENDOR,
+                displayTitle = pastOpsCall.callerName.ifBlank { call.callerName.ifBlank { "Ops / Vendor" } },
+                subtitle = pastOpsCall.pocSubRole.ifBlank { "Ops / Vendor" }
+            )
+        }
+        val pastBrokerCall = pastCallsForPhone.firstOrNull { existing ->
+            existing.linkedOpportunityType?.contains("Broker", ignoreCase = true) == true
         }
         if (brokerEntry != null || brokerProps.isNotEmpty() || pastBrokerCall != null) {
             val propBrokerName = brokerProps.firstOrNull()?.brokerName?.takeIf { it.isNotBlank() }
@@ -1084,7 +1253,7 @@ object CrmCallManager {
             )
         }
 
-        // 4. Projects (Developer Sales POC)
+        // 6. Projects (Developer Sales POC / Sourcing Manager)
         val pocLinks = getProjectPocLinks(context)
         val linkedPoc = pocLinks[phoneKey]
         val matchedDirProj = if (linkedPoc != null) {
@@ -1129,7 +1298,7 @@ object CrmCallManager {
             )
         }
 
-        // 5. Fresh / Unknown Number
+        // 7. Fresh / Unknown Number
         val fallbackName = call.callerName
             .takeIf { it.isNotBlank() && !it.equals("Unknown", true) && !it.equals("Unknown Caller", true) }
             ?: ContactUtils.formatDisplayPhone(call.phoneNumber).ifBlank { call.phoneNumber }
@@ -1137,7 +1306,7 @@ object CrmCallManager {
             call = call,
             role = PostCallRole.FRESH_UNKNOWN,
             displayTitle = fallbackName,
-            subtitle = "Fresh Number — Who was on this call?"
+            subtitle = "Who was on this call?"
         )
     }
 
@@ -1152,7 +1321,29 @@ object CrmCallManager {
         val deviceCalls = safeReadDeviceCallLogs(context)
         if (deviceCalls.isEmpty()) return emptyList()
         val existingSaved = readCalls(context)
+        val existingKeys = existingSaved.map(::callDedupKey).toSet()
         val linkedKeys = existingSaved.filter { it.isLinked }.map(::callDedupKey).toSet()
+
+        // Batch 21: Auto-save & tag colleague-to-colleague calls as "Internal Team" for metrics without firing popup
+        var newDeviceCallsDetected = false
+        deviceCalls.forEach { call ->
+            if (call.timestamp >= sinceEpochMs && IgnoredNumbersManager.isInternalEmployeePhone(context, call.phoneNumber)) {
+                val key = callDedupKey(call)
+                if (key !in existingKeys) {
+                    newDeviceCallsDetected = true
+                    addOrUpdateCall(context, tagInternalTeamCallIfNeeded(context, call))
+                }
+            } else if (call.timestamp >= sinceEpochMs &&
+                (call.callType == CallType.OUTGOING || (call.callType == CallType.INCOMING && call.durationSeconds > 0))
+            ) {
+                newDeviceCallsDetected = true
+            }
+        }
+        if (newDeviceCallsDetected) {
+            val mergedForReconcile = (readCalls(context) + deviceCalls.filter { it.timestamp >= sinceEpochMs })
+                .distinctBy(::callDedupKey)
+            runCatching { TeamHandoverStore.reconcileWithCallLogs(context, mergedForReconcile) }
+        }
 
         val freshCalls = deviceCalls.filter { call ->
             val phoneKey = last10Digits(call.phoneNumber)
@@ -1160,10 +1351,12 @@ object CrmCallManager {
             call.timestamp >= sinceEpochMs &&
                 phoneKey.length >= 7 &&
                 !IgnoredNumbersManager.isIgnoredOrInternal(context, call.phoneNumber) &&
+                !isInternalTeamCall(context, call) &&
+                !isCallSkipped(context, call) &&
                 key !in linkedKeys &&
                 !hasShownPostCallPopup(context, call)
         }
-        freshCalls.forEach { call ->
+        freshCalls.take(15).forEach { call ->
             enqueueUnloggedCall(context, call)
         }
         return freshCalls
@@ -1350,15 +1543,242 @@ object CrmCallManager {
             author = assignedEmployee
         )
 
+        unskipCall(context, updatedCall)
         return updatedCall
+    }
+
+    // =========================================================================
+    // Batch 20: Skipped Calls Store, Missed Call WA Callback & Last Called By
+    // =========================================================================
+
+    private const val FILE_SKIPPED_CALLS = "skipped_call_ids.json"
+    private val skippedKeysSet: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    @Volatile
+    private var skippedHydrated = false
+
+    const val MISSED_CALL_WA_CALLBACK_MESSAGE =
+        "Sorry I missed your call from The Leasing Company—calling you back shortly, or feel free to share your requirement here."
+
+    private fun ensureSkippedHydrated(context: Context) {
+        if (skippedHydrated) return
+        synchronized(this) {
+            if (skippedHydrated) return
+            val file = File(context.filesDir, FILE_SKIPPED_CALLS)
+            if (file.exists()) {
+                runCatching {
+                    val arr = JSONArray(file.readText(Charsets.UTF_8))
+                    for (i in 0 until arr.length()) {
+                        arr.optString(i).takeIf { it.isNotBlank() }?.let { skippedKeysSet.add(it) }
+                    }
+                }
+            }
+            skippedHydrated = true
+        }
+    }
+
+    private fun persistSkippedAsync(context: Context) {
+        val appContext = context.applicationContext ?: context
+        val snapshot = skippedKeysSet.toList()
+        callSyncScope.launch {
+            runCatching {
+                val arr = JSONArray()
+                snapshot.forEach { arr.put(it) }
+                File(appContext.filesDir, FILE_SKIPPED_CALLS).writeText(arr.toString(), Charsets.UTF_8)
+            }
+        }
+    }
+
+    fun isCallSkipped(context: Context, call: CrmCallRecord): Boolean {
+        if (call.isLinked) return false
+        ensureSkippedHydrated(context)
+        val dedup = callDedupKey(call)
+        return call.id in skippedKeysSet || dedup in skippedKeysSet
+    }
+
+    fun isCallIdSkipped(context: Context, callId: String): Boolean {
+        ensureSkippedHydrated(context)
+        return callId in skippedKeysSet
+    }
+
+    fun getSkippedCallKeys(context: Context): Set<String> {
+        ensureSkippedHydrated(context)
+        return skippedKeysSet.toSet()
+    }
+
+    fun markCallSkipped(context: Context, call: CrmCallRecord) {
+        ensureSkippedHydrated(context)
+        if (call.id.isNotBlank()) skippedKeysSet.add(call.id)
+        val dedup = callDedupKey(call)
+        if (dedup.isNotBlank()) skippedKeysSet.add(dedup)
+        persistSkippedAsync(context)
+        markPostCallPopupShown(context, call)
+        removeFromUnloggedQueue(context, call)
+    }
+
+    fun unskipCall(context: Context, call: CrmCallRecord) {
+        ensureSkippedHydrated(context)
+        skippedKeysSet.remove(call.id)
+        skippedKeysSet.remove(callDedupKey(call))
+        persistSkippedAsync(context)
+    }
+
+    /**
+     * Batch 20: 1-tap Missed Call "WA Callback" action.
+     * Opens https://wa.me/91<Caller10DigitMobile> with the polite callback message
+     * and marks the missed call handled so it clears from the unlinked queue.
+     */
+    fun triggerMissedCallWaCallback(
+        context: Context,
+        call: CrmCallRecord,
+        assignedAgent: String = "",
+        openBrowserOrApp: Boolean = true
+    ): CrmCallRecord {
+        val existingNotes = call.notes.trim()
+        val updatedNotes = when {
+            existingNotes.contains("WA Callback sent", ignoreCase = true) -> existingNotes
+            existingNotes.isBlank() || existingNotes.equals("Imported from device call log", ignoreCase = true) ->
+                "WA Callback sent • $MISSED_CALL_WA_CALLBACK_MESSAGE"
+            else -> "$existingNotes • WA Callback sent"
+        }
+        val updated = call.copy(
+            notes = updatedNotes,
+            actionRequired = "WA Callback Sent",
+            assignedAgent = assignedAgent.ifBlank { call.assignedAgent },
+            waLogged = true,
+            isLinked = true,
+            linkedOpportunityType = call.linkedOpportunityType ?: "Missed Call WA Callback",
+            linkedOpportunityTitle = call.linkedOpportunityTitle ?: call.callerName.ifBlank { call.phoneNumber }
+        )
+        unskipCall(context, updated)
+        addOrUpdateCall(context, updated)
+        markPostCallPopupShown(context, updated)
+        removeFromUnloggedQueue(context, updated)
+        if (openBrowserOrApp && call.phoneNumber.isNotBlank()) {
+            openWhatsAppChat(context, call.phoneNumber, MISSED_CALL_WA_CALLBACK_MESSAGE)
+        }
+        return updated
+    }
+
+    /**
+     * Batch 20: Resolves the most recent call from synced/local Call Logs matching any of the
+     * target phone numbers or entityId (Property ID/Code, CRM Lead ID, or Tenant ID).
+     */
+    fun findLastCallForTarget(
+        context: Context,
+        phones: List<String>,
+        entityIds: List<String> = emptyList(),
+        candidateCalls: List<CrmCallRecord>? = null
+    ): CrmCallRecord? {
+        val phoneKeys = phones
+            .flatMap(::extractCandidatePhoneKeys)
+            .filter { it.length >= 7 }
+            .toSet()
+        val cleanIds = entityIds.map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        if (phoneKeys.isEmpty() && cleanIds.isEmpty()) return null
+
+        val source = candidateCalls ?: runCatching { readCalls(context) }.getOrDefault(emptyList())
+        return source
+            .asSequence()
+            .filter { call ->
+                val callPhoneKey = last10Digits(call.phoneNumber)
+                val matchesPhone = callPhoneKey.length >= 7 && callPhoneKey in phoneKeys
+                val matchesEntityId = !call.linkedOpportunityId.isNullOrBlank() &&
+                    cleanIds.any { id -> id.equals(call.linkedOpportunityId, ignoreCase = true) }
+                matchesPhone || matchesEntityId
+            }
+            .maxByOrNull { it.timestamp }
+    }
+
+    /**
+     * Formats the exact Batch 20 "Last Called By" banner string:
+     * "Last called by <Employee Name> · <Date/Time> · '<Note>'"
+     */
+    fun formatLastCalledByBannerText(call: CrmCallRecord): String {
+        val employee = call.assignedAgent.trim().ifBlank { "TLC Team" }
+        val dateTime = formatTimestamp(call.timestamp)
+        val rawNote = call.notes.trim()
+            .takeUnless { it.equals("Imported from device call log", ignoreCase = true) }
+            .orEmpty()
+            .ifBlank { call.actionRequired.trim().ifBlank { "${call.callType.label} Call" } }
+            .replace("\n", " ")
+            .let { if (it.length > 72) it.take(69) + "..." else it }
+        return "Last called by $employee · $dateTime · '$rawNote'"
+    }
+
+    // =========================================================================
+    // Batch 21: Internal Team Call Detection, Auto-Tagging & Re-Tagging
+    // =========================================================================
+
+    fun isInternalTeamCall(context: Context, call: CrmCallRecord): Boolean {
+        if (call.linkedOpportunityType.equals("Internal Team", ignoreCase = true)) return true
+        if (IgnoredNumbersManager.isPersonalIgnored(context, call.phoneNumber)) return false
+        return IgnoredNumbersManager.isInternalEmployeePhone(context, call.phoneNumber)
+    }
+
+    fun tagInternalTeamCallIfNeeded(context: Context, call: CrmCallRecord): CrmCallRecord {
+        if (IgnoredNumbersManager.isPersonalIgnored(context, call.phoneNumber)) return call
+        val matchedEmp = IgnoredNumbersManager.findEmployeeForPhone(context, call.phoneNumber) ?: return call
+        val roleSuffix = matchedEmp.role.trim().ifBlank { "Team" }
+        val cleanName = if (
+            call.callerName.isBlank() ||
+            call.callerName.equals("Unknown", ignoreCase = true) ||
+            call.callerName.equals("Unknown Caller", ignoreCase = true) ||
+            call.callerName.filter { it.isDigit() }.length >= 7
+        ) {
+            matchedEmp.name
+        } else {
+            call.callerName
+        }
+        return call.copy(
+            callerName = cleanName,
+            isLinked = true,
+            linkedOpportunityType = "Internal Team",
+            linkedOpportunityTitle = "${matchedEmp.name} • $roleSuffix",
+            linkedOpportunityId = matchedEmp.id.ifBlank { "EMP-${matchedEmp.name.uppercase(Locale.US).take(10)}" },
+            stagingStatus = "Internal Team"
+        )
+    }
+
+    fun retagInternalTeamCalls(context: Context): Int {
+        val current = readCalls(context)
+        if (current.isEmpty()) return 0
+        var updatedCount = 0
+        val next = current.map { call ->
+            if (!call.linkedOpportunityType.equals("Internal Team", ignoreCase = true) &&
+                IgnoredNumbersManager.isInternalEmployeePhone(context, call.phoneNumber) &&
+                !IgnoredNumbersManager.isPersonalIgnored(context, call.phoneNumber)
+            ) {
+                val tagged = tagInternalTeamCallIfNeeded(context, call)
+                if (tagged != call) {
+                    updatedCount++
+                    removeFromUnloggedQueue(context, tagged)
+                }
+                tagged
+            } else {
+                call
+            }
+        }
+        if (updatedCount > 0) {
+            saveCalls(context, next)
+        }
+        return updatedCount
+    }
+
+    fun noteCountsAsLogged(notes: String): Boolean {
+        val clean = notes.trim()
+        if (clean.isBlank()) return false
+        return !clean.equals("Imported from device call log", ignoreCase = true) &&
+            !clean.equals("WhatsApp Call Notification", ignoreCase = true)
     }
 }
 
 enum class PostCallRole(val label: String) {
-    CLIENT_LEAD("Client"),
-    PROPERTY_OWNER("Property Owner"),
+    CLIENT_LEAD("Client Lead"),
+    PROPERTY_OWNER("Owner"),
     BROKER("Broker / CP"),
     DEVELOPER_POC("Developer POC"),
+    TENANT("Tenant"),
+    OPS_VENDOR("Ops / Vendor"),
     FRESH_UNKNOWN("Fresh Number")
 }
 
@@ -1388,76 +1808,389 @@ data class PostCallMatchResult(
     val matchedDirectoryProject: DirectoryProject? = null,
     val matchedUnderConstProject: UnderConstProject? = null,
     val matchedDeveloperPoc: ProjectPocEntry? = null,
+    val matchedTenant: OfflineDiskCache.TenantCacheRecord? = null,
+    val matchedBrokerVendor: BrokerVendorRecord? = null,
     val displayTitle: String,
     val subtitle: String
 )
 
+/**
+ * Batch 18: Lightweight zero-lag Muted Numbers store.
+ * Keeps normalized 10-digit numbers in a thread-safe HashSet hydrated lazily once from
+ * `context.filesDir/muted_call_numbers.json` and flushed asynchronously on IO.
+ */
 object IgnoredNumbersManager {
     private const val PREFS_NAME = "crm_call_intelligence_v1"
     private const val KEY_IGNORED_PERSONAL = "ignored_personal_numbers"
     private const val KEY_INTERNAL_EMPLOYEES = "internal_employee_phones"
+    private const val FILE_MUTED_NUMBERS = "muted_call_numbers.json"
     private val defaultDeskPhones = setOf("9766880099", "9766668099")
+
+    private val mutedSet: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    private val internalSet: MutableSet<String> = ConcurrentHashMap.newKeySet()
+    @Volatile
+    private var mutedHydrated = false
+    @Volatile
+    private var internalHydrated = false
+
+    private val ioScope = kotlinx.coroutines.CoroutineScope(
+        Dispatchers.IO + kotlinx.coroutines.SupervisorJob()
+    )
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private fun normalizeKey(raw: String): String = CrmCallManager.last10Digits(raw)
 
+    private fun ensureMutedHydrated(context: Context) {
+        if (mutedHydrated) return
+        synchronized(this) {
+            if (mutedHydrated) return
+            val file = File(context.filesDir, FILE_MUTED_NUMBERS)
+            if (file.exists()) {
+                runCatching {
+                    val arr = JSONArray(file.readText(Charsets.UTF_8))
+                    for (i in 0 until arr.length()) {
+                        val v = normalizeKey(arr.optString(i))
+                        if (v.length >= 7) mutedSet.add(v)
+                    }
+                }
+            }
+            // One-time migration from legacy SharedPreferences map
+            val legacyObj = runCatching {
+                JSONObject(prefs(context).getString(KEY_IGNORED_PERSONAL, "{}") ?: "{}")
+            }.getOrNull()
+            if (legacyObj != null && legacyObj.length() > 0) {
+                legacyObj.keys().forEach { key ->
+                    val norm = normalizeKey(key)
+                    if (norm.length >= 7) mutedSet.add(norm)
+                }
+                persistMutedAsync(context)
+            }
+            mutedHydrated = true
+        }
+    }
+
+    private fun ensureInternalHydrated(context: Context) {
+        if (internalHydrated) return
+        synchronized(this) {
+            if (internalHydrated) return
+            val arr = runCatching {
+                JSONArray(prefs(context).getString(KEY_INTERNAL_EMPLOYEES, "[]") ?: "[]")
+            }.getOrDefault(JSONArray())
+            for (i in 0 until arr.length()) {
+                val v = normalizeKey(arr.optString(i))
+                if (v.length >= 7) internalSet.add(v)
+            }
+            internalHydrated = true
+        }
+    }
+
+    private fun persistMutedAsync(context: Context) {
+        val snapshot = mutedSet.toList()
+        val appCtx = context.applicationContext ?: context
+        ioScope.launch {
+            runCatching {
+                val arr = JSONArray().apply { snapshot.forEach { put(it) } }
+                File(appCtx.filesDir, FILE_MUTED_NUMBERS).writeText(arr.toString(), Charsets.UTF_8)
+                val legacyObj = JSONObject().apply {
+                    snapshot.forEach { put(it, System.currentTimeMillis()) }
+                }
+                prefs(appCtx).edit().putString(KEY_IGNORED_PERSONAL, legacyObj.toString()).apply()
+            }
+        }
+    }
+
     fun markPersonalIgnored(context: Context, phone: String) {
+        ensureMutedHydrated(context)
         val key = normalizeKey(phone)
         if (key.length < 7) return
-        val p = prefs(context)
-        val obj = runCatching {
-            JSONObject(p.getString(KEY_IGNORED_PERSONAL, "{}") ?: "{}")
-        }.getOrDefault(JSONObject())
-        obj.put(key, System.currentTimeMillis())
-        p.edit().putString(KEY_IGNORED_PERSONAL, obj.toString()).apply()
+        mutedSet.add(key)
+        persistMutedAsync(context)
         CrmCallManager.clearUnloggedQueueForNumber(context, phone)
     }
 
     fun unignoreNumber(context: Context, phone: String) {
+        ensureMutedHydrated(context)
         val key = normalizeKey(phone)
         if (key.isBlank()) return
-        val p = prefs(context)
-        val obj = runCatching {
-            JSONObject(p.getString(KEY_IGNORED_PERSONAL, "{}") ?: "{}")
-        }.getOrDefault(JSONObject())
-        obj.remove(key)
-        p.edit().putString(KEY_IGNORED_PERSONAL, obj.toString()).apply()
+        mutedSet.remove(key)
+        persistMutedAsync(context)
     }
 
     fun getIgnoredNumbers(context: Context): Set<String> {
-        val obj = runCatching {
-            JSONObject(prefs(context).getString(KEY_IGNORED_PERSONAL, "{}") ?: "{}")
-        }.getOrDefault(JSONObject())
-        return obj.keys().asSequence().toSet()
+        ensureMutedHydrated(context)
+        return mutedSet.toSet()
     }
 
     fun syncInternalEmployeeNumbers(context: Context, phones: Collection<String>) {
+        ensureInternalHydrated(context)
         val normalized = phones.map(::normalizeKey).filter { it.length >= 7 }.toSet()
-        val arr = JSONArray()
-        normalized.forEach { arr.put(it) }
-        prefs(context).edit().putString(KEY_INTERNAL_EMPLOYEES, arr.toString()).apply()
+        internalSet.clear()
+        internalSet.addAll(normalized)
+        val appCtx = context.applicationContext ?: context
+        ioScope.launch {
+            val arr = JSONArray().apply { normalized.forEach { put(it) } }
+            prefs(appCtx).edit().putString(KEY_INTERNAL_EMPLOYEES, arr.toString()).apply()
+        }
     }
 
     fun getInternalEmployeeNumbers(context: Context): Set<String> {
-        val arr = runCatching {
-            JSONArray(prefs(context).getString(KEY_INTERNAL_EMPLOYEES, "[]") ?: "[]")
-        }.getOrDefault(JSONArray())
-        val set = mutableSetOf<String>()
-        for (i in 0 until arr.length()) {
-            val v = arr.optString(i).trim()
-            if (v.length >= 7) set.add(v)
-        }
-        return set
+        ensureInternalHydrated(context)
+        return internalSet.toSet()
     }
+
+    fun isPersonalIgnored(context: Context, phone: String): Boolean {
+        val key = normalizeKey(phone)
+        if (key.length < 7) return false
+        ensureMutedHydrated(context)
+        return key in mutedSet
+    }
+
+    fun findEmployeeForPhone(context: Context, phone: String): OfflineDiskCache.CachedEmployeeMember? {
+        val key = normalizeKey(phone)
+        if (key.length < 7) return null
+        val dir = OfflineDiskCache.loadEmployeeDirectory(context)
+        val matched = dir.firstOrNull { member ->
+            val mKey = normalizeKey(member.mobile)
+            mKey.length >= 7 && mKey == key
+        }
+        if (matched != null) return matched
+        ensureInternalHydrated(context)
+        if (key in internalSet || key in defaultDeskPhones) {
+            return OfflineDiskCache.CachedEmployeeMember(
+                id = "EMP-DESK",
+                name = "TLC Team Desk",
+                mobile = key,
+                role = "Internal Team"
+            )
+        }
+        return null
+    }
+
+    fun isInternalEmployeePhone(context: Context, phone: String): Boolean =
+        findEmployeeForPhone(context, phone) != null
 
     fun isIgnoredOrInternal(context: Context, phone: String): Boolean {
         val key = normalizeKey(phone)
         if (key.length < 7) return false
-        return key in defaultDeskPhones ||
-            key in getIgnoredNumbers(context) ||
-            key in getInternalEmployeeNumbers(context)
+        if (isPersonalIgnored(context, key)) return true
+        return isInternalEmployeePhone(context, key)
+    }
+}
+
+/**
+ * Batch 21: Handover Callback Accountability Store (`cache_team_handovers.json` in `context.filesDir`).
+ * Tracks every "Handover to Team via WhatsApp" event as "Pending Callback" and automatically
+ * resolves it to "Called Back" when the assigned employee logs an outgoing or connected call to
+ * that targetMobile after `handedOverAt`.
+ */
+data class TeamHandoverRecord(
+    val id: String = UUID.randomUUID().toString(),
+    val callId: String = "",
+    val assignedTo: String = "",
+    val handedOverBy: String = "",
+    val targetMobile: String = "",
+    val callerName: String = "",
+    val roleLabel: String = "",
+    val propertyOrProject: String = "",
+    val note: String = "",
+    val handedOverAt: Long = System.currentTimeMillis(),
+    val status: String = "Pending Callback", // "Pending Callback" | "Called Back"
+    val calledBackAt: Long = 0L,
+    val callbackCallId: String = ""
+) {
+    fun isPending(): Boolean = !status.equals("Called Back", ignoreCase = true)
+
+    fun isOverdue2Hours(nowMs: Long = System.currentTimeMillis()): Boolean =
+        isPending() && handedOverAt > 0L && (nowMs - handedOverAt) > (2L * 60L * 60L * 1000L)
+
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("id", id)
+        put("callId", callId)
+        put("assignedTo", assignedTo)
+        put("handedOverBy", handedOverBy)
+        put("targetMobile", targetMobile)
+        put("callerName", callerName)
+        put("roleLabel", roleLabel)
+        put("propertyOrProject", propertyOrProject)
+        put("note", note)
+        put("handedOverAt", handedOverAt)
+        put("status", status)
+        put("calledBackAt", calledBackAt)
+        put("callbackCallId", callbackCallId)
+    }
+
+    companion object {
+        fun fromJson(obj: JSONObject): TeamHandoverRecord = TeamHandoverRecord(
+            id = obj.optString("id", UUID.randomUUID().toString()),
+            callId = obj.optString("callId", ""),
+            assignedTo = obj.optString("assignedTo", ""),
+            handedOverBy = obj.optString("handedOverBy", ""),
+            targetMobile = obj.optString("targetMobile", ""),
+            callerName = obj.optString("callerName", ""),
+            roleLabel = obj.optString("roleLabel", ""),
+            propertyOrProject = obj.optString("propertyOrProject", ""),
+            note = obj.optString("note", ""),
+            handedOverAt = obj.optLong("handedOverAt", 0L),
+            status = obj.optString("status", "Pending Callback").ifBlank { "Pending Callback" },
+            calledBackAt = obj.optLong("calledBackAt", 0L),
+            callbackCallId = obj.optString("callbackCallId", "")
+        )
+    }
+}
+
+object TeamHandoverStore {
+    private val lock = Any()
+
+    fun read(context: Context): List<TeamHandoverRecord> = synchronized(lock) {
+        val raw = OfflineDiskCache.readTextSafely(context, OfflineDiskCache.FILE_TEAM_HANDOVERS)
+            ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONObject(i)?.let { TeamHandoverRecord.fromJson(it) }
+            }.sortedByDescending { it.handedOverAt }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun save(context: Context, list: List<TeamHandoverRecord>) {
+        val arr = JSONArray().apply {
+            list.sortedByDescending { it.handedOverAt }.forEach { put(it.toJson()) }
+        }
+        OfflineDiskCache.writeTextAtomically(context, OfflineDiskCache.FILE_TEAM_HANDOVERS, arr.toString())
+    }
+
+    fun recordHandover(context: Context, record: TeamHandoverRecord): List<TeamHandoverRecord> = synchronized(lock) {
+        val normTarget = CrmCallManager.last10Digits(record.targetMobile).ifBlank { record.targetMobile.trim() }
+        val cleanRec = record.copy(
+            targetMobile = normTarget,
+            status = record.status.ifBlank { "Pending Callback" }
+        )
+        val current = read(context).toMutableList()
+        val idx = current.indexOfFirst {
+            it.id == cleanRec.id ||
+                (cleanRec.callId.isNotBlank() && it.callId == cleanRec.callId && it.assignedTo.equals(cleanRec.assignedTo, true))
+        }
+        if (idx >= 0) {
+            current[idx] = cleanRec
+        } else {
+            current.add(0, cleanRec)
+        }
+        save(context, current)
+        current
+    }
+
+    private fun agentNamesMatch(callAgent: String, assignedTo: String): Boolean {
+        val a = callAgent.trim().lowercase(Locale.ENGLISH)
+        val b = assignedTo.trim().lowercase(Locale.ENGLISH)
+        if (a.isBlank() || b.isBlank()) return true
+        return a == b || a.contains(b) || b.contains(a)
+    }
+
+    /**
+     * Merges any synced Call Log handover metadata into local handovers and automatically checks
+     * whether the assigned employee has logged an outgoing or connected incoming (durationSeconds > 0)
+     * call to `targetMobile` after `handedOverAt`.
+     */
+    fun reconcileWithCallLogs(
+        context: Context,
+        calls: List<CrmCallRecord> = CrmCallManager.readCalls(context)
+    ): List<TeamHandoverRecord> = synchronized(lock) {
+        val current = read(context).associateBy { it.id }.toMutableMap()
+        var dirty = false
+
+        // 1. Seed any synced handover rows from Call Logs that aren't in local store yet
+        calls.forEach { c ->
+            if (c.handoverStatus.isNotBlank() && c.handoverAssignedTo.isNotBlank()) {
+                val tMobile = CrmCallManager.last10Digits(c.phoneNumber)
+                if (tMobile.length >= 7) {
+                    val existing = current.values.firstOrNull {
+                        it.callId == c.id && it.assignedTo.equals(c.handoverAssignedTo, ignoreCase = true)
+                    }
+                    if (existing == null) {
+                        val seeded = TeamHandoverRecord(
+                            id = "ho_${c.id}",
+                            callId = c.id,
+                            assignedTo = c.handoverAssignedTo.trim(),
+                            handedOverBy = c.assignedAgent.trim(),
+                            targetMobile = tMobile,
+                            callerName = c.callerName.ifBlank { tMobile },
+                            roleLabel = c.linkedOpportunityType.orEmpty(),
+                            propertyOrProject = c.linkedOpportunityTitle.orEmpty(),
+                            note = c.notes,
+                            handedOverAt = c.handedOverAt.takeIf { it > 0L } ?: c.timestamp,
+                            status = if (c.handoverStatus.equals("Called Back", true)) "Called Back" else "Pending Callback",
+                            calledBackAt = c.handoverCallbackAt
+                        )
+                        current[seeded.id] = seeded
+                        dirty = true
+                    } else if (c.handoverStatus.equals("Called Back", true) && existing.isPending()) {
+                        current[existing.id] = existing.copy(
+                            status = "Called Back",
+                            calledBackAt = maxOf(existing.calledBackAt, c.handoverCallbackAt)
+                        )
+                        dirty = true
+                    }
+                }
+            }
+        }
+
+        // 2. Check all pending handovers for matching outgoing or connected incoming callbacks
+        val resolvedCallIds = mutableMapOf<String, Long>()
+        current.keys.toList().forEach { key ->
+            val ho = current[key] ?: return@forEach
+            if (!ho.isPending()) return@forEach
+            val target10 = CrmCallManager.last10Digits(ho.targetMobile)
+            if (target10.length < 7) return@forEach
+
+            val callback = calls
+                .filter { c ->
+                    c.id != ho.callId &&
+                        CrmCallManager.last10Digits(c.phoneNumber) == target10 &&
+                        c.timestamp > ho.handedOverAt &&
+                        (c.callType == CallType.OUTGOING || (c.callType == CallType.INCOMING && c.durationSeconds > 0)) &&
+                        agentNamesMatch(c.assignedAgent, ho.assignedTo)
+                }
+                .minByOrNull { it.timestamp }
+
+            if (callback != null) {
+                val updatedHo = ho.copy(
+                    status = "Called Back",
+                    calledBackAt = callback.timestamp,
+                    callbackCallId = callback.id
+                )
+                current[key] = updatedHo
+                if (ho.callId.isNotBlank()) {
+                    resolvedCallIds[ho.callId] = callback.timestamp
+                }
+                if (ho.roleLabel.contains("Broker", ignoreCase = true) ||
+                    ho.roleLabel.contains("CP", ignoreCase = true)
+                ) {
+                    PendingLoopTaskStore.enqueueBrokerStatusUpdate(
+                        context = context,
+                        handover = updatedHo,
+                        agentName = ho.handedOverBy
+                    )
+                }
+                dirty = true
+            }
+        }
+
+        val finalList = current.values.sortedByDescending { it.handedOverAt }
+        if (dirty) {
+            save(context, finalList)
+            if (resolvedCallIds.isNotEmpty()) {
+                val updatedCalls = calls.map { c ->
+                    val cbTime = resolvedCallIds[c.id]
+                    if (cbTime != null && !c.handoverStatus.equals("Called Back", true)) {
+                        c.copy(handoverStatus = "Called Back", handoverCallbackAt = cbTime)
+                    } else c
+                }
+                CrmCallManager.saveCalls(context, updatedCalls)
+            }
+        }
+        return finalList
     }
 }
 
@@ -1505,19 +2238,33 @@ class TlcWhatsAppCallListener : NotificationListenerService() {
                 (combined.contains("voice call") && (combined.contains("answer") || combined.contains("decline") || combined.contains("missed"))) ||
                 (combined.contains("video call") && (combined.contains("answer") || combined.contains("decline") || combined.contains("missed")))
 
-            if (!hasCallSignal) return
+            if (hasCallSignal) {
+                val isMissed = combined.contains("missed")
+                val effectiveText = rawText.ifBlank { rawBigText }.ifBlank { rawSubText }
 
-            val isMissed = combined.contains("missed")
-            val effectiveText = rawText.ifBlank { rawBigText }.ifBlank { rawSubText }
+                CrmCallManager.captureWhatsAppCallNotification(
+                    context = ctx,
+                    packageName = pkg,
+                    rawTitle = rawTitle,
+                    rawText = effectiveText,
+                    isMissed = isMissed,
+                    timestampMs = statusBarNotification.postTime.takeIf { it > 0L } ?: System.currentTimeMillis()
+                )
+            } else {
+                // Skip group summary / ongoing sync notifications
+                val isGroupSummary = (notification.flags and Notification.FLAG_GROUP_SUMMARY) != 0 ||
+                    (notification.flags and Notification.FLAG_ONGOING_EVENT) != 0
+                if (isGroupSummary) return
 
-            CrmCallManager.captureWhatsAppCallNotification(
-                context = ctx,
-                packageName = pkg,
-                rawTitle = rawTitle,
-                rawText = effectiveText,
-                isMissed = isMissed,
-                timestampMs = statusBarNotification.postTime.takeIf { it > 0L } ?: System.currentTimeMillis()
-            )
+                val messageBody = rawBigText.ifBlank { rawText }.ifBlank { rawSubText }
+                WhatsAppFollowUpStore.captureIncomingMessageNotification(
+                    context = ctx,
+                    packageName = pkg,
+                    rawTitle = rawTitle,
+                    rawText = messageBody,
+                    timestampMs = statusBarNotification.postTime.takeIf { it > 0L } ?: System.currentTimeMillis()
+                )
+            }
         } catch (_: Exception) {
             // Never crash on malformed system notification extras
         }

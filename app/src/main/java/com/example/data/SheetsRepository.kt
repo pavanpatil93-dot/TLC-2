@@ -38,14 +38,22 @@ import java.util.UUID
 
 class SheetsRepository(
     private val context: Context? = null,
-    private val startForegroundSync: Boolean = true
+    private val startForegroundSync: Boolean = true,
+    deferInitialDiskLoad: Boolean = false
 ) {
 
     private val _properties = MutableStateFlow<List<PropertyItem>>(
-        if (context != null) PropertiesLocalDatabase.loadProperties(context) else emptyList()
+        if (context != null && !deferInitialDiskLoad) PropertiesLocalDatabase.loadProperties(context) else emptyList()
     )
     val properties: StateFlow<List<PropertyItem>> = _properties.asStateFlow()
     private val httpClient = OkHttpClient()
+    @Volatile
+    private var diskLoaded: Boolean = context == null || !deferInitialDiskLoad
+    @Volatile
+    private var lastNonInventorySyncedCount: Int = 0
+    private val syncMutex = Mutex()
+    private val ioWriterMutex = Mutex()
+    private val ioWriterScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private fun actor() = UserSettingsManager(context).auditIdentity()
     private fun allowed(action: String) = UserSettingsManager(context).userProfile.value.role.canPerformSensitiveAction(action)
@@ -53,18 +61,20 @@ class SheetsRepository(
 
     @Synchronized
     private fun persistChanges(): Boolean {
-        val old = context?.let { PropertiesLocalDatabase.loadProperties(it) }?.associateBy { it.id }.orEmpty()
-        _properties.value = _properties.value.map { p ->
-            val previous = old[p.id]
-            if (p != previous) stamped(p) else p
+        val currentList = _properties.value
+        val updatedList = currentList.map { p ->
+            if (!p.isSyncedToSheet) stamped(p) else p
         }
+        _properties.value = updatedList
+        com.example.inventory.PropertyPrecomputedCache.warmUp(updatedList)
         val saved = if (context != null) {
-            PropertiesLocalDatabase.saveProperties(context, _properties.value)
+            PropertiesLocalDatabase.saveProperties(context, updatedList)
         } else true
         if (saved) {
-            if (context != null) _properties.value = PropertiesLocalDatabase.loadProperties(context)
-            refreshPendingSyncState()
-        } else if (context != null) _properties.value = PropertiesLocalDatabase.loadProperties(context)
+            refreshPendingSyncState(reconcileDisk = false)
+        } else if (context != null) {
+            _properties.value = PropertiesLocalDatabase.loadProperties(context)
+        }
         return saved
     }
 
@@ -74,20 +84,28 @@ class SheetsRepository(
     val pendingSyncStatus: StateFlow<String> = _pendingSyncStatus.asStateFlow()
     private val queueMutex = sharedQueueMutex
 
-    internal fun close() { repoScope.cancel() }
+    internal fun close() {
+        repoScope.cancel()
+        ioWriterScope.cancel()
+    }
 
-    private fun refreshPendingSyncState() {
+    private fun refreshPendingSyncState(
+        reconcileDisk: Boolean = true,
+        preloadedPersisted: Map<String, PropertyItem>? = null
+    ) {
         val appContext = context ?: return
         try {
             val queue = PropertiesLocalDatabase.loadPendingWrites(appContext)
-            val persisted = PropertiesLocalDatabase.loadProperties(appContext).associateBy { it.id }
-            _properties.update { current ->
-                current.map { item ->
-                    val saved = persisted[item.id]
-                    if (!item.isSyncedToSheet && saved?.isSyncedToSheet == true &&
-                        AppsScriptSyncProtocol.sameWriteSnapshot(item, saved)) {
-                        item.copy(isSyncedToSheet = true)
-                    } else item
+            if (reconcileDisk) {
+                val persisted = preloadedPersisted ?: PropertiesLocalDatabase.loadProperties(appContext).associateBy { it.id }
+                _properties.update { current ->
+                    current.map { item ->
+                        val saved = persisted[item.id]
+                        if (!item.isSyncedToSheet && saved?.isSyncedToSheet == true &&
+                            AppsScriptSyncProtocol.sameWriteSnapshot(item, saved)) {
+                            item.copy(isSyncedToSheet = true)
+                        } else item
+                    }
                 }
             }
             _pendingSyncCount.value = queue.size
@@ -115,14 +133,25 @@ class SheetsRepository(
     val backups: StateFlow<List<BackupSnapshot>> = _backups.asStateFlow()
 
     private val _storageHealth = MutableStateFlow(
-        context?.let { PropertiesLocalDatabase.inspectStorageHealth(it) } ?: StorageHealthReport()
+        if (context != null && !deferInitialDiskLoad) PropertiesLocalDatabase.inspectStorageHealth(context) else StorageHealthReport()
     )
     val storageHealth: StateFlow<StorageHealthReport> = _storageHealth.asStateFlow()
 
     private val _pendingSyncOps = MutableStateFlow<List<PendingSyncOp>>(
-        context?.let { PendingSyncOpStore.loadAll(it) } ?: emptyList()
+        if (context != null && !deferInitialDiskLoad) PendingSyncOpStore.loadAll(context) else emptyList()
     )
     val pendingSyncOps: StateFlow<List<PendingSyncOp>> = _pendingSyncOps.asStateFlow()
+
+    private val _availableAppUpdate = MutableStateFlow<AppUpdateInfo?>(null)
+    val availableAppUpdate: StateFlow<AppUpdateInfo?> = _availableAppUpdate.asStateFlow()
+
+    fun setAvailableAppUpdate(info: AppUpdateInfo?) {
+        _availableAppUpdate.value = info
+    }
+
+    fun dismissAvailableAppUpdate() {
+        _availableAppUpdate.value = null
+    }
 
     private val processedMutationOutcomes = LinkedHashMap<String, PropertyEditOutcome>()
 
@@ -184,14 +213,21 @@ class SheetsRepository(
     }
 
     companion object {
-        const val DEFAULT_MASTER_SHEET_URL = "https://script.google.com/macros/s/AKfycbydf5SIHjjS8yMTInq5N39UM8S71GR65mi67YfTk5QHdWrIFwc-VRTGl99jYU5o2VRC/exec"
+        const val DEFAULT_MASTER_SHEET_URL = "https://script.google.com/macros/s/AKfycbxLZh3AEON1wweJc3jBWjjWOTPltAmGIgVqRtFCqX9kmzz7JEeMoilTMG8u9X3RiU8_/exec"
+        const val AUTO_SYNC_INTERVAL_MS = 15L * 60L * 1000L
+        const val FOREGROUND_SYNC_INTERVAL_MS = 3L * 60L * 1000L
+        private const val LAST_SYNC_AT_MILLIS_KEY = "last_successful_sync_millis"
         val DEFAULT_SYNCED_TABS = listOf(
             "Commercial Inventory",
             "Residential Inventory",
             "Commercial Projects",
             "Residential Projects",
             "CRM",
-            "Employees"
+            "Employees",
+            "Daily Reports",
+            "Call Logs",
+            "Tenants",
+            "Brokers & Vendors"
         )
         const val MAX_COMPARISON_COUNT = 3
         private const val COMPARISON_PREFS_NAME = "property_comparison_selection_v1"
@@ -200,17 +236,34 @@ class SheetsRepository(
         private val LEGACY_FAKE_EMPLOYEE_NAMES = setOf("amit", "neha", "rohan", "vikram", "admin", "staff")
         private val sharedQueueMutex = Mutex()
 
+        fun formatSyncedAgoLabel(lastSyncAtMillis: Long, nowMillis: Long = System.currentTimeMillis()): String {
+            if (lastSyncAtMillis <= 0L) return "Not synced yet"
+            val diffMs = (nowMillis - lastSyncAtMillis).coerceAtLeast(0L)
+            val mins = diffMs / 60_000L
+            return when {
+                mins < 1L -> "Synced just now"
+                mins < 60L -> "Synced ${mins}m ago"
+                mins < 24L * 60L -> "Synced ${mins / 60L}h ago"
+                else -> "Synced ${mins / (24L * 60L)}d ago"
+            }
+        }
+
         fun getSyncedActiveEmployeeNames(context: Context?): List<String> {
             val baseDefaults = TlcStandardOptions.teamEmployees.filterNot {
                 it.equals("Unassigned", ignoreCase = true)
             }
             if (context == null) return baseDefaults
-            val synced = runCatching {
-                val prefs = context.getSharedPreferences(SYNCED_EMPLOYEES_PREFS, Context.MODE_PRIVATE)
-                val raw = prefs.getString("active_names", "[]") ?: "[]"
-                val arr = JSONArray(raw)
-                (0 until arr.length()).mapNotNull { arr.optString(it).trim().takeIf { n -> n.isNotBlank() } }
-            }.getOrDefault(emptyList())
+            val diskCached = OfflineDiskCache.loadEmployeeNames(context)
+            val synced = if (diskCached.isNotEmpty()) {
+                diskCached
+            } else {
+                runCatching {
+                    val prefs = context.getSharedPreferences(SYNCED_EMPLOYEES_PREFS, Context.MODE_PRIVATE)
+                    val raw = prefs.getString("active_names", "[]") ?: "[]"
+                    val arr = JSONArray(raw)
+                    (0 until arr.length()).mapNotNull { arr.optString(it).trim().takeIf { n -> n.isNotBlank() } }
+                }.getOrDefault(emptyList())
+            }
             val merged = (synced + baseDefaults)
                 .map { it.trim() }
                 .filter { name ->
@@ -221,6 +274,66 @@ class SheetsRepository(
                 .distinctBy { it.lowercase(Locale.ENGLISH) }
             return merged
         }
+
+        fun getSyncedActiveEmployeeDirectory(context: Context?): List<OfflineDiskCache.CachedEmployeeMember> {
+            if (context == null) return emptyList()
+            val diskMembers = OfflineDiskCache.loadEmployeeDirectory(context)
+                .filter { it.isActiveMember() && it.name.lowercase(Locale.ENGLISH) !in LEGACY_FAKE_EMPLOYEE_NAMES }
+            if (diskMembers.isNotEmpty()) return diskMembers
+            // Fallback to active names in prefs/defaults so list is never empty if sheet has only names
+            return getSyncedActiveEmployeeNames(context).map { name ->
+                OfflineDiskCache.CachedEmployeeMember(name = name)
+            }
+        }
+
+        suspend fun loadActiveEmployeeDirectoryWithRoom(context: Context): List<OfflineDiskCache.CachedEmployeeMember> =
+            withContext(Dispatchers.IO) {
+                val diskMembers = OfflineDiskCache.loadEmployeeDirectory(context)
+                    .filter { it.isActiveMember() && it.name.lowercase(Locale.ENGLISH) !in LEGACY_FAKE_EMPLOYEE_NAMES }
+                val roomMembers = runCatching {
+                    com.example.access.EmployeeAccessDatabase.get(context).employeeDao().getAll()
+                        .filter {
+                            it.isActive &&
+                                it.accessStatus == com.example.access.EmployeeAccessStatus.ACTIVE &&
+                                it.employeeName.trim().lowercase(Locale.ENGLISH) !in LEGACY_FAKE_EMPLOYEE_NAMES
+                        }
+                        .map { entity ->
+                            val divLabel = entity.businessScopes.joinToString(" & ") { scope ->
+                                if (scope == com.example.access.BusinessDivisionScope.ASCEND_COMMERCIAL) "Commercial" else "Residential"
+                            }
+                            OfflineDiskCache.CachedEmployeeMember(
+                                id = entity.employeeId,
+                                name = entity.employeeName.trim(),
+                                mobile = entity.loginMobile.trim(),
+                                role = entity.jobTitle?.takeIf { it.isNotBlank() } ?: entity.role.label,
+                                division = divLabel,
+                                status = "Active"
+                            )
+                        }
+                }.getOrDefault(emptyList())
+
+                val mergedByName = linkedMapOf<String, OfflineDiskCache.CachedEmployeeMember>()
+                (diskMembers + roomMembers).forEach { member ->
+                    val key = member.name.trim().lowercase(Locale.ENGLISH)
+                    if (key.isBlank() || key == "unassigned") return@forEach
+                    val existing = mergedByName[key]
+                    if (existing == null) {
+                        mergedByName[key] = member
+                    } else {
+                        mergedByName[key] = existing.copy(
+                            id = existing.id.ifBlank { member.id },
+                            mobile = existing.mobile.ifBlank { member.mobile },
+                            role = existing.role.ifBlank { member.role },
+                            division = existing.division.ifBlank { member.division }
+                        )
+                    }
+                }
+                if (mergedByName.isNotEmpty()) {
+                    mergedByName.values.toList()
+                } else {
+                    getSyncedActiveEmployeeNames(context).map { OfflineDiskCache.CachedEmployeeMember(name = it) }
+                }
+            }
 
         internal fun isValidGoogleMapsHttpsUrl(rawUrl: String): Boolean {
             if (rawUrl.isBlank()) return false
@@ -415,49 +528,164 @@ class SheetsRepository(
         _syncLogs.value = emptyList()
     }
 
+    private val _syncRevision = MutableStateFlow(0)
+    val syncRevision: StateFlow<Int> = _syncRevision.asStateFlow()
+
+    private val _dailyReports = MutableStateFlow<List<DailyReportRecord>>(
+        if (context != null && !deferInitialDiskLoad) OfflineDiskCache.loadDailyReports(context) else emptyList()
+    )
+    val dailyReports: StateFlow<List<DailyReportRecord>> = _dailyReports.asStateFlow()
+
+    private val _tenants = MutableStateFlow<List<OfflineDiskCache.TenantCacheRecord>>(
+        if (context != null && !deferInitialDiskLoad) OfflineDiskCache.loadTenants(context) else emptyList()
+    )
+    val tenants: StateFlow<List<OfflineDiskCache.TenantCacheRecord>> = _tenants.asStateFlow()
+
+    private val _brokersVendors = MutableStateFlow<List<BrokerVendorRecord>>(
+        if (context != null && !deferInitialDiskLoad) OfflineDiskCache.loadBrokersVendors(context) else emptyList()
+    )
+    val brokersVendors: StateFlow<List<BrokerVendorRecord>> = _brokersVendors.asStateFlow()
+
+    private val _lastSyncAtMillis = MutableStateFlow(
+        if (context != null && !deferInitialDiskLoad) {
+            context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).getLong(LAST_SYNC_AT_MILLIS_KEY, 0L)
+        } else 0L
+    )
+    val lastSyncAtMillis: StateFlow<Long> = _lastSyncAtMillis.asStateFlow()
+
     private val repoScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private fun hydrateLocalStateFromDisk(startupContext: Context, includePropertiesAndHealth: Boolean) {
+        if (includePropertiesAndHealth) {
+            val loadedProps = PropertiesLocalDatabase.loadProperties(startupContext)
+            _properties.value = loadedProps
+            _dailyReports.value = OfflineDiskCache.loadDailyReports(startupContext)
+            val cachedTenants = OfflineDiskCache.loadTenants(startupContext)
+            _tenants.value = cachedTenants.ifEmpty { deriveTenantsFromProperties(loadedProps) }
+            _brokersVendors.value = OfflineDiskCache.loadBrokersVendors(startupContext)
+            _storageHealth.value = PropertiesLocalDatabase.inspectStorageHealth(startupContext)
+            _pendingSyncOps.value = PendingSyncOpStore.loadAll(startupContext)
+            runCatching { PropertiesLocalDatabase.recoverPendingWrites(startupContext) }
+            refreshPendingSyncState(reconcileDisk = false)
+        } else {
+            runCatching { PropertiesLocalDatabase.recoverPendingWrites(startupContext) }
+            refreshPendingSyncState(reconcileDisk = true)
+            if (_tenants.value.isEmpty() && _properties.value.isNotEmpty()) {
+                _tenants.value = deriveTenantsFromProperties(_properties.value)
+            }
+            if (_brokersVendors.value.isEmpty()) {
+                _brokersVendors.value = OfflineDiskCache.loadBrokersVendors(startupContext)
+            }
+        }
+
+        val prefs = startupContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val savedSyncMs = prefs.getLong(LAST_SYNC_AT_MILLIS_KEY, 0L)
+        if (savedSyncMs > 0L) {
+            _lastSyncAtMillis.value = savedSyncMs
+            _lastSyncTimestamp.value = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date(savedSyncMs))
+        }
+        _favoriteIds.value = prefs.getStringSet("favorite_property_ids", emptySet())?.toSet() ?: emptySet()
+        val initialUser = UserSettingsManager(startupContext).userProfile.value
+        val initialCompKey = comparisonEmployeeKey(initialUser)
+        activeComparisonKey = initialCompKey
+        _comparisonIds.value = loadSavedComparisonIds(initialCompKey)
+        val rawSavedUrl = prefs.getString("google_sheet_url", "")?.trim().orEmpty()
+        val savedUrl = if (rawSavedUrl.isNotBlank()) rawSavedUrl else DEFAULT_MASTER_SHEET_URL
+        _sheetsScriptUrl.value = savedUrl
+        _isLiveConnected.value = false
+        _connectionStatus.value = if (savedUrl.isNotBlank()) "Sheet URL saved - connection not yet verified" else "Not Connected - Ready for Google Sheet Setup"
+        sanitizeShiftedInventoryRecords(startupContext)
+        if (_properties.value.isNotEmpty()) {
+            runCatching { OfflineDiskCache.saveInventorySplits(startupContext, _properties.value) }
+        }
+    }
+
+    fun ensureLoadedFromDisk() {
+        val startupContext = context ?: return
+        if (diskLoaded) return
+        synchronized(this) {
+            if (diskLoaded) return
+            hydrateLocalStateFromDisk(startupContext, includePropertiesAndHealth = true)
+            diskLoaded = true
+        }
+    }
+
+    fun reloadFromDisk() {
+        val appContext = context ?: return
+        val loaded = PropertiesLocalDatabase.loadProperties(appContext)
+        _properties.value = loaded
+        _dailyReports.value = OfflineDiskCache.loadDailyReports(appContext)
+        val cachedTenants = OfflineDiskCache.loadTenants(appContext)
+        _tenants.value = cachedTenants.ifEmpty { deriveTenantsFromProperties(loaded) }
+        _brokersVendors.value = OfflineDiskCache.loadBrokersVendors(appContext)
+        refreshPendingSyncState(reconcileDisk = false)
+    }
+
+    fun isSyncStale(maxAgeMs: Long = AUTO_SYNC_INTERVAL_MS, nowMillis: Long = System.currentTimeMillis()): Boolean {
+        val last = _lastSyncAtMillis.value
+        if (last <= 0L) return true
+        return (nowMillis - last) >= maxAgeMs
+    }
+
+    fun markSuccessfulSyncNow(nowMillis: Long = System.currentTimeMillis()) {
+        _lastSyncAtMillis.value = nowMillis
+        val formatted = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date(nowMillis))
+        _lastSyncTimestamp.value = formatted
+        context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            ?.edit()
+            ?.putLong(LAST_SYNC_AT_MILLIS_KEY, nowMillis)
+            ?.apply()
+    }
+
+    suspend fun syncIfStale(maxAgeMs: Long = AUTO_SYNC_INTERVAL_MS): String? {
+        if (_sheetsScriptUrl.value.trim().isBlank()) return null
+        if (!isSyncStale(maxAgeMs)) return null
+        return syncMutex.withLock {
+            if (!isSyncStale(maxAgeMs)) return@withLock null
+            val result = syncWithGoogleSheetNow()
+            retryPendingWrites()
+            result
+        }
+    }
+
+    fun syncIfStaleInBackground(maxAgeMs: Long = AUTO_SYNC_INTERVAL_MS) {
+        if (!isSyncStale(maxAgeMs) || _sheetsScriptUrl.value.trim().isBlank()) return
+        repoScope.launch {
+            runCatching { syncIfStale(maxAgeMs) }
+        }
+    }
 
     init {
         val startupContext = context
-        if (startupContext != null) {
-            runCatching { PropertiesLocalDatabase.recoverPendingWrites(startupContext) }
-            refreshPendingSyncState()
-            if (startForegroundSync) runCatching {
-                BackgroundSyncScheduler.ensureScheduled(startupContext)
-            }
-            val prefs = startupContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-            _favoriteIds.value = prefs.getStringSet("favorite_property_ids", emptySet())?.toSet() ?: emptySet()
-            val initialUser = UserSettingsManager(startupContext).userProfile.value
-            val initialCompKey = comparisonEmployeeKey(initialUser)
-            activeComparisonKey = initialCompKey
-            _comparisonIds.value = loadSavedComparisonIds(initialCompKey)
-            val rawSavedUrl = prefs.getString("google_sheet_url", "")?.trim().orEmpty()
-            val savedUrl = if (rawSavedUrl.isNotBlank()) rawSavedUrl else DEFAULT_MASTER_SHEET_URL
-            _sheetsScriptUrl.value = savedUrl
-            _isLiveConnected.value = false
-            _connectionStatus.value = if (savedUrl.isNotBlank()) "Sheet URL saved - connection not yet verified" else "Not Connected - Ready for Google Sheet Setup"
-        }
-
-        // Auto-sync Master Sheet on startup only when valid URL configured
-        if (startForegroundSync) repoScope.launch {
-            if (_sheetsScriptUrl.value.isNotBlank()) {
-                try {
-                    syncWithGoogleSheetNow()
-                    retryPendingWrites()
-                } catch (_: Exception) {}
-            }
-        }
-
-        // Automatic Background Polling Loop: Auto-syncs Google Sheet every 60 seconds
-        if (startForegroundSync) repoScope.launch {
-            while (isActive) {
-                if (_sheetsScriptUrl.value.isNotBlank()) {
-                    try {
-                        syncWithGoogleSheetNow()
-                        retryPendingWrites()
-                    } catch (_: Exception) {}
+        if (startupContext != null && !deferInitialDiskLoad) {
+            hydrateLocalStateFromDisk(startupContext, includePropertiesAndHealth = false)
+            diskLoaded = true
+            if (startForegroundSync) {
+                runCatching {
+                    BackgroundSyncScheduler.ensureScheduled(startupContext)
+                    BackgroundSyncScheduler.ensureMasterAutoSyncScheduled(startupContext)
                 }
-                delay(60000) // 60 seconds ticker
+            }
+        } else if (startupContext != null && startForegroundSync) {
+            repoScope.launch {
+                ensureLoadedFromDisk()
+                runCatching {
+                    BackgroundSyncScheduler.ensureScheduled(startupContext)
+                    BackgroundSyncScheduler.ensureMasterAutoSyncScheduled(startupContext)
+                }
+            }
+        }
+
+        // Active foreground sync every 3 minutes without blocking UI (WorkManager stays at 15 min in background)
+        if (startForegroundSync) repoScope.launch {
+            ensureLoadedFromDisk()
+            while (isActive) {
+                if (_sheetsScriptUrl.value.isNotBlank() && isSyncStale(FOREGROUND_SYNC_INTERVAL_MS)) {
+                    runCatching {
+                        syncIfStale(FOREGROUND_SYNC_INTERVAL_MS)
+                    }
+                }
+                delay(FOREGROUND_SYNC_INTERVAL_MS)
             }
         }
     }
@@ -653,10 +881,112 @@ class SheetsRepository(
         return resultMsg
     }
 
+    suspend fun deleteRecordPermanently(tabName: String, keyHeader: String, keyValue: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val cleanKey = keyValue.trim()
+        if (cleanKey.isBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("Missing key value for permanent delete"))
+        }
+        runCatching {
+            val configured = _sheetsScriptUrl.value.trim()
+            val endpoint = if (configured.startsWith("https://") && configured.contains("script.google.com", ignoreCase = true)) {
+                configured
+            } else {
+                DEFAULT_MASTER_SHEET_URL
+            }
+            val payload = JSONObject().apply {
+                put("action", "DELETE")
+                put("tabName", tabName)
+                put("keyHeader", keyHeader)
+                put("keyValue", cleanKey)
+            }
+            var url = java.net.URL(endpoint)
+            val origin = url
+            var method = "POST"
+            val bodyBytes = payload.toString().toByteArray(Charsets.UTF_8)
+            var succeeded = false
+            var lastError: String? = null
+
+            for (hop in 0 until 5) {
+                var conn: java.net.HttpURLConnection? = null
+                try {
+                    conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.instanceFollowRedirects = false
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 15000
+                    conn.requestMethod = method
+                    conn.setRequestProperty("User-Agent", "TLC-1")
+                    if (method == "POST") {
+                        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                        conn.doOutput = true
+                        conn.outputStream.use { os -> os.write(bodyBytes) }
+                    }
+                    val responseCode = conn.responseCode
+                    if (responseCode in 200..299) {
+                        val responseText = runCatching {
+                            conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }.trim()
+                        }.getOrDefault("")
+                        val parsed = runCatching { JSONObject(responseText) }.getOrNull()
+                        if (parsed != null) {
+                            val statusStr = parsed.optString("status", "").trim().lowercase(Locale.ENGLISH)
+                            val okFlag = if (parsed.has("ok")) parsed.optBoolean("ok", true)
+                                else if (parsed.has("success")) parsed.optBoolean("success", true)
+                                else statusStr != "error" && statusStr != "failed"
+                            if (statusStr == "error" || statusStr == "failed" || !okFlag) {
+                                lastError = parsed.optString("message", parsed.optString("error", "Delete failed on Master Sheet"))
+                                break
+                            }
+                        }
+                        succeeded = true
+                        break
+                    } else if (responseCode == 301 || responseCode == 302 || responseCode == 303) {
+                        val location = conn.getHeaderField("Location")
+                            ?: throw Exception("Redirect missing Location header from Apps Script")
+                        val next = java.net.URL(url, location)
+                        val sameOrigin = next.protocol == origin.protocol &&
+                            next.host == origin.host && next.port == origin.port
+                        val googleResult = origin.protocol == "https" &&
+                            origin.host == "script.google.com" &&
+                            next.protocol == "https" &&
+                            next.host == "script.googleusercontent.com"
+                        if (!sameOrigin && !googleResult) {
+                            throw Exception("Blocked unexpected Apps Script redirect")
+                        }
+                        url = next
+                        method = "GET"
+                    } else {
+                        lastError = "HTTP $responseCode from Apps Script"
+                        break
+                    }
+                } finally {
+                    conn?.disconnect()
+                }
+            }
+            if (!succeeded) {
+                throw Exception(lastError ?: "Delete request did not complete on Apps Script")
+            }
+            logSyncEvent(
+                direction = "APP_TO_SHEET",
+                status = "SUCCESS",
+                recordCount = 1,
+                details = "Permanently deleted $tabName ($keyHeader=$cleanKey)",
+                triggeredBy = actor()
+            )
+        }.onFailure { err ->
+            logSyncEvent(
+                direction = "APP_TO_SHEET",
+                status = "FAILED",
+                recordCount = 0,
+                details = "Permanent delete failed for $tabName ($keyHeader=$cleanKey): ${err.message}",
+                triggeredBy = actor()
+            )
+        }
+    }
+
     suspend fun syncWithGoogleSheetNow(): String = withContext(Dispatchers.IO) {
         val rawUrl = _sheetsScriptUrl.value.trim()
 
         try {
+            lastNonInventorySyncedCount = 0
             _connectionStatus.value = "Syncing with Google Sheet..."
             val allImportRows = mutableListOf<ImportPreviewRow>()
 
@@ -682,7 +1012,6 @@ class SheetsRepository(
                     // Google Sheet URL or Spreadsheet ID
                     val sheetId = extractSpreadsheetId(rawUrl)
                     if (sheetId.isNotBlank()) {
-                        // Exact 5 tabs from the verified TLC-1 master workbook. Read-only import only.
                         var syncedCrmRowCount = 0
                         for (tabName in DEFAULT_SYNCED_TABS) {
                             try {
@@ -694,12 +1023,40 @@ class SheetsRepository(
                                         val crmRows = parseCsvLinesToGrid(csvContent)
                                         syncedCrmRowCount = (crmRows.size - 1).coerceAtLeast(0)
                                         if (crmRows.size > 1) {
-                                            mergeCrmSheetRowsIntoPrefs(crmRows)
+                                            lastNonInventorySyncedCount += mergeCrmSheetRowsIntoPrefs(crmRows)
                                         }
                                     } else if (tabName.equals("Employees", ignoreCase = true)) {
                                         val empRows = parseCsvLinesToGrid(csvContent)
                                         if (empRows.size > 1) {
-                                            mergeEmployeesSheetRowsIntoPrefs(empRows)
+                                            lastNonInventorySyncedCount += mergeEmployeesSheetRowsIntoPrefs(empRows)
+                                        }
+                                    } else if (tabName.equals("Call Logs", ignoreCase = true)) {
+                                        val callRows = parseCsvLinesToGrid(csvContent)
+                                        if (callRows.size > 1) {
+                                            lastNonInventorySyncedCount += mergeCallLogsSheetRowsIntoPrefs(callRows)
+                                        }
+                                    } else if (tabName.equals("Commercial Projects", ignoreCase = true) ||
+                                        tabName.equals("Residential Projects", ignoreCase = true)
+                                    ) {
+                                        val projRows = parseCsvLinesToGrid(csvContent)
+                                        if (projRows.size > 1 && context != null) {
+                                            lastNonInventorySyncedCount += ProjectDirectoryStore.mergeSyncedProjectRows(context, tabName, projRows)
+                                            _syncRevision.value++
+                                        }
+                                    } else if (tabName.equals("Daily Reports", ignoreCase = true)) {
+                                        val repRows = parseCsvLinesToGrid(csvContent)
+                                        if (repRows.size > 1) {
+                                            lastNonInventorySyncedCount += mergeDailyReportRowsIntoCache(repRows)
+                                        }
+                                    } else if (tabName.equals("Tenants", ignoreCase = true)) {
+                                        val tenantRows = parseCsvLinesToGrid(csvContent)
+                                        if (tenantRows.size > 1) {
+                                            lastNonInventorySyncedCount += mergeTenantsSheetRowsIntoCache(tenantRows)
+                                        }
+                                    } else if (tabName.equals("Brokers & Vendors", ignoreCase = true)) {
+                                        val bvRows = parseCsvLinesToGrid(csvContent)
+                                        if (bvRows.size > 1) {
+                                            lastNonInventorySyncedCount += mergeBrokersVendorsSheetRowsIntoCache(bvRows)
                                         }
                                     } else {
                                         val rows = parseCsvOrTextData(csvContent, tabName)
@@ -747,11 +1104,22 @@ class SheetsRepository(
             }
 
             if (allImportRows.isNotEmpty()) {
-                val stats = importRowsDetailed(allImportRows, duplicateHandling = "SKIP")
-                val nowStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date())
-                if (stats.failedCount == 0) _lastSyncTimestamp.value = nowStr
+                val stats = importRowsDetailed(allImportRows, duplicateHandling = "SYNC_MERGE")
+                val nowMs = System.currentTimeMillis()
+                val nowStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date(nowMs))
+                if (stats.failedCount == 0) {
+                    markSuccessfulSyncNow(nowMs)
+                }
+                context?.let { appCtx ->
+                    runCatching {
+                        com.example.notifications.TeamSyncDiffEngine.processPostSyncDiff(
+                            context = appCtx,
+                            properties = _properties.value
+                        )
+                    }
+                }
                 _isLiveConnected.value = stats.failedCount == 0
-                _connectionStatus.value = if (stats.failedCount == 0) "Read-only Sheet import verified (${_properties.value.size} properties); write-back disabled" else "Read-only Sheet import incomplete: ${stats.failedCount} records failed"
+                _connectionStatus.value = if (stats.failedCount == 0) "Two-way Master Sheet sync verified (${_properties.value.size} properties)" else "Sheet sync incomplete: ${stats.failedCount} records failed"
                 logSyncEvent(
                     direction = "SHEET_TO_APP",
                     status = if (stats.failedCount == 0) "SUCCESS" else "WARNING",
@@ -768,7 +1136,18 @@ class SheetsRepository(
                         "• Total Active Inventory: ${_properties.value.size} Properties\n" +
                         (if (stats.failedCount == 0) "• Last Successful Import: $nowStr" else "• Last Successful Import: ${_lastSyncTimestamp.value} (current import incomplete)")
             } else {
-                _isLiveConnected.value = false
+                if (lastNonInventorySyncedCount > 0) {
+                    markSuccessfulSyncNow()
+                    context?.let { appCtx ->
+                        runCatching {
+                            com.example.notifications.TeamSyncDiffEngine.processPostSyncDiff(
+                                context = appCtx,
+                                properties = _properties.value
+                            )
+                        }
+                    }
+                }
+                _isLiveConnected.value = lastNonInventorySyncedCount > 0
                 _connectionStatus.value = "Sheet import not verified (0 valid records)"
                 logSyncEvent(
                     direction = "SHEET_TO_APP",
@@ -854,6 +1233,12 @@ class SheetsRepository(
                 }
             } else if (trimmed.startsWith("{")) {
                 val root = org.json.JSONObject(trimmed)
+                // Parse optional appUpdate metadata from TlcWebApp.gs doGet response
+                AppUpdateManager.parseAppUpdateFromJson(trimmed)?.let { updateInfo ->
+                    if (AppUpdateManager.isRemoteVersionNewer(updateInfo.version)) {
+                        _availableAppUpdate.value = updateInfo
+                    }
+                }
                 val dataObj = root.optJSONObject("data") ?: root.optJSONObject("properties") ?: root
                 val keys = dataObj.keys()
                 while (keys.hasNext()) {
@@ -866,12 +1251,43 @@ class SheetsRepository(
                                 key.equals("CRM Leads", ignoreCase = true) ||
                                 key.equals("Leads", ignoreCase = true)
                             ) {
-                                mergeCrmSheetRowsIntoPrefs(parsedRows)
+                                lastNonInventorySyncedCount += mergeCrmSheetRowsIntoPrefs(parsedRows)
                             } else if (key.equals("Employees", ignoreCase = true) ||
                                 key.equals("Team", ignoreCase = true) ||
                                 key.equals("Staff", ignoreCase = true)
                             ) {
-                                mergeEmployeesSheetRowsIntoPrefs(parsedRows)
+                                lastNonInventorySyncedCount += mergeEmployeesSheetRowsIntoPrefs(parsedRows)
+                            } else if (key.equals("Call Logs", ignoreCase = true) ||
+                                key.equals("CallLogs", ignoreCase = true) ||
+                                key.equals("Calls", ignoreCase = true)
+                            ) {
+                                lastNonInventorySyncedCount += mergeCallLogsSheetRowsIntoPrefs(parsedRows)
+                            } else if (key.equals("Commercial Projects", ignoreCase = true) ||
+                                key.equals("Residential Projects", ignoreCase = true)
+                            ) {
+                                if (context != null) {
+                                    lastNonInventorySyncedCount += ProjectDirectoryStore.mergeSyncedProjectRows(context, key, parsedRows)
+                                    _syncRevision.value++
+                                }
+                            } else if (key.equals("Daily Reports", ignoreCase = true)) {
+                                lastNonInventorySyncedCount += mergeDailyReportRowsIntoCache(parsedRows)
+                            } else if (key.equals("Tenants", ignoreCase = true) ||
+                                key.equals("Tenant", ignoreCase = true) ||
+                                key.equals("Tenant Directory", ignoreCase = true)
+                            ) {
+                                lastNonInventorySyncedCount += mergeTenantsSheetRowsIntoCache(parsedRows)
+                            } else if (key.equals("Brokers & Vendors", ignoreCase = true) ||
+                                key.equals("Brokers and Vendors", ignoreCase = true) ||
+                                key.equals("Brokers", ignoreCase = true) ||
+                                key.equals("Vendors", ignoreCase = true)
+                            ) {
+                                lastNonInventorySyncedCount += mergeBrokersVendorsSheetRowsIntoCache(parsedRows)
+                            } else if (key.contains("Projects", ignoreCase = true) ||
+                                key.equals("SETTINGS", ignoreCase = true) ||
+                                key.equals("SYNC_LOG", ignoreCase = true) ||
+                                key.equals("DATA_REVIEW", ignoreCase = true)
+                            ) {
+                                // Skip other project & system tabs when parsing Property Inventory
                             } else {
                                 val worksheet = ParsedWorksheet(sheetName = key, rows = parsedRows)
                                 results.addAll(parseWorksheets(listOf(worksheet)))
@@ -901,11 +1317,15 @@ class SheetsRepository(
                 rows.add(rowList)
             }
         } else if (firstItem is org.json.JSONObject) {
-            val headers = mutableListOf<String>()
-            val keys = firstItem.keys()
-            while (keys.hasNext()) {
-                headers.add(keys.next())
+            val headerSet = linkedSetOf<String>()
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.optJSONObject(i) ?: continue
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    headerSet.add(keys.next())
+                }
             }
+            val headers = headerSet.toList()
             rows.add(headers) // Header row
 
             for (i in 0 until jsonArray.length()) {
@@ -1072,6 +1492,180 @@ class SheetsRepository(
         return persistChanges()
     }
 
+    /**
+     * Batch 30: Permanently removes a Property from in-memory state + context.filesDir cache
+     * immediately, and sends a background DELETE doPost request to TlcWebApp.gs.
+     */
+    @Synchronized
+    fun permanentlyDeleteProperty(property: PropertyItem): Boolean {
+        val appContext = context
+        val isAdmin = appContext?.let { UserSettingsManager(it).userProfile.value.isAdminOrSuperAdmin } ?: allowed("DELETE_RECORD")
+        if (!isAdmin) return false
+
+        val targetIds = setOf(property.id, property.recordId, property.propertyCode)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .map { it.uppercase(Locale.ENGLISH) }
+            .toSet()
+
+        val remaining = _properties.value.filterNot { item ->
+            item.id.trim().uppercase(Locale.ENGLISH) in targetIds ||
+                (property.id.isNotBlank() && item.id == property.id)
+        }
+        val saved = if (appContext != null) {
+            PropertiesLocalDatabase.saveProperties(appContext, remaining).also { ok ->
+                if (ok) {
+                    runCatching { OfflineDiskCache.saveInventorySplits(appContext, remaining) }
+                    runCatching { PendingSyncOpStore.removeForEntity(appContext, property.id) }
+                }
+            }
+        } else {
+            true
+        }
+        if (!saved) return false
+
+        _properties.value = remaining
+        if (_favoriteIds.value.contains(property.id)) {
+            val nextFavs = _favoriteIds.value - property.id
+            _favoriteIds.value = nextFavs
+            appContext?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.edit()
+                ?.putStringSet("favorite_property_ids", nextFavs)?.apply()
+        }
+        if (_comparisonIds.value.contains(property.id)) {
+            saveComparisonIds(activeComparisonKey, _comparisonIds.value.filterNot { it == property.id })
+        }
+        refreshPendingSyncState(reconcileDisk = false)
+        refreshPendingSyncOps()
+
+        val tabName = if (property.isResidential()) "Residential Inventory" else "Commercial Inventory"
+        val keyValue = property.recordId.ifBlank { property.id.ifBlank { property.propertyCode } }
+        if (keyValue.isNotBlank()) {
+            repoScope.launch(Dispatchers.IO) {
+                deleteRecordPermanently(
+                    tabName = tabName,
+                    keyHeader = "Property ID",
+                    keyValue = keyValue
+                )
+            }
+        }
+        return true
+    }
+
+    /**
+     * Batch 30: Permanently removes a Project (UnderConstProject) from in-memory state +
+     * context.filesDir cache immediately, and sends a background DELETE doPost request to TlcWebApp.gs.
+     */
+    @Synchronized
+    fun permanentlyDeleteUnderConstProject(project: UnderConstProject): Boolean {
+        val appContext = context
+        val isAdmin = appContext?.let { UserSettingsManager(it).userProfile.value.isAdminOrSuperAdmin } ?: allowed("DELETE_RECORD")
+        if (!isAdmin) return false
+
+        val code = project.projectCode.ifBlank { project.id }.trim()
+        val matchedDirDivision = appContext?.let { ctx ->
+            runCatching {
+                ProjectDirectoryStore.read(ctx).firstOrNull {
+                    it.id.equals(code, ignoreCase = true) ||
+                        it.id.equals(project.id, ignoreCase = true) ||
+                        it.name.equals(project.projectName, ignoreCase = true)
+                }?.division
+            }.getOrNull()
+        }
+        val tabName = when {
+            matchedDirDivision?.equals("commercial", ignoreCase = true) == true -> "Commercial Projects"
+            matchedDirDivision?.equals("residential", ignoreCase = true) == true -> "Residential Projects"
+            code.startsWith("CP", ignoreCase = true) -> "Commercial Projects"
+            else -> "Residential Projects"
+        }
+
+        _underConstProjects.value = _underConstProjects.value.filterNot {
+            it.id == project.id || (code.isNotBlank() && it.projectCode.equals(code, ignoreCase = true))
+        }
+        if (appContext != null && code.isNotBlank()) {
+            runCatching { ProjectDirectoryStore.deletePermanently(appContext, code) }
+            if (project.id.isNotBlank() && !project.id.equals(code, ignoreCase = true)) {
+                runCatching { ProjectDirectoryStore.deletePermanently(appContext, project.id) }
+            }
+            _syncRevision.value++
+        }
+
+        if (code.isNotBlank()) {
+            repoScope.launch(Dispatchers.IO) {
+                deleteRecordPermanently(
+                    tabName = tabName,
+                    keyHeader = "Project Code",
+                    keyValue = code
+                )
+            }
+        }
+        return true
+    }
+
+    /**
+     * Batch 30: Permanently removes a DirectoryProject (Commercial or Residential) from
+     * in-memory state + context.filesDir cache immediately, and sends a background DELETE doPost request.
+     */
+    @Synchronized
+    fun permanentlyDeleteDirectoryProject(project: com.example.data.projects.DirectoryProject): Boolean {
+        val appContext = context
+        val isAdmin = appContext?.let { UserSettingsManager(it).userProfile.value.isAdminOrSuperAdmin } ?: allowed("DELETE_RECORD")
+        if (!isAdmin) return false
+
+        val code = project.id.trim()
+        if (appContext != null && code.isNotBlank()) {
+            runCatching { ProjectDirectoryStore.deletePermanently(appContext, code) }
+        }
+        _underConstProjects.value = _underConstProjects.value.filterNot {
+            it.id.equals(code, ignoreCase = true) ||
+                it.projectCode.equals(code, ignoreCase = true) ||
+                it.projectName.equals(project.name, ignoreCase = true)
+        }
+        _syncRevision.value++
+
+        val tabName = if (project.division.equals("residential", ignoreCase = true)) {
+            "Residential Projects"
+        } else {
+            "Commercial Projects"
+        }
+        if (code.isNotBlank()) {
+            repoScope.launch(Dispatchers.IO) {
+                deleteRecordPermanently(
+                    tabName = tabName,
+                    keyHeader = "Project Code",
+                    keyValue = code
+                )
+            }
+        }
+        return true
+    }
+
+    /**
+     * Batch 30: Permanently removes a CRM Lead from local disk cache + prefs immediately,
+     * and sends a background DELETE doPost request to TlcWebApp.gs.
+     */
+    fun permanentlyDeleteCrmLead(leadId: String): Boolean {
+        val appContext = context ?: return false
+        val isAdmin = UserSettingsManager(appContext).userProfile.value.isAdminOrSuperAdmin
+        if (!isAdmin) return false
+        val cleanId = leadId.trim()
+        if (cleanId.isBlank()) return false
+
+        val remaining = com.example.ui.screens.readCrmLeads(appContext).filterNot {
+            it.id.equals(cleanId, ignoreCase = true)
+        }
+        com.example.ui.screens.saveCrmLeads(appContext, remaining)
+        _syncRevision.value++
+
+        repoScope.launch(Dispatchers.IO) {
+            deleteRecordPermanently(
+                tabName = "CRM",
+                keyHeader = "Lead ID",
+                keyValue = cleanId
+            )
+        }
+        return true
+    }
+
     // Add Property
     @Synchronized
     fun addProperty(newItem: PropertyItem): Boolean {
@@ -1081,19 +1675,26 @@ class SheetsRepository(
             return false
         }
         val staffActor = actor()
+        val preVerifiedLive = newItem.verificationStatus == VerificationStatus.VERIFIED &&
+            com.example.inventory.InventoryQuality.isReadyForLiveVerification(newItem)
+        val todayIso = java.time.LocalDate.now().toString()
+        val todayReadable = SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH).format(Date())
         val prepared = newItem.copy(
             updatedBy = staffActor,
-            verifiedBy = staffActor.takeIf { newItem.verificationStatus == VerificationStatus.VERIFIED } ?: newItem.verifiedBy,
-            verificationStatus = VerificationStatus.PENDING,
+            verifiedBy = if (preVerifiedLive) (newItem.verifiedBy?.takeIf { it.isNotBlank() } ?: staffActor) else newItem.verifiedBy,
+            verificationStatus = if (preVerifiedLive) VerificationStatus.VERIFIED else VerificationStatus.PENDING,
             archiveStatus = ArchiveStatus.ACTIVE,
+            lastVerifiedDateClean = if (preVerifiedLive) newItem.lastVerifiedDateClean.ifBlank { todayIso } else newItem.lastVerifiedDateClean,
+            lastVerificationDate = if (preVerifiedLive) newItem.lastVerificationDate.ifBlank { todayReadable } else newItem.lastVerificationDate,
             isSyncedToSheet = false
         )
         val propertyToSave = stamped(prepared)
         val newList = listOf(propertyToSave) + _properties.value
         val saved = if (context != null) PropertiesLocalDatabase.saveProperties(context, newList) else true
         if (saved) {
-            _properties.value = if (context != null) PropertiesLocalDatabase.loadProperties(context) else newList
-            refreshPendingSyncState()
+            _properties.value = newList
+            com.example.inventory.PropertyPrecomputedCache.warmItem(propertyToSave)
+            refreshPendingSyncState(reconcileDisk = false)
             val appContext = context
             if (appContext != null) {
                 PendingSyncOpStore.enqueueOrCoalesce(
@@ -1125,6 +1726,67 @@ class SheetsRepository(
         return saved
     }
 
+    /**
+     * Non-blocking local-first add: updates in-memory StateFlow immediately (<10ms) and serializes
+     * disk save + Master Sheet UPSERT on Dispatchers.IO.
+     */
+    fun addPropertyAsync(newItem: PropertyItem): Boolean {
+        if (_properties.value.any { it.id == newItem.id } ||
+            !com.example.inventory.InventoryQuality.validDates(newItem) ||
+            (newItem.propertyCode.isNotBlank() && _properties.value.any { it.propertyCode.equals(newItem.propertyCode, ignoreCase = true) && it.id != newItem.id })
+        ) {
+            return false
+        }
+        val staffActor = actor()
+        val preVerifiedLive = newItem.verificationStatus == VerificationStatus.VERIFIED &&
+            com.example.inventory.InventoryQuality.isReadyForLiveVerification(newItem)
+        val todayIso = java.time.LocalDate.now().toString()
+        val todayReadable = SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH).format(Date())
+        val propertyToSave = stamped(
+            newItem.copy(
+                updatedBy = staffActor,
+                verifiedBy = if (preVerifiedLive) (newItem.verifiedBy?.takeIf { it.isNotBlank() } ?: staffActor) else newItem.verifiedBy,
+                verificationStatus = if (preVerifiedLive) VerificationStatus.VERIFIED else VerificationStatus.PENDING,
+                archiveStatus = ArchiveStatus.ACTIVE,
+                lastVerifiedDateClean = if (preVerifiedLive) newItem.lastVerifiedDateClean.ifBlank { todayIso } else newItem.lastVerifiedDateClean,
+                lastVerificationDate = if (preVerifiedLive) newItem.lastVerificationDate.ifBlank { todayReadable } else newItem.lastVerificationDate,
+                isSyncedToSheet = false
+            )
+        )
+        com.example.inventory.PropertyPrecomputedCache.warmItem(propertyToSave)
+        _properties.update { current -> listOf(propertyToSave) + current }
+        ioWriterScope.launch {
+            ioWriterMutex.withLock {
+                val appContext = context
+                if (appContext != null) {
+                    val saved = PropertiesLocalDatabase.saveProperties(appContext, _properties.value)
+                    if (saved) {
+                        refreshPendingSyncState(reconcileDisk = false)
+                        PendingSyncOpStore.enqueueOrCoalesce(
+                            appContext,
+                            PendingSyncOp(
+                                opId = "op_${UUID.randomUUID()}",
+                                mutationId = UUID.randomUUID().toString(),
+                                entityType = SaveEntityType.PROPERTY,
+                                entityId = propertyToSave.id,
+                                action = PendingSyncAction.UPSERT,
+                                payloadJson = PropertiesLocalDatabase.serializePropertyJson(propertyToSave).toString(),
+                                expectedVersion = propertyToSave.recordVersion,
+                                createdAt = System.currentTimeMillis()
+                            )
+                        )
+                        refreshPendingSyncOps()
+                    }
+                }
+                if (startForegroundSync) {
+                    runCatching { pushPropertyToMasterSheet(propertyToSave) }
+                    retryPendingWrites()
+                }
+            }
+        }
+        return true
+    }
+
     // Edit Property with Historical Snapshot for Undo / Restore
     @Synchronized
     fun updateProperty(updatedItem: PropertyItem, changeSummary: String): Boolean {
@@ -1134,6 +1796,7 @@ class SheetsRepository(
             return false
         }
         val today = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date())
+        var updatedTarget: PropertyItem? = null
         val newList = _properties.value.map { existing ->
             if (existing.id == updatedItem.id) {
                 // Save previous snapshot in history
@@ -1162,15 +1825,16 @@ class SheetsRepository(
                     editHistory = listOf(historyEntry) + existing.editHistory,
                     recordVersion = existing.recordVersion + 1,
                     isSyncedToSheet = false
-                ))
+                )).also { updatedTarget = it }
             } else existing
         }
         val saved = if (context != null) PropertiesLocalDatabase.saveProperties(context, newList) else true
         if (saved) {
-            _properties.value = if (context != null) PropertiesLocalDatabase.loadProperties(context) else newList
-            refreshPendingSyncState()
+            _properties.value = newList
+            updatedTarget?.let { com.example.inventory.PropertyPrecomputedCache.warmItem(it) }
+            refreshPendingSyncState(reconcileDisk = false)
             if (startForegroundSync) {
-                _properties.value.find { it.id == updatedItem.id }?.let { prop ->
+                updatedTarget?.let { prop ->
                     repoScope.launch {
                         runCatching { pushPropertyToMasterSheet(prop) }
                         if (_isLiveConnected.value) retryPendingWrites()
@@ -1179,6 +1843,85 @@ class SheetsRepository(
             }
         }
         return saved
+    }
+
+    /**
+     * Non-blocking local-first update: mutates StateFlow & PrecomputedCache synchronously in <1ms,
+     * then persists atomically to filesDir and pushes to Google Sheets on a serialized IO worker.
+     */
+    fun updatePropertyAsync(updatedItem: PropertyItem, changeSummary: String): Boolean {
+        val current = _properties.value
+        if (current.none { it.id == updatedItem.id }) return false
+        if (!com.example.inventory.InventoryQuality.validDates(updatedItem)) return false
+        if (updatedItem.propertyCode.isNotBlank() && current.any { it.propertyCode.equals(updatedItem.propertyCode, ignoreCase = true) && it.id != updatedItem.id }) {
+            return false
+        }
+        val today = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date())
+        var updatedTarget: PropertyItem? = null
+        _properties.update { latest ->
+            latest.map { existing ->
+                if (existing.id == updatedItem.id) {
+                    val snapshot = PropertyItemSnapshot(
+                        carpetAreaSqFt = existing.carpetAreaSqFt,
+                        builtUpAreaSqFt = existing.builtUpAreaSqFt,
+                        priceOrRent = existing.priceOrRent,
+                        priceSale = existing.priceSale,
+                        rent = existing.rent,
+                        deposit = existing.deposit,
+                        roiPercent = existing.roiPercent,
+                        furnishing = existing.furnishing,
+                        possession = existing.possession,
+                        status = existing.status,
+                        ownerName = existing.ownerName,
+                        ownerContact = existing.ownerContact,
+                        remarks = existing.remarks
+                    )
+                    val historyEntry = PropertyEditHistory(
+                        historyId = "hist_${System.currentTimeMillis()}",
+                        timestamp = today,
+                        summary = changeSummary,
+                        snapshot = snapshot
+                    )
+                    stamped(updatedItem.copy(
+                        editHistory = listOf(historyEntry) + existing.editHistory,
+                        recordVersion = existing.recordVersion + 1,
+                        isSyncedToSheet = false
+                    )).also { updatedTarget = it }
+                } else existing
+            }
+        }
+        val prop = updatedTarget ?: return false
+        com.example.inventory.PropertyPrecomputedCache.warmItem(prop)
+        ioWriterScope.launch {
+            ioWriterMutex.withLock {
+                val appContext = context
+                if (appContext != null) {
+                    val saved = PropertiesLocalDatabase.saveProperties(appContext, _properties.value)
+                    if (saved) {
+                        refreshPendingSyncState(reconcileDisk = false)
+                        PendingSyncOpStore.enqueueOrCoalesce(
+                            appContext,
+                            PendingSyncOp(
+                                opId = "op_${UUID.randomUUID()}",
+                                mutationId = UUID.randomUUID().toString(),
+                                entityType = SaveEntityType.PROPERTY,
+                                entityId = prop.id,
+                                action = PendingSyncAction.UPSERT,
+                                payloadJson = PropertiesLocalDatabase.serializePropertyJson(prop).toString(),
+                                expectedVersion = prop.recordVersion,
+                                createdAt = System.currentTimeMillis()
+                            )
+                        )
+                        refreshPendingSyncOps()
+                    }
+                }
+                if (startForegroundSync) {
+                    runCatching { pushPropertyToMasterSheet(prop) }
+                    if (_isLiveConnected.value) retryPendingWrites()
+                }
+            }
+        }
+        return true
     }
 
     @Synchronized
@@ -1305,6 +2048,7 @@ class SheetsRepository(
                 "brokerName" -> merged.copy(brokerName = cleanOptionalText(draft.brokerName))
                 "brokerContact" -> merged.copy(brokerContact = cleanOptionalText(draft.brokerContact))
                 "sourceInfo" -> merged.copy(sourceInfo = cleanOptionalText(draft.sourceInfo))
+                "pocType" -> merged.copy(pocType = normalizePocType(draft.pocType))
                 "remarks" -> merged.copy(remarks = cleanOptionalText(draft.remarks))
                 "internalRemarks" -> merged.copy(internalRemarks = cleanOptionalText(draft.internalRemarks))
                 "listingLink" -> merged.copy(listingLink = cleanOptionalText(draft.listingLink))
@@ -1387,11 +2131,11 @@ class SheetsRepository(
                     message = "Failed to save property on device storage. Original record retained."
                 )
             }
-            val reloaded = PropertiesLocalDatabase.loadProperties(context)
-            val persisted = reloaded.firstOrNull { it.id == updatedRecord.id } ?: updatedRecord
-            _properties.value = if (reloaded.isNotEmpty()) reloaded else newList
+            val persisted = updatedRecord
+            _properties.value = newList
+            com.example.inventory.PropertyPrecomputedCache.warmItem(persisted)
             refreshStorageHealth()
-            refreshPendingSyncState()
+            refreshPendingSyncState(reconcileDisk = false)
 
             val effectiveMutationId = cleanMutationId.ifBlank { java.util.UUID.randomUUID().toString() }
             PendingSyncOpStore.enqueueOrCoalesce(
@@ -1408,6 +2152,11 @@ class SheetsRepository(
                 )
             )
             refreshPendingSyncOps()
+            if (startForegroundSync) {
+                repoScope.launch {
+                    runCatching { pushPropertyToMasterSheet(persisted) }
+                }
+            }
             EmployeeActivityJournal.record(
                 context,
                 action = "EDIT_PROPERTY",
@@ -1525,6 +2274,11 @@ class SheetsRepository(
         return updateProperty(p.copy(status=newStatus), "Availability: ${newStatus.label}")
     }
 
+    fun updateAvailabilityAsync(propertyId: String, newStatus: AvailabilityStatus): Boolean {
+        val p = _properties.value.find { it.id == propertyId } ?: return false
+        return updatePropertyAsync(p.copy(status = newStatus), "Availability: ${newStatus.label}")
+    }
+
     data class VerifyPublishResult(
         val success: Boolean,
         val missingFields: List<String> = emptyList(),
@@ -1604,9 +2358,12 @@ class SheetsRepository(
                 )
             )
             refreshPendingSyncOps()
-            if (_sheetsScriptUrl.value.isNotBlank()) {
+            if (startForegroundSync) {
                 repoScope.launch {
-                    retryPendingWrites()
+                    runCatching { pushPropertyToMasterSheet(persisted) }
+                    if (_sheetsScriptUrl.value.isNotBlank()) {
+                        retryPendingWrites()
+                    }
                 }
             }
         }
@@ -1630,6 +2387,242 @@ class SheetsRepository(
         )
     }
 
+    /**
+     * Batch 13: Toggling a Live card OFF moves it to Pending (Off-Market, ArchiveStatus.ACTIVE)
+     * instead of Archived, writes immediately to filesDir, and queues Master Sheet UPSERT.
+     */
+    fun movePropertyToPending(propertyId: String, reason: String = "Toggled Off Live → Pending"): Boolean {
+        val p = _properties.value.find { it.id == propertyId } ?: return false
+        val updated = p.copy(
+            verificationStatus = VerificationStatus.PENDING,
+            archiveStatus = ArchiveStatus.ACTIVE,
+            ownerConfirmationStatus = "Pending",
+            isSyncedToSheet = false
+        )
+        val saved = updateProperty(updated, reason)
+        if (saved && context != null) {
+            val persisted = _properties.value.find { it.id == propertyId } ?: updated
+            PendingSyncOpStore.enqueueOrCoalesce(
+                context,
+                PendingSyncOp(
+                    opId = "op_${java.util.UUID.randomUUID()}",
+                    mutationId = java.util.UUID.randomUUID().toString(),
+                    entityType = SaveEntityType.PROPERTY,
+                    entityId = persisted.id,
+                    action = PendingSyncAction.UPSERT,
+                    payloadJson = PropertiesLocalDatabase.serializePropertyJson(persisted).toString(),
+                    expectedVersion = persisted.recordVersion,
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            refreshPendingSyncOps()
+            repoScope.launch {
+                pushPropertyToMasterSheet(persisted)
+                retryPendingWrites()
+            }
+        }
+        return saved
+    }
+
+    /**
+     * Non-blocking Live -> Pending toggle for instant <10ms card switch feedback.
+     */
+    fun movePropertyToPendingAsync(propertyId: String, reason: String = "Toggled Off Live → Pending"): Boolean {
+        val p = _properties.value.find { it.id == propertyId } ?: return false
+        val updated = p.copy(
+            verificationStatus = VerificationStatus.PENDING,
+            archiveStatus = ArchiveStatus.ACTIVE,
+            ownerConfirmationStatus = "Pending",
+            isSyncedToSheet = false
+        )
+        return updatePropertyAsync(updated, reason)
+    }
+
+    /**
+     * Non-blocking Pending -> Live verification & publish for instant <10ms switch feedback.
+     */
+    fun verifyAndPublishPropertyAsync(
+        propertyId: String,
+        availabilityStatus: AvailabilityStatus? = null,
+        method: String = "Verification Switch",
+        notes: String = "",
+        verifiedBy: String? = null
+    ): VerifyPublishResult {
+        val p = _properties.value.find { it.id == propertyId }
+            ?: return VerifyPublishResult(false, emptyList(), "Property record not found.")
+        val effectiveStatus = availabilityStatus ?: p.status
+        val candidate = p.copy(status = effectiveStatus)
+        val missing = com.example.inventory.InventoryQuality.minimumRequiredMissingFields(candidate)
+        if (missing.isNotEmpty()) {
+            return VerifyPublishResult(
+                success = false,
+                missingFields = missing,
+                message = "Complete 100% required details before going Live: ${missing.joinToString(", ")}",
+                property = p
+            )
+        }
+        val today = java.time.LocalDate.now().toString()
+        val verifier = verifiedBy?.takeIf { it.isNotBlank() } ?: actor()
+        val updatedNotes = if (notes.isNotBlank()) {
+            listOf(p.internalRemarks.orEmpty(), "[$today · $method] $notes").filter { it.isNotBlank() }.joinToString("\n")
+        } else p.internalRemarks
+        val nextProp = candidate.copy(
+            verificationStatus = VerificationStatus.VERIFIED,
+            archiveStatus = ArchiveStatus.ACTIVE,
+            lastVerifiedDateClean = today,
+            lastVerificationDate = today,
+            verifiedBy = verifier,
+            ownerConfirmationStatus = "Confirmed",
+            internalRemarks = updatedNotes,
+            isSyncedToSheet = false
+        )
+        val saved = updatePropertyAsync(nextProp, "Verified & Published Live ($method)")
+        if (!saved) {
+            return VerifyPublishResult(false, emptyList(), "Unable to save verified property locally.", p)
+        }
+        val updated = _properties.value.find { it.id == propertyId } ?: nextProp
+        return VerifyPublishResult(
+            success = true,
+            missingFields = emptyList(),
+            message = "Verified & Live — queued for Google Sheet sync",
+            property = updated
+        )
+    }
+
+    /**
+     * Batch 13: Applies an approved Project Photo to the current property AND ALL other units
+     * belonging to the same projectName (or projectId), saves immediately to filesDir, and syncs to Sheet.
+     */
+    fun applyProjectPhotoToAllMatchingUnits(
+        projectName: String,
+        projectId: String,
+        photoUrl: String,
+        targetPropertyId: String? = null
+    ): Int {
+        val cleanUrl = photoUrl.trim()
+        if (cleanUrl.isBlank()) return 0
+        val normName = projectName.trim().lowercase(Locale.ENGLISH)
+        val normPid = projectId.trim()
+        val matchedIds = mutableListOf<String>()
+        val updatedList = _properties.value.map { prop ->
+            val sameId = targetPropertyId != null && prop.id == targetPropertyId
+            val sameProjectId = normPid.isNotBlank() && prop.projectId.trim().equals(normPid, ignoreCase = true)
+            val sameProjectName = normName.isNotBlank() && prop.projectName.trim().lowercase(Locale.ENGLISH) == normName
+            if (sameId || sameProjectId || sameProjectName) {
+                val mergedImages = (listOf(cleanUrl) + prop.images.filterNot { it.equals(cleanUrl, ignoreCase = true) }).distinct()
+                if (mergedImages != prop.images) {
+                    matchedIds.add(prop.id)
+                    stamped(
+                        prop.copy(
+                            images = mergedImages,
+                            listingLink = prop.listingLink?.takeIf { it.isNotBlank() } ?: cleanUrl,
+                            recordVersion = prop.recordVersion + 1,
+                            isSyncedToSheet = false
+                        )
+                    )
+                } else prop
+            } else prop
+        }
+        if (matchedIds.isEmpty()) return 0
+        _properties.value = updatedList
+        val appContext = context
+        if (appContext != null) {
+            PropertiesLocalDatabase.saveProperties(appContext, updatedList)
+            refreshPendingSyncState()
+            val refreshedMap = _properties.value.associateBy { it.id }
+            matchedIds.forEach { pid ->
+                refreshedMap[pid]?.let { persisted ->
+                    PendingSyncOpStore.enqueueOrCoalesce(
+                        appContext,
+                        PendingSyncOp(
+                            opId = "op_${java.util.UUID.randomUUID()}",
+                            mutationId = java.util.UUID.randomUUID().toString(),
+                            entityType = SaveEntityType.PROPERTY,
+                            entityId = persisted.id,
+                            action = PendingSyncAction.UPSERT,
+                            payloadJson = PropertiesLocalDatabase.serializePropertyJson(persisted).toString(),
+                            expectedVersion = persisted.recordVersion,
+                            createdAt = System.currentTimeMillis()
+                        )
+                    )
+                }
+            }
+            refreshPendingSyncOps()
+            repoScope.launch {
+                retryPendingWrites()
+            }
+        }
+        return matchedIds.size
+    }
+
+    /**
+     * Batch 38: Fetch exact building photos via Google Places Text Search & Photos API first
+     * (with coordinate bias when available), falling back to exact-quoted Bing Images only if
+     * Google Places returns 0 photos.
+     */
+    suspend fun searchOnlineProjectPhotos(
+        projectName: String,
+        location: String,
+        customQuery: String? = null,
+        latitude: Double? = null,
+        longitude: Double? = null,
+        googleMapsUrl: String? = null
+    ): Result<List<OnlineProjectPhotoCandidate>> = withContext(Dispatchers.IO) {
+        val cleanProject = projectName.trim()
+        if (cleanProject.isBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("Project / Building name is required to search photos."))
+        }
+        val (resolvedLat, resolvedLng) = resolveProjectCoordinates(
+            projectName = cleanProject,
+            latitude = latitude,
+            longitude = longitude,
+            googleMapsUrl = googleMapsUrl
+        )
+        val candidates = BingImageSearchEngine.searchProjectPhotos(
+            projectName = cleanProject,
+            location = location,
+            customQuery = customQuery,
+            latitude = resolvedLat,
+            longitude = resolvedLng
+        )
+        Result.success(candidates)
+    }
+
+    private fun resolveProjectCoordinates(
+        projectName: String,
+        latitude: Double?,
+        longitude: Double?,
+        googleMapsUrl: String?
+    ): Pair<Double?, Double?> {
+        if (latitude != null && longitude != null && (latitude != 0.0 || longitude != 0.0)) {
+            return latitude to longitude
+        }
+        // Try parsing @lat,lng or q=lat,lng from Google Maps URL if available
+        val urlText = googleMapsUrl.orEmpty()
+        if (urlText.isNotBlank()) {
+            val coordRegex = Regex("""(?:@|q=|ll=|center=)(-?\d+\.\d+),\s*(-?\d+\.\d+)""")
+            val match = coordRegex.find(urlText)
+            if (match != null) {
+                val parsedLat = match.groupValues[1].toDoubleOrNull()
+                val parsedLng = match.groupValues[2].toDoubleOrNull()
+                if (parsedLat != null && parsedLng != null && (parsedLat != 0.0 || parsedLng != 0.0)) {
+                    return parsedLat to parsedLng
+                }
+            }
+        }
+        // Fall back to any sibling unit in the same project that already has coordinates
+        val siblingWithCoords = _properties.value.firstOrNull { item ->
+            item.projectName.trim().equals(projectName, ignoreCase = true) &&
+                item.latitude != null && item.longitude != null &&
+                (item.latitude != 0.0 || item.longitude != 0.0)
+        }
+        return if (siblingWithCoords != null) {
+            siblingWithCoords.latitude to siblingWithCoords.longitude
+        } else {
+            null to null
+        }
+    }
+
     fun confirmPrice(propertyId: String): Boolean {
         val p = _properties.value.find { it.id == propertyId } ?: return false
         return updateProperty(p.copy(lastPriceConfirmationDate=java.time.LocalDate.now().toString()), "Price explicitly confirmed")
@@ -1640,7 +2633,8 @@ class SheetsRepository(
         newStatus: AvailabilityStatus,
         callNote: String = "",
         confirmedBy: String? = null,
-        updatedRentOrSale: Double? = null
+        updatedRentOrSale: Double? = null,
+        pocType: String? = null
     ): Boolean {
         val p = _properties.value.find { it.id == propertyId } ?: return false
         val today = java.time.LocalDate.now().toString()
@@ -1668,11 +2662,12 @@ class SheetsRepository(
             else -> p.archiveStatus
         }
 
+        val nextPocType = normalizePocType(pocType).ifBlank { p.pocType }
         val summary = buildString {
             append("Post-call Owner update: ${newStatus.label}")
             if (validPrice != null) append(" (Updated Rent/Price: ₹${validPrice.toLong()})")
         }
-        return updateProperty(
+        return updatePropertyAsync(
             p.copy(
                 status = newStatus,
                 verificationStatus = nextVerification,
@@ -1687,7 +2682,8 @@ class SheetsRepository(
                 priceOrRent = nextPriceOrRent,
                 rent = nextRent,
                 priceSale = nextSale,
-                internalRemarks = mergedRemarks
+                internalRemarks = mergedRemarks,
+                pocType = nextPocType
             ),
             summary
         )
@@ -1697,7 +2693,8 @@ class SheetsRepository(
         propertyId: String,
         ownerPhone: String,
         ownerName: String? = null,
-        callNote: String = ""
+        callNote: String = "",
+        pocType: String? = null
     ): Boolean {
         val p = _properties.value.find { it.id == propertyId } ?: return false
         val cleanPhone = ownerPhone.filter { it.isDigit() }.takeLast(10).ifBlank { ownerPhone.trim() }
@@ -1706,17 +2703,19 @@ class SheetsRepository(
             .distinct()
             .joinToString(" / ")
         val nextName = p.ownerName?.takeIf { it.isNotBlank() } ?: ownerName?.takeIf { it.isNotBlank() }
+        val nextPocType = normalizePocType(pocType).ifBlank { p.pocType }
         val today = java.time.LocalDate.now().toString()
         val mergedRemarks = if (callNote.isNotBlank()) {
             listOf(p.internalRemarks.orEmpty(), "[$today · Linked via Post-Call] ${callNote.trim()}")
                 .filter { it.isNotBlank() }
                 .joinToString("\n")
         } else p.internalRemarks
-        return updateProperty(
+        return updatePropertyAsync(
             p.copy(
                 ownerContact = mergedContact,
                 ownerName = nextName,
-                internalRemarks = mergedRemarks
+                internalRemarks = mergedRemarks,
+                pocType = nextPocType
             ),
             "Linked owner phone via Post-Call"
         )
@@ -1826,7 +2825,9 @@ class SheetsRepository(
             "micro market" to "Micro Market",
             "legacy property code" to "Property Code",
             "date added" to "Date",
+            "location" to "Location",
             "project / building" to "Project / Building",
+            "amenities" to "Amenities",
             "unit no" to "Unit / Shop / Office No",
             "carpet sqft" to "Carpet Area",
             "built up sqft" to "Built-up Area",
@@ -1834,6 +2835,8 @@ class SheetsRepository(
             "rent inr/month" to "Rent",
             "deposit inr" to "Deposit",
             "roi percent" to "ROI %",
+            "type of poc" to "Type of POC",
+            "poc type" to "Type of POC",
             "owner / poc" to "Owner / Contact Person",
             "owner contact" to "Contact Number",
             "listing url" to "Listing Link",
@@ -1844,12 +2847,14 @@ class SheetsRepository(
 
         // High Confidence Synonym Dictionary
         return when {
-            clean in listOf("pcode", "code", "property code", "prop code", "listing code", "unit code", "flat code", "listing id", "property id", "asset code") ->
+            clean in listOf("pcode", "code", "property code", "prop code", "listing code", "unit code", "flat code", "listing id", "asset code", "legacy property code") ->
                 Pair("Property Code", MappingConfidence.HIGH)
             clean in listOf("date", "entry date", "listed date", "created date", "record date", "listing date", "inventory date") ->
                 Pair("Date", MappingConfidence.HIGH)
-            clean in listOf("location", "locality", "area", "micro market", "city", "place", "address", "site address", "property address") ->
+            clean in listOf("location", "locality", "place", "address", "site address", "property address") ->
                 Pair("Location", MappingConfidence.HIGH)
+            clean == "amenities" || clean == "amenity" ->
+                Pair("Amenities", MappingConfidence.HIGH)
             clean in listOf("office name", "building name", "project name", "project", "building", "society", "tower", "complex", "commercial building", "property name") ->
                 Pair("Project / Building", MappingConfidence.HIGH)
             clean in listOf("unit", "shop", "office no", "unit no", "shop no", "office number", "unit number", "flat no", "suite no", "room no", "door no", "shop / office no") ->
@@ -1878,6 +2883,8 @@ class SheetsRepository(
                 Pair("Furnishing", MappingConfidence.HIGH)
             clean in listOf("status", "availability status", "avail status", "occupancy", "current status") ->
                 Pair("Status", MappingConfidence.HIGH)
+            clean in listOf("type of poc", "poc type", "poc category", "contact type", "owner / poc type") ->
+                Pair("Type of POC", MappingConfidence.HIGH)
             clean in listOf("owner", "contact person", "owner name", "seller", "landlord", "broker name", "person", "client name", "point of contact") ->
                 Pair("Owner / Contact Person", MappingConfidence.HIGH)
             clean in listOf("mobile number", "contact number", "phone", "mobile", "phone number", "cell", "contact no", "telephone", "mobile no") ->
@@ -2133,6 +3140,7 @@ class SheetsRepository(
                 var possession = ""
                 var furnishing = FurnishingType.WARM_SHELL
                 var status = AvailabilityStatus.NOT_CONFIRMED
+                var pocType = ""
                 var owner = ""
                 var contact = ""
                 var source = fileName
@@ -2153,17 +3161,19 @@ class SheetsRepository(
                 var archiveStatus = ArchiveStatus.ACTIVE
 
                 val unmappedData = mutableMapOf<String, String>()
+                var amenitiesRaw = ""
 
                 if (hasHeader) {
                     cols.forEachIndexed { colIdx, value ->
                         val target = columnIndexToStandard[colIdx]
                         if (target != null) {
                             when (target) {
-                                "Property Code" -> code = value
+                                "Property Code" -> if (value.isNotBlank() && !isShiftedAmenityText(value)) code = value
                                 "Date" -> if (value.isNotBlank()) date = value
-                                "Location" -> if (value.isNotBlank()) location = value
-                                "Micro Market" -> microMarket = value
-                                "Project / Building" -> projectName = value
+                                "Location" -> if (value.isNotBlank() && !isShiftedAmenityText(value)) location = value
+                                "Micro Market" -> if (value.isNotBlank() && !isShiftedAmenityText(value)) microMarket = value
+                                "Project / Building" -> if (value.isNotBlank() && !isShiftedAmenityText(value)) projectName = value
+                                "Amenities" -> amenitiesRaw = value
                                 "Unit / Shop / Office No" -> unitNumber = value
                                 "Floor" -> floor = value
                                 "Property Type" -> propType = value
@@ -2171,15 +3181,16 @@ class SheetsRepository(
                                     subType = value
                                     tab = inferTab(value, code)
                                 }
-                                "Carpet Area" -> rawCarpet = value.replace("[^0-9.]".toRegex(), "").toDoubleOrNull()
-                                "Built-up Area" -> rawBuiltUp = value.replace("[^0-9.]".toRegex(), "").toDoubleOrNull()
-                                "Price / Sale" -> priceSale = value.replace("[^0-9.]".toRegex(), "").toDoubleOrNull()
-                                "Rent" -> rent = value.replace("[^0-9.]".toRegex(), "").toDoubleOrNull()
-                                "Deposit" -> deposit = value.replace("[^0-9.]".toRegex(), "").toDoubleOrNull()
-                                "ROI %" -> roi = value.replace("[^0-9.]".toRegex(), "").toDoubleOrNull()
+                                "Carpet Area" -> rawCarpet = parsePlainDecimalOrSci(value)
+                                "Built-up Area" -> rawBuiltUp = parsePlainDecimalOrSci(value)
+                                "Price / Sale" -> priceSale = CalculationUtils.parseCurrencyInput(value)?.let { CalculationUtils.normalizeSalePriceInr(it) }
+                                "Rent" -> rent = CalculationUtils.parseCurrencyInput(value)
+                                "Deposit" -> deposit = CalculationUtils.parseCurrencyInput(value)
+                                "ROI %" -> roi = parsePlainDecimalOrSci(value)
                                 "Possession" -> possession = value
                                 "Furnishing" -> furnishing = parseFurnishing(value)
                                 "Status" -> status = parseStatus(value)
+                                "Type of POC" -> if (value.isNotBlank()) pocType = normalizePocType(value)
                                 "Owner / Contact Person" -> owner = value
                                 "Contact Number" -> contact = value
                                 "Source" -> if (value.isNotBlank()) source = value
@@ -2206,23 +3217,42 @@ class SheetsRepository(
                             }
                         }
                     }
+                    if (amenitiesRaw.isNotBlank()) {
+                        unmappedData["Amenities"] = amenitiesRaw
+                    }
+                    // If a broken multiline row had no project name, no code, and no recordId, skip it
+                    if (projectName.isBlank() && code.isBlank() && recordId.isBlank()) {
+                        return@forEachIndexed
+                    }
                 } else {
-                    // Positional mapping for standard 35 columns
-                    code = cols.getOrElse(0) { "" }
+                    // Never use positional mapping for Commercial Inventory or Residential Inventory tabs
+                    if (fileName.equals("Commercial Inventory", ignoreCase = true) ||
+                        fileName.equals("Residential Inventory", ignoreCase = true) ||
+                        fileName.contains("Projects", ignoreCase = true)
+                    ) {
+                        return@forEachIndexed
+                    }
+                    // Positional mapping for standard 35 columns only when row is not a shifted amenity fragment
+                    val rawCol0 = cols.getOrElse(0) { "" }
+                    val rawCol2 = cols.getOrElse(2) { "Pune" }
+                    if (isShiftedAmenityText(rawCol0) || isShiftedAmenityText(rawCol2)) {
+                        return@forEachIndexed
+                    }
+                    code = rawCol0
                     date = cols.getOrElse(1) { date }
-                    location = cols.getOrElse(2) { "Pune" }
+                    location = rawCol2
                     projectName = cols.getOrElse(3) { "Project ${index + 1}" }
                     unitNumber = cols.getOrElse(4) { "Unit ${index + 1}" }
                     floor = cols.getOrElse(5) { "Mid Floor" }
                     propType = cols.getOrElse(6) { "Commercial" }
                     subType = cols.getOrElse(7) { "" }
                     tab = inferTab(subType, code)
-                    rawCarpet = cols.getOrElse(8) { "" }.replace("[^0-9.]".toRegex(), "").toDoubleOrNull()
-                    rawBuiltUp = cols.getOrElse(9) { "" }.replace("[^0-9.]".toRegex(), "").toDoubleOrNull()
-                    priceSale = cols.getOrElse(10) { "" }.replace("[^0-9.]".toRegex(), "").toDoubleOrNull()
-                    rent = cols.getOrElse(11) { "" }.replace("[^0-9.]".toRegex(), "").toDoubleOrNull()
-                    deposit = cols.getOrElse(12) { "" }.replace("[^0-9.]".toRegex(), "").toDoubleOrNull()
-                    roi = cols.getOrElse(13) { "" }.replace("[^0-9.]".toRegex(), "").toDoubleOrNull()
+                    rawCarpet = parsePlainDecimalOrSci(cols.getOrElse(8) { "" })
+                    rawBuiltUp = parsePlainDecimalOrSci(cols.getOrElse(9) { "" })
+                    priceSale = CalculationUtils.parseCurrencyInput(cols.getOrElse(10) { "" })?.let { CalculationUtils.normalizeSalePriceInr(it) }
+                    rent = CalculationUtils.parseCurrencyInput(cols.getOrElse(11) { "" })
+                    deposit = CalculationUtils.parseCurrencyInput(cols.getOrElse(12) { "" })
+                    roi = parsePlainDecimalOrSci(cols.getOrElse(13) { "" })
                     possession = cols.getOrElse(14) { "Immediate" }
                     furnishing = parseFurnishing(cols.getOrElse(15) { "" })
                     status = parseStatus(cols.getOrElse(16) { "" })
@@ -2388,7 +3418,10 @@ class SheetsRepository(
                         verifiedBy = verifiedBy.ifBlank { null },
                         isAreaEstimated = isAreaEstimated,
                         unmappedColumns = unmappedData,
-                        conflictResolution = if (isDuplicate) "REVIEW" else "INSERT"
+                        conflictResolution = if (isDuplicate) "REVIEW" else "INSERT",
+                        pocType = pocType,
+                        archiveStatus = archiveStatus,
+                        lastUpdated = lastUpdated.ifBlank { syncUpdatedAt }
                     )
                 )
             }
@@ -2408,6 +3441,103 @@ class SheetsRepository(
     }
 
     private fun parseStatus(value: String): AvailabilityStatus = AvailabilityStatus.parse(value)
+
+    private fun isShiftedAmenityText(value: String): Boolean {
+        val v = value.trim().lowercase(Locale.ENGLISH)
+        if (v.isBlank()) return false
+        return listOf(
+            "dg backup",
+            "power backup",
+            "business pod",
+            "high-speed elevator",
+            "bms security",
+            "multi-level parking",
+            "ev charging",
+            "food court",
+            "cctv",
+            "swimming pool",
+            "clubhouse",
+            "gymnasium"
+        ).any { v.contains(it) }
+    }
+
+    private fun parsePlainDecimalOrSci(raw: String): Double? {
+        val trimmed = raw.trim().replace(",", "")
+        if (trimmed.isBlank()) return null
+        trimmed.toDoubleOrNull()?.takeIf { it.isFinite() }?.let { return it }
+        val m = Regex("""([+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)""").find(trimmed) ?: return null
+        return m.groupValues[1].toDoubleOrNull()?.takeIf { it.isFinite() }
+    }
+
+    private fun extractImageUrlFromLink(link: String?): List<String> {
+        val clean = link?.trim().orEmpty()
+        if (clean.isBlank()) return emptyList()
+        val lower = clean.lowercase(Locale.ENGLISH)
+        val isImg = lower.contains("drive.google.com/uc?") ||
+            lower.endsWith(".jpg") ||
+            lower.endsWith(".jpeg") ||
+            lower.endsWith(".png") ||
+            lower.endsWith(".webp")
+        return if (isImg) listOf(clean) else emptyList()
+    }
+
+    private fun sanitizeShiftedInventoryRecords(appContext: Context) {
+        val current = _properties.value
+        if (current.isEmpty()) return
+        var modified = false
+        val cleaned = current.mapNotNull { prop ->
+            val src = prop.sourceInfo.orEmpty()
+            if (src.equals("Commercial Projects", ignoreCase = true) ||
+                src.equals("Residential Projects", ignoreCase = true)
+            ) {
+                modified = true
+                return@mapNotNull null
+            }
+            if (isShiftedAmenityText(prop.propertyCode) || isShiftedAmenityText(prop.projectName)) {
+                modified = true
+                return@mapNotNull null
+            }
+            var updated = prop
+            if (isShiftedAmenityText(updated.location)) {
+                modified = true
+                val fallbackLoc = updated.unmappedColumns["Micro Market"]
+                    ?.takeIf { it.isNotBlank() && !isShiftedAmenityText(it) }
+                    ?: "Kharadi"
+                updated = updated.copy(location = fallbackLoc)
+            }
+            // Repair truncated INR Crore numbers (e.g., 14.0 or 22.0 from "14 Cr" / "22 Cr")
+            val rawSaleText = updated.unmappedColumns["Sale Price INR"]
+                ?: updated.unmappedColumns["Price / Sale"]
+                ?: updated.unmappedColumns["Asking Price"]
+            val parsedUnmappedSale = rawSaleText?.let { CalculationUtils.parseCurrencyInput(it) }
+                ?.let { CalculationUtils.normalizeSalePriceInr(it) }
+            val currentSale = updated.priceSale ?: 0.0
+            val needsSaleHeal = currentSale in 0.25..500.0 ||
+                (!updated.tab.isRental && updated.priceOrRent in 0.25..500.0)
+            if (needsSaleHeal) {
+                val healedSale = when {
+                    parsedUnmappedSale != null && parsedUnmappedSale >= 10_000.0 -> parsedUnmappedSale
+                    currentSale in 0.25..500.0 -> CalculationUtils.normalizeSalePriceInr(currentSale)
+                    !updated.tab.isRental && updated.priceOrRent in 0.25..500.0 ->
+                        CalculationUtils.normalizeSalePriceInr(updated.priceOrRent)
+                    else -> currentSale
+                }
+                if (healedSale >= 10_000.0) {
+                    modified = true
+                    updated = updated.copy(
+                        priceSale = healedSale,
+                        priceOrRent = if (!updated.tab.isRental) healedSale else updated.priceOrRent
+                    )
+                }
+            }
+            updated
+        }
+        if (modified) {
+            _properties.value = cleaned
+            PropertiesLocalDatabase.saveProperties(appContext, cleaned)
+            OfflineDiskCache.saveInventorySplits(appContext, cleaned)
+        }
+    }
 
 
     /**
@@ -2504,7 +3634,7 @@ class SheetsRepository(
                     } else prop
                 }
                 if (PropertiesLocalDatabase.saveProperties(appContext, migrated)) {
-                    _properties.value = PropertiesLocalDatabase.loadProperties(appContext)
+                    _properties.value = migrated
                     prefs.edit().putBoolean("archive_first_migration_v1", true).commit()
                 }
             }
@@ -2551,7 +3681,7 @@ class SheetsRepository(
         duplicateHandling: String = "SKIP",
         archiveUnverified: Boolean = false
     ): SyncStats {
-        if (duplicateHandling != "SKIP" && !allowed("BULK_EDIT")) return SyncStats(rows.size, 0, 0, 0, rows.size)
+        if (duplicateHandling != "SKIP" && duplicateHandling != "SYNC_MERGE" && !allowed("BULK_EDIT")) return SyncStats(rows.size, 0, 0, 0, rows.size)
         val today = SimpleDateFormat("dd/MM/yyyy", Locale.ENGLISH).format(Date())
         var addedCount = 0
         var updatedCount = 0
@@ -2559,6 +3689,11 @@ class SheetsRepository(
         var failedCount = 0
         val originalList = _properties.value
         val currentList = originalList.toMutableList()
+        val pendingEntityIds = context?.let { ctx ->
+            val opsIds = PendingSyncOpStore.loadAll(ctx).map { it.entityId }
+            val writeIds = PropertiesLocalDatabase.loadPendingWrites(ctx).map { it.property.id }
+            (opsIds + writeIds).toSet()
+        }.orEmpty()
 
         rows.forEach { row ->
             if (!row.isValid) {
@@ -2566,11 +3701,76 @@ class SheetsRepository(
                 return@forEach
             }
 
-            val idx = currentList.indexOfFirst { it.propertyCode.equals(row.propertyCode.trim(), ignoreCase = true) }
+            val rowRecordId = row.recordId.trim()
+            val rowCode = row.propertyCode.trim()
+            val idx = currentList.indexOfFirst { existing ->
+                (rowRecordId.isNotBlank() && (
+                    existing.recordId.equals(rowRecordId, ignoreCase = true) ||
+                        existing.id.equals(rowRecordId, ignoreCase = true)
+                    )) ||
+                    (rowCode.isNotBlank() && existing.propertyCode.equals(rowCode, ignoreCase = true))
+            }
             val isDuplicate = idx >= 0
 
             if (isDuplicate) {
                 when (duplicateHandling) {
+                    "SYNC_MERGE" -> {
+                        val existing = currentList[idx]
+                        // Respect unpushed local edits unless this property is already synced
+                        val hasUnsyncedLocalEdit = !existing.isSyncedToSheet && existing.id in pendingEntityIds
+                        if (hasUnsyncedLocalEdit) {
+                            skippedCount++
+                        } else {
+                            val remoteImgs = extractImageUrlFromLink(row.listingLink)
+                            val mergedImages = if (existing.images.isNotEmpty()) existing.images else remoteImgs
+                            val mergedUpdated = row.lastUpdated.ifBlank {
+                                SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date())
+                            }
+                            val mergedLastVerified = row.lastVerifiedDateClean.ifBlank { existing.lastVerifiedDateClean }
+                            currentList[idx] = existing.copy(
+                                projectName = if (row.projectName.isNotBlank()) row.projectName else existing.projectName,
+                                location = if (row.location.isNotBlank() && row.location != "Unverified Location") row.location else existing.location,
+                                unitNumber = if (row.unitNumber.isNotBlank()) row.unitNumber else existing.unitNumber,
+                                floor = if (row.floor.isNotBlank()) row.floor else existing.floor,
+                                propertyType = if (row.propertyType.isNotBlank()) row.propertyType else existing.propertyType,
+                                tab = row.tab,
+                                carpetAreaSqFt = if (row.carpetAreaSqFt > 0.0) row.carpetAreaSqFt else existing.carpetAreaSqFt,
+                                builtUpAreaSqFt = row.builtUpAreaSqFt ?: existing.builtUpAreaSqFt,
+                                priceOrRent = if (row.priceOrRent > 0.0) row.priceOrRent else existing.priceOrRent,
+                                priceSale = row.priceSale ?: existing.priceSale,
+                                rent = row.rent ?: existing.rent,
+                                deposit = row.deposit ?: existing.deposit,
+                                roiPercent = row.roiPercent ?: existing.roiPercent,
+                                possession = if (row.possession.isNotBlank()) row.possession else existing.possession,
+                                furnishing = row.furnishing,
+                                // Compute Live vs Pending strictly from Sheet headers
+                                status = row.status,
+                                verificationStatus = row.verificationStatus,
+                                archiveStatus = row.archiveStatus,
+                                lastVerifiedDateClean = mergedLastVerified,
+                                lastVerificationDate = mergedLastVerified.ifBlank { existing.lastVerificationDate },
+                                verifiedBy = row.verifiedBy?.takeIf { it.isNotBlank() } ?: existing.verifiedBy,
+                                ownerName = row.ownerName?.takeIf { it.isNotBlank() } ?: existing.ownerName,
+                                ownerContact = row.ownerContact?.takeIf { it.isNotBlank() } ?: existing.ownerContact,
+                                sourceInfo = row.sourceInfo?.takeIf { it.isNotBlank() } ?: existing.sourceInfo,
+                                remarks = row.remarks?.takeIf { it.isNotBlank() } ?: existing.remarks,
+                                listingLink = row.listingLink?.takeIf { it.isNotBlank() } ?: existing.listingLink,
+                                images = mergedImages,
+                                portfolio = row.portfolio.ifBlank { existing.portfolio },
+                                transactionType = row.transactionType.ifBlank { existing.transactionType },
+                                googleMapsUrl = row.googleMapsUrl?.takeIf { it.isNotBlank() } ?: existing.googleMapsUrl,
+                                latitude = row.latitude ?: existing.latitude,
+                                longitude = row.longitude ?: existing.longitude,
+                                recordId = existing.recordId.ifBlank { rowRecordId },
+                                updatedAt = mergedUpdated,
+                                syncUpdatedAt = mergedUpdated,
+                                isSyncedToSheet = true,
+                                isAreaEstimated = row.isAreaEstimated,
+                                pocType = row.pocType.ifBlank { existing.pocType }
+                            )
+                            updatedCount++
+                        }
+                    }
                     "OVERWRITE" -> {
                         val existing = currentList[idx]
                         currentList[idx] = existing.copy(
@@ -2610,7 +3810,8 @@ class SheetsRepository(
                             syncUpdatedAt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date()),
                             // An explicit overwrite must not silently reactivate an archived record.
                             archiveStatus = existing.archiveStatus,
-                            isAreaEstimated = row.isAreaEstimated
+                            isAreaEstimated = row.isAreaEstimated,
+                            pocType = row.pocType.ifBlank { existing.pocType }
                         )
                         updatedCount++
                     }
@@ -2676,19 +3877,34 @@ class SheetsRepository(
                             syncUpdatedAt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date()),
                             archiveStatus = ArchiveStatus.ACTIVE,
                             isAreaEstimated = row.isAreaEstimated,
-                            images = listOf(
-                                if (row.tab.brand == Brand.COMMERCIAL)
-                                    "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1200&q=80"
-                                else
-                                    "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80"
-                            )
+                            images = extractImageUrlFromLink(row.listingLink),
+                            pocType = row.pocType
                         )
                         currentList.add(0, newProp)
                         addedCount++
                     }
                     else -> {
-                        // SKIP duplicate
-                        skippedCount++
+                        // SKIP duplicate, but non-destructively heal previously truncated Cr/Lac/scientific prices, missing Drive photo links & Type of POC
+                        val existing = currentList[idx]
+                        val curPrimary = CalculationUtils.primaryAmountForProperty(existing)
+                        val remPrimary = if (row.tab.isRental) (row.rent ?: row.priceOrRent) else (row.priceSale ?: row.priceOrRent)
+                        val needsPriceHeal = remPrimary >= 10_000.0 && curPrimary in 0.0..999.0 && curPrimary != remPrimary
+                        val remoteImgs = extractImageUrlFromLink(row.listingLink)
+                        val needsPhotoHeal = existing.images.isEmpty() && remoteImgs.isNotEmpty()
+                        val needsPocTypeHeal = existing.pocType.isBlank() && row.pocType.isNotBlank()
+                        if (needsPriceHeal || needsPhotoHeal || needsPocTypeHeal) {
+                            currentList[idx] = existing.copy(
+                                priceOrRent = if (needsPriceHeal) row.priceOrRent else existing.priceOrRent,
+                                priceSale = if (needsPriceHeal && row.priceSale != null) row.priceSale else existing.priceSale,
+                                rent = if (needsPriceHeal && row.rent != null) row.rent else existing.rent,
+                                deposit = if (needsPriceHeal && row.deposit != null) row.deposit else existing.deposit,
+                                images = if (needsPhotoHeal) remoteImgs else existing.images,
+                                pocType = if (needsPocTypeHeal) row.pocType else existing.pocType
+                            )
+                            updatedCount++
+                        } else {
+                            skippedCount++
+                        }
                     }
                 }
             } else {
@@ -2729,19 +3945,16 @@ class SheetsRepository(
                     lastVerifiedDateClean = row.lastVerifiedDateClean,
                     verifiedBy = row.verifiedBy,
                     recordId = row.recordId.ifBlank { "AST-$codeNumber" },
-                    syncUpdatedAt = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date()),
+                    updatedAt = row.lastUpdated.ifBlank { SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date()) },
+                    syncUpdatedAt = row.lastUpdated.ifBlank { SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date()) },
                     archiveStatus = if (archiveUnverified && row.verificationStatus != VerificationStatus.VERIFIED) {
                         ArchiveStatus.ARCHIVED
                     } else {
-                        ArchiveStatus.ACTIVE
+                        row.archiveStatus
                     },
                     isAreaEstimated = row.isAreaEstimated,
-                    images = listOf(
-                        if (row.tab.brand == Brand.COMMERCIAL)
-                            "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=1200&q=80"
-                        else
-                            "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80"
-                    )
+                    images = extractImageUrlFromLink(row.listingLink),
+                    pocType = row.pocType
                 )
                 currentList.add(0, newProp)
                 addedCount++
@@ -2749,11 +3962,13 @@ class SheetsRepository(
         }
         // Do not publish or count imported records until the local write succeeds.
         if (addedCount + updatedCount > 0) {
+            val stampedList = currentList.map { p -> if (originalList.find { it.id == p.id } != p) stamped(p) else p }
             val saved = if (context != null) {
-                PropertiesLocalDatabase.saveProperties(context, currentList.map { p -> if (originalList.find { it.id == p.id } != p) stamped(p) else p })
+                PropertiesLocalDatabase.saveProperties(context, stampedList)
             } else true
             if (saved) {
-                _properties.value = if (context != null) PropertiesLocalDatabase.loadProperties(context) else currentList.map { stamped(it) }
+                _properties.value = stampedList
+                com.example.inventory.PropertyPrecomputedCache.warmUp(stampedList)
             } else {
                 failedCount += addedCount + updatedCount
                 addedCount = 0
@@ -3394,9 +4609,10 @@ class SheetsRepository(
                 )
             }
             if (context != null) {
-                _properties.value = PropertiesLocalDatabase.loadProperties(context)
+                _properties.value = finalProps
+                com.example.inventory.PropertyPrecomputedCache.warmUp(finalProps)
             }
-            refreshPendingSyncState()
+            refreshPendingSyncState(reconcileDisk = false)
 
             if (context != null && root.has("crmLeads")) {
                 val incomingLeads = root.optJSONArray("crmLeads") ?: org.json.JSONArray()
@@ -3898,22 +5114,14 @@ function handleWriteRequest(e) {
     }
 
     private fun isWithinBusinessDivisionScope(property: PropertyItem, activeUser: UserProfile): Boolean {
-        val portfolio = property.effectivePortfolio()
         return when (activeUser.role) {
-            UserRole.ADMIN -> true
-            UserRole.COMMERCIAL_MANAGER -> portfolio == StandardPortfolio.COMMERCIAL
-            UserRole.RESIDENTIAL_MANAGER -> portfolio == StandardPortfolio.RESIDENTIAL
-            UserRole.INVENTORY_MANAGER, UserRole.SALES_EXECUTIVE -> {
-                val explicitScope = context?.let { ctx ->
-                    val prefs = ctx.getSharedPreferences("real_estate_user_settings", Context.MODE_PRIVATE)
-                    prefs.getString("active_brand", null)?.let { ActiveBrand.fromString(it) }
-                }
-                when (explicitScope) {
-                    ActiveBrand.ASCEND_COMMERCIAL -> portfolio == StandardPortfolio.COMMERCIAL
-                    ActiveBrand.AUREA_LIVING -> portfolio == StandardPortfolio.RESIDENTIAL
-                    ActiveBrand.ALL_BUSINESSES, null -> true
-                }
-            }
+            // Core team (Super Admin, Admin, Commercial/Residential/Inventory Managers, Sales Executives)
+            // always have full visibility across both Commercial & Residential with Owner/Tenant contacts.
+            UserRole.ADMIN,
+            UserRole.COMMERCIAL_MANAGER,
+            UserRole.RESIDENTIAL_MANAGER,
+            UserRole.INVENTORY_MANAGER,
+            UserRole.SALES_EXECUTIVE -> true
             UserRole.READ_ONLY, UserRole.BROKER, UserRole.OWNER -> false
         }
     }
@@ -4632,6 +5840,7 @@ function handleWriteRequest(e) {
                 put("Escalation Terms", property.escalation)
                 put("Maintenance Terms", property.maintenance?.toString() ?: property.unmappedColumns["Maintenance Terms"].orEmpty())
                 put("Parking", property.parking)
+                put("Type of POC", property.pocType)
                 put("Owner / POC", ownerDisplay)
                 put("Owner Contact", contactDisplay)
                 put("Source", property.sourceInfo.orEmpty())
@@ -4671,6 +5880,7 @@ function handleWriteRequest(e) {
                 put("Availability Status", property.status.label)
                 put("Parking", property.parking)
                 put("Amenities", property.amenities.joinToString(", "))
+                put("Type of POC", property.pocType)
                 put("Owner / POC", ownerDisplay)
                 put("Owner Contact", contactDisplay)
                 put("Source", property.sourceInfo.orEmpty())
@@ -4686,8 +5896,12 @@ function handleWriteRequest(e) {
             }
         }
 
+        val targetTabName = if (isCommercial) "Commercial Inventory" else "Residential Inventory"
         val request = JSONObject().apply {
-            put("action", "UPSERT_PROPERTY")
+            put("action", "UPSERT")
+            put("tabName", targetTabName)
+            put("keyHeader", "Property ID")
+            put("keyValue", permId)
             put("isCommercial", isCommercial)
             put("propertyId", permId)
             put("propertyCode", property.propertyCode)
@@ -4723,14 +5937,80 @@ function handleWriteRequest(e) {
         }
 
         _properties.update { AppsScriptSyncProtocol.markAcknowledged(it, property) }
+        context?.let { appContext ->
+            PropertiesLocalDatabase.acknowledgePropertySynced(appContext, property)
+            PendingSyncOpStore.removeForEntity(appContext, property.id)
+            if (permId.isNotBlank() && permId != property.id) {
+                PendingSyncOpStore.removeForEntity(appContext, permId)
+            }
+            refreshPendingSyncOps()
+            refreshPendingSyncState(reconcileDisk = false)
+        }
         logSyncEvent(
             direction = "APP_TO_SHEET",
             status = "SUCCESS",
             recordCount = 1,
-            details = "Pushed ${property.propertyCode.ifBlank { permId }} (${if (isCommercial) "Commercial" else "Residential"}) to Master Sheet",
+            details = "Pushed ${property.propertyCode.ifBlank { permId }} ($targetTabName) to Master Sheet",
             triggeredBy = actor()
         )
         Result.success(Unit)
+    }
+
+    /**
+     * Drains all pending local property sync ops (`doPost` UPSERT queue) and immediately runs
+     * a fresh `doGet` pull from the Master Google Sheet so team devices stay strictly in sync.
+     */
+    suspend fun retryAllPendingSyncsAndPull(): String = withContext(Dispatchers.IO) {
+        val appContext = context
+        var pushedCount = 0
+        var failedCount = 0
+
+        if (appContext != null) {
+            retryBlockedAndRetryableOps(hasValidAuth = true)
+            val currentProps = _properties.value
+            val propsById = currentProps.associateBy { it.id }
+            val opsSnapshot = PendingSyncOpStore.loadAll(appContext)
+            val pendingWritesSnapshot = PropertiesLocalDatabase.loadPendingWrites(appContext)
+
+            val propertiesToPush = LinkedHashMap<String, PropertyItem>()
+            opsSnapshot.filter { it.entityType == SaveEntityType.PROPERTY }.forEach { op ->
+                val prop = propsById[op.entityId]
+                if (prop != null) {
+                    propertiesToPush[prop.id] = prop
+                } else {
+                    // Orphaned op for deleted/missing property -> clean up
+                    PendingSyncOpStore.discardOp(appContext, op.opId)
+                }
+            }
+            pendingWritesSnapshot.forEach { write ->
+                val prop = propsById[write.property.id] ?: write.property
+                propertiesToPush.putIfAbsent(prop.id, prop)
+            }
+
+            for ((_, prop) in propertiesToPush) {
+                val res = pushPropertyToMasterSheet(prop)
+                if (res.isSuccess) pushedCount++ else failedCount++
+            }
+            retryPendingWrites()
+            refreshPendingSyncOps()
+            refreshPendingSyncState(reconcileDisk = false)
+        }
+
+        val pullSummary = syncWithGoogleSheetNow()
+        val remaining = maxOf(_pendingSyncOps.value.size, _pendingSyncCount.value)
+        buildString {
+            if (pushedCount > 0 || failedCount > 0) {
+                append("Pushed $pushedCount")
+                if (failedCount > 0) append(" ($failedCount retryable)")
+                append(" • ")
+            }
+            append(if (pullSummary.contains("Complete", ignoreCase = true) || pullSummary.contains("synced", ignoreCase = true)) {
+                "Sheet synced"
+            } else {
+                "Pull finished"
+            })
+            append(" • Pending: $remaining")
+        }
     }
 
     private fun parseCsvLinesToGrid(csvContent: String): List<List<String>> {
@@ -4772,37 +6052,188 @@ function handleWriteRequest(e) {
         val headers = rows.first()
         val dataRows = rows.drop(1)
 
-        val nameIdx = headers.indexOfFirst { h ->
-            val clean = h.trim().lowercase(Locale.ENGLISH)
-            clean == "name" || clean == "employee name" || clean == "full name" || clean == "staff name"
-        }.let { if (it >= 0) it else headers.indexOfFirst { h -> h.contains("name", ignoreCase = true) } }
-            .let { if (it >= 0) it else if (headers.size > 1) 1 else 0 }
-        val statusIdx = headers.indexOfFirst { h ->
-            val clean = h.trim().lowercase(Locale.ENGLISH)
-            clean == "status" || clean == "accountstatus" || clean == "account status" || clean == "active"
+        fun col(vararg aliases: String): Int {
+            for (a in aliases) {
+                val exact = headers.indexOfFirst { it.trim().equals(a, ignoreCase = true) }
+                if (exact >= 0) return exact
+            }
+            for (a in aliases) {
+                val partial = headers.indexOfFirst { it.trim().contains(a, ignoreCase = true) }
+                if (partial >= 0) return partial
+            }
+            return -1
         }
 
-        val activeNames = mutableListOf<String>()
+        val idIdx = col("Employee ID", "Emp ID", "ID")
+        val nameIdx = col("Employee Name", "Name", "Full Name", "Staff Name")
+        val mobileIdx = col("Mobile", "Login Mobile", "Phone", "Phone Number", "Contact", "WhatsApp")
+        val divisionIdx = col("Division", "Business Scope", "Business Scopes", "Segment", "Department")
+        val teamIdIdx = col("Team ID", "Team")
+        val roleIdx = col("Role", "Job Title", "Designation", "Access Role")
+        val statusIdx = col("Account Status", "Status", "AccountStatus", "Active")
+        val managerIdIdx = col("Manager ID", "Manager")
+        val loginIdIdx = col("Login ID", "Username", "Login")
+        val passwordIdx = col("Password", "Pass", "PIN")
+        val updatedAtIdx = col("Updated At", "Sync Updated At")
+
+        val allMembers = mutableListOf<OfflineDiskCache.CachedEmployeeMember>()
+        val db = com.example.access.EmployeeAccessDatabase.get(appContext)
+        val empDao = db.employeeDao()
+
         dataRows.forEach { row ->
             if (row.all { it.isBlank() }) return@forEach
             val rawName = if (nameIdx in row.indices) row[nameIdx].trim() else ""
             if (rawName.isBlank() || rawName.lowercase(Locale.ENGLISH) in LEGACY_FAKE_EMPLOYEE_NAMES) return@forEach
-            val rawStatus = if (statusIdx in row.indices) row[statusIdx].trim().lowercase(Locale.ENGLISH) else "active"
-            val isInactive = rawStatus.contains("inactive") || rawStatus.contains("suspend") || rawStatus == "false" || rawStatus == "disabled"
-            if (!isInactive) {
-                activeNames.add(rawName)
+            val rawId = if (idIdx in row.indices) row[idIdx].trim() else ""
+            val rawMobile = if (mobileIdx in row.indices) row[mobileIdx].trim() else ""
+            val rawDivision = if (divisionIdx in row.indices) row[divisionIdx].trim() else "Commercial"
+            val rawTeamId = if (teamIdIdx in row.indices) row[teamIdIdx].trim() else ""
+            val rawRole = if (roleIdx in row.indices) row[roleIdx].trim() else "Executive"
+            val rawStatus = if (statusIdx in row.indices) row[statusIdx].trim() else "Active"
+            val rawManagerId = if (managerIdIdx in row.indices) row[managerIdIdx].trim() else ""
+            val rawLoginId = if (loginIdIdx in row.indices) row[loginIdIdx].trim() else ""
+            val rawPassword = if (passwordIdx in row.indices) row[passwordIdx].trim() else ""
+            val rawUpdatedAt = if (updatedAtIdx in row.indices) row[updatedAtIdx].trim() else ""
+
+            val memberId = rawId.ifBlank { "EMP-${Math.abs(rawName.hashCode()).toString(36).uppercase().take(6)}" }
+
+            val cached = OfflineDiskCache.CachedEmployeeMember(
+                id = memberId,
+                name = rawName,
+                mobile = rawMobile,
+                division = rawDivision,
+                teamId = rawTeamId,
+                role = rawRole,
+                status = rawStatus.ifBlank { "Active" },
+                managerId = rawManagerId,
+                loginId = rawLoginId,
+                password = rawPassword,
+                updatedAt = rawUpdatedAt
+            )
+            allMembers.add(cached)
+
+            // Upsert into Room EmployeeDatabase so sessionState.teamMembers includes all employees
+            runCatching {
+                val normalizedMob = com.example.access.PhoneNormalizer.normalizeIndianMobile(rawMobile) ?: rawMobile.takeIf { it.isNotBlank() } ?: "0000000000"
+                val accessRole = when {
+                    rawRole.contains("super", true) || rawRole.contains("admin", true) -> com.example.access.EmployeeAccessRole.ADMIN
+                    rawRole.contains("commercial", true) -> com.example.access.EmployeeAccessRole.COMMERCIAL_MANAGER
+                    rawRole.contains("residential", true) -> com.example.access.EmployeeAccessRole.RESIDENTIAL_MANAGER
+                    rawRole.contains("manager", true) -> com.example.access.EmployeeAccessRole.COMMERCIAL_MANAGER
+                    else -> com.example.access.EmployeeAccessRole.SALES_EXECUTIVE
+                }
+                val statusLower = rawStatus.lowercase(Locale.ENGLISH)
+                val accessStatus = when {
+                    statusLower.contains("suspend") || statusLower == "false" || statusLower == "disabled" -> com.example.access.EmployeeAccessStatus.SUSPENDED
+                    statusLower.contains("pending") -> com.example.access.EmployeeAccessStatus.PENDING
+                    else -> com.example.access.EmployeeAccessStatus.ACTIVE
+                }
+                val scopes = when {
+                    rawDivision.contains("both", true) || rawDivision.contains("all", true) -> com.example.access.BusinessDivisionScope.entries.toList()
+                    rawDivision.contains("resi", true) -> listOf(com.example.access.BusinessDivisionScope.AUREA_RESIDENTIAL)
+                    else -> listOf(com.example.access.BusinessDivisionScope.ASCEND_COMMERCIAL)
+                }
+                val profile = com.example.access.EmployeeProfile(
+                    employeeId = memberId,
+                    employeeName = rawName,
+                    loginMobile = normalizedMob,
+                    loginEmail = rawLoginId.ifBlank { null },
+                    role = accessRole,
+                    businessScopes = scopes,
+                    reportsToEmployeeId = rawManagerId.ifBlank { null },
+                    jobTitle = rawRole,
+                    isActive = accessStatus == com.example.access.EmployeeAccessStatus.ACTIVE,
+                    accessStatus = accessStatus,
+                    identityStatus = com.example.access.EmployeeIdentityStatus.VERIFIED_ACCOUNT,
+                    authorizationSource = com.example.access.AuthorizationSource.TRUSTED_PROVISIONING,
+                    activeBusinessView = com.example.access.ActiveBusinessView.ALL_BUSINESSES,
+                    pinEnabled = false,
+                    pinCredentialRef = null,
+                    pinFailedAttempts = 0,
+                    pinLockedUntil = null,
+                    approvedDeskContacts = com.example.access.APPROVED_DESK_CONTACTS,
+                    recordVersion = 1
+                )
+                kotlinx.coroutines.runBlocking {
+                    empDao.upsert(com.example.access.EmployeeEntity.fromDomain(profile))
+                }
             }
         }
-        val distinctActive = activeNames.distinctBy { it.lowercase(Locale.ENGLISH) }
-        if (distinctActive.isNotEmpty()) {
-            val arr = JSONArray()
-            distinctActive.forEach { arr.put(it) }
+
+        val distinctMembers = allMembers.distinctBy { it.id.ifBlank { it.name.lowercase(Locale.ENGLISH) } }
+        if (distinctMembers.isNotEmpty()) {
+            OfflineDiskCache.saveEmployeeDirectory(appContext, distinctMembers)
+            com.example.crm.IgnoredNumbersManager.syncInternalEmployeeNumbers(
+                appContext,
+                distinctMembers.map { it.mobile }
+            )
+            com.example.crm.CrmCallManager.retagInternalTeamCalls(appContext)
+            val namesArr = JSONArray().apply { distinctMembers.filter { it.isActiveMember() }.forEach { put(it.name) } }
             appContext.getSharedPreferences(SYNCED_EMPLOYEES_PREFS, Context.MODE_PRIVATE)
                 .edit()
-                .putString("active_names", arr.toString())
+                .putString("active_names", namesArr.toString())
                 .commit()
+            _syncRevision.value++
         }
-        return distinctActive.size
+        return distinctMembers.size
+    }
+
+    /**
+     * Batch 31: Pushes an employee profile update or creation to the "Employees" tab via Apps Script UPSERT_RECORD.
+     */
+    suspend fun pushEmployeeToMasterSheet(employee: OfflineDiskCache.CachedEmployeeMember): Result<Unit> = withContext(Dispatchers.IO) {
+        val endpoint = _sheetsScriptUrl.value.trim().ifBlank { DEFAULT_MASTER_SHEET_URL }
+        if (!endpoint.startsWith("https://") || !endpoint.contains("script.google.com", ignoreCase = true)) {
+            return@withContext Result.failure(IllegalStateException("Configure a valid Google Apps Script Web App URL to sync Employees."))
+        }
+
+        val updatedNow = java.time.Instant.now().toString()
+        val record = JSONObject().apply {
+            put("Employee ID", employee.id)
+            put("Employee Name", employee.name)
+            put("Mobile", employee.mobile)
+            put("Division", employee.division)
+            put("Team ID", employee.teamId)
+            put("Role", employee.role)
+            put("Account Status", employee.status)
+            put("Manager ID", employee.managerId)
+            put("Login ID", employee.loginId)
+            put("Password", employee.password)
+            put("Updated At", updatedNow)
+        }
+
+        val request = JSONObject().apply {
+            put("action", "UPSERT_RECORD")
+            put("tabName", "Employees")
+            put("keyHeader", "Employee ID")
+            put("keyValue", employee.id)
+            put("record", record)
+        }
+
+        val response = postAppsScriptJsonRequest(endpoint, request).getOrElse { err ->
+            logSyncEvent("EMPLOYEE_SYNC", "FAILED", 0, "Employee sync failed for ${employee.id}: ${err.message}", actor())
+            return@withContext Result.failure(err)
+        }
+
+        val statusStr = response.optString("status", "").trim().lowercase(Locale.ENGLISH)
+        val okFlag = if (response.has("ok")) response.optBoolean("ok", false)
+            else if (response.has("success")) response.optBoolean("success", false)
+            else statusStr != "error" && statusStr != "failed"
+        if (statusStr == "error" || statusStr == "failed" || !okFlag) {
+            val errMsg = response.optString("message", response.optString("error", "Failed to push Employee to Master Sheet."))
+                .ifBlank { "Failed to push Employee to Master Sheet." }
+            logSyncEvent("EMPLOYEE_SYNC", "FAILED", 0, errMsg, actor())
+            return@withContext Result.failure(IllegalStateException(errMsg))
+        }
+
+        logSyncEvent(
+            direction = "EMPLOYEE_SYNC",
+            status = "SUCCESS",
+            recordCount = 1,
+            details = "Pushed ${employee.id} (${employee.name}) to Employees",
+            triggeredBy = actor()
+        )
+        Result.success(Unit)
     }
 
     /**
@@ -4984,7 +6415,10 @@ function handleWriteRequest(e) {
                 addedCount++
             }
             if (addedCount > 0) {
-                prefs.edit().putString("leads", curArr.toString()).commit()
+                val jsonStr = curArr.toString()
+                OfflineDiskCache.saveCrmLeadsJson(appContext, jsonStr)
+                prefs.edit().putString("leads", jsonStr).commit()
+                _syncRevision.value++
             }
             addedCount
         }.getOrDefault(0)
@@ -5094,6 +6528,910 @@ function handleWriteRequest(e) {
             triggeredBy = actor()
         )
         Result.success(Unit)
+    }
+
+    private fun mergeDailyReportRowsIntoCache(rows: List<List<String>>): Int {
+        val appContext = context ?: return 0
+        if (rows.size < 2) return 0
+        val headers = rows.first()
+        val dataRows = rows.drop(1)
+
+        fun col(vararg aliases: String): Int {
+            for (a in aliases) {
+                val exact = headers.indexOfFirst { it.trim().equals(a, ignoreCase = true) }
+                if (exact >= 0) return exact
+            }
+            for (a in aliases) {
+                val partial = headers.indexOfFirst { it.trim().contains(a, ignoreCase = true) }
+                if (partial >= 0) return partial
+            }
+            return -1
+        }
+
+        val idIdx = col("Report ID", "reportId")
+        val dateIdx = col("Date")
+        val empIdIdx = col("Employee ID", "employeeId")
+        val empNameIdx = col("Employee Name", "employeeName")
+        val divIdx = col("Division", "division")
+        val poaAtIdx = col("POA Submitted At")
+        val poaCountIdx = col("POA Tasks Count")
+        val poaPlanIdx = col("POA Plan Summary")
+        val eodAtIdx = col("EOD Submitted At")
+        val callsIdx = col("Calls Total")
+        val minsIdx = col("Calls Duration Mins")
+        val leadsIdx = col("New Leads")
+        val fuIdx = col("Follow-ups Done")
+        val propAddIdx = col("Properties Added")
+        val propVerIdx = col("Properties Verified")
+        val visitsIdx = col("Site Visits")
+        val propSharedIdx = col("Proposals Shared")
+        val scoreIdx = col("POA Score")
+        val winsIdx = col("Key Wins / Hot Deals", "Key Wins")
+        val blockersIdx = col("Blockers / Notes", "Blockers")
+        val updatedIdx = col("Updated At")
+
+        val existing = OfflineDiskCache.loadDailyReports(appContext).associateBy { it.reportId }.toMutableMap()
+        var merged = 0
+        dataRows.forEach { row ->
+            if (row.all { it.isBlank() }) return@forEach
+            val reportId = row.getOrNull(idIdx)?.trim()?.takeIf { it.isNotBlank() } ?: return@forEach
+            val rec = DailyReportRecord(
+                reportId = reportId,
+                date = row.getOrNull(dateIdx)?.trim().orEmpty(),
+                employeeId = row.getOrNull(empIdIdx)?.trim().orEmpty(),
+                employeeName = row.getOrNull(empNameIdx)?.trim().orEmpty(),
+                division = row.getOrNull(divIdx)?.trim().orEmpty(),
+                poaSubmittedAt = row.getOrNull(poaAtIdx)?.trim().orEmpty(),
+                poaTasksCount = row.getOrNull(poaCountIdx)?.filter { it.isDigit() }?.toIntOrNull() ?: 0,
+                poaPlanSummary = row.getOrNull(poaPlanIdx)?.trim().orEmpty(),
+                eodSubmittedAt = row.getOrNull(eodAtIdx)?.trim().orEmpty(),
+                callsTotal = row.getOrNull(callsIdx)?.filter { it.isDigit() }?.toIntOrNull() ?: 0,
+                callsDurationMins = row.getOrNull(minsIdx)?.filter { it.isDigit() }?.toIntOrNull() ?: 0,
+                newLeads = row.getOrNull(leadsIdx)?.filter { it.isDigit() }?.toIntOrNull() ?: 0,
+                followUpsDone = row.getOrNull(fuIdx)?.filter { it.isDigit() }?.toIntOrNull() ?: 0,
+                propertiesAdded = row.getOrNull(propAddIdx)?.filter { it.isDigit() }?.toIntOrNull() ?: 0,
+                propertiesVerified = row.getOrNull(propVerIdx)?.filter { it.isDigit() }?.toIntOrNull() ?: 0,
+                siteVisits = row.getOrNull(visitsIdx)?.filter { it.isDigit() }?.toIntOrNull() ?: 0,
+                proposalsShared = row.getOrNull(propSharedIdx)?.filter { it.isDigit() }?.toIntOrNull() ?: 0,
+                poaScore = row.getOrNull(scoreIdx)?.filter { it.isDigit() }?.toIntOrNull() ?: 0,
+                keyWins = row.getOrNull(winsIdx)?.trim().orEmpty(),
+                blockers = row.getOrNull(blockersIdx)?.trim().orEmpty(),
+                updatedAt = row.getOrNull(updatedIdx)?.trim().orEmpty()
+            )
+            existing[reportId] = rec
+            merged++
+        }
+        if (merged > 0) {
+            val all = existing.values.sortedByDescending { it.updatedAt.ifBlank { it.date } }
+            _dailyReports.value = all
+            OfflineDiskCache.saveDailyReports(appContext, all)
+            _syncRevision.value++
+        }
+        return merged
+    }
+
+    private fun deriveTenantsFromProperties(props: List<PropertyItem>): List<OfflineDiskCache.TenantCacheRecord> {
+        return props.filter { p ->
+            p.tab == InventoryTab.PRE_LEASED ||
+                p.status == AvailabilityStatus.LEASED ||
+                p.leaseExpiryDate.isNotBlank() ||
+                p.lockInMonths != null
+        }.take(250).map { p ->
+            OfflineDiskCache.TenantCacheRecord(
+                id = p.propertyCode.ifBlank { p.id },
+                tenantName = p.ownerName?.takeIf { it.isNotBlank() } ?: p.projectName.ifBlank { "Leased Tenant" },
+                propertyCode = p.propertyCode,
+                projectName = p.projectName,
+                location = p.location,
+                monthlyRent = (p.monthlyRentalIncome ?: p.rent ?: p.priceOrRent).takeIf { it > 0.0 }?.toLong()?.toString().orEmpty(),
+                leaseStartDate = "",
+                leaseExpiryDate = p.leaseExpiryDate,
+                lockInPeriod = p.lockInMonths?.let { "${it} Months" }.orEmpty(),
+                contactNumber = "",
+                notes = p.remarks.orEmpty()
+            )
+        }
+    }
+
+    private fun mergeTenantsSheetRowsIntoCache(rows: List<List<String>>): Int {
+        val appContext = context ?: return 0
+        if (rows.size < 2) return 0
+        val headers = rows.first()
+        val dataRows = rows.drop(1)
+
+        fun col(vararg aliases: String): Int {
+            for (a in aliases) {
+                val exact = headers.indexOfFirst { it.trim().equals(a, ignoreCase = true) }
+                if (exact >= 0) return exact
+            }
+            for (a in aliases) {
+                val partial = headers.indexOfFirst { it.trim().contains(a, ignoreCase = true) }
+                if (partial >= 0) return partial
+            }
+            return -1
+        }
+
+        val idIdx = col("Tenant ID", "id", "Record ID")
+        val codeIdx = col("Property Code", "Unit Code", "Code")
+        val projectIdx = col("Project / Building", "Project Name", "Project", "Building")
+        val unitIdx = col("Unit No", "Unit Number", "Flat No", "Unit")
+        val locIdx = col("Location", "Micro Market")
+        val divIdx = col("Division", "Segment")
+        val nameIdx = col("Tenant Name", "Tenant", "Client Name", "Name")
+        val companyIdx = col("Company / Brand", "Company", "Brand")
+        val contactIdx = col("Tenant Phone", "Contact Number", "Contact", "Phone", "Mobile")
+        val emailIdx = col("Tenant Email", "Email")
+        val rentIdx = col("Monthly Rent", "Rent", "Rental Amount")
+        val depositIdx = col("Deposit Amount", "Security Deposit", "Deposit")
+        val escIdx = col("Escalation %", "Escalation", "Annual Escalation")
+        val startIdx = col("Lease Start Date", "Lease Start", "Start Date")
+        val expiryIdx = col("Lease Expiry Date", "Lease Expiry", "Expiry Date")
+        val lockInEndIdx = col("Lock-in End Date", "Lock-in Expiry")
+        val lockInIdx = col("Lock-in Period", "Lock-in", "Lock In")
+        val statusIdx = col("Status", "Lease Status")
+        val checklistIdx = col("Move-in Checklist", "Checklist")
+        val issuesIdx = col("Open Issues", "Issues")
+        val ownerNameIdx = col("Owner Name", "Landlord Name")
+        val ownerPhoneIdx = col("Owner Phone", "Owner Contact", "Landlord Phone")
+        val notesIdx = col("Notes", "Remarks")
+        val assignedToIdx = col("Assigned To", "Assigned Agent", "Assigned")
+
+        val mergedMap = OfflineDiskCache.loadTenants(appContext).associateBy { it.id }.toMutableMap()
+        var merged = 0
+        dataRows.forEachIndexed { idx, row ->
+            if (row.all { it.isBlank() }) return@forEachIndexed
+            val tName = row.getOrNull(nameIdx)?.trim().orEmpty()
+            val pCode = row.getOrNull(codeIdx)?.trim().orEmpty()
+            if (tName.isBlank() && pCode.isBlank()) return@forEachIndexed
+            val id = row.getOrNull(idIdx)?.trim()?.takeIf { it.isNotBlank() }
+                ?: if (pCode.isNotBlank()) "TEN-$pCode" else "TEN-${idx + 1}"
+            val rec = OfflineDiskCache.TenantCacheRecord(
+                id = id,
+                tenantName = tName.ifBlank { "Tenant" },
+                propertyCode = pCode,
+                projectName = row.getOrNull(projectIdx)?.trim().orEmpty(),
+                location = row.getOrNull(locIdx)?.trim().orEmpty(),
+                monthlyRent = row.getOrNull(rentIdx)?.trim().orEmpty(),
+                leaseStartDate = row.getOrNull(startIdx)?.trim().orEmpty(),
+                leaseExpiryDate = row.getOrNull(expiryIdx)?.trim().orEmpty(),
+                lockInPeriod = row.getOrNull(lockInIdx)?.trim().orEmpty(),
+                contactNumber = row.getOrNull(contactIdx)?.trim().orEmpty(),
+                notes = row.getOrNull(notesIdx)?.trim().orEmpty(),
+                unitNumber = row.getOrNull(unitIdx)?.trim().orEmpty(),
+                division = row.getOrNull(divIdx)?.trim().orEmpty().ifBlank { "Commercial" },
+                companyName = row.getOrNull(companyIdx)?.trim().orEmpty(),
+                tenantEmail = row.getOrNull(emailIdx)?.trim().orEmpty(),
+                depositAmount = row.getOrNull(depositIdx)?.trim().orEmpty(),
+                escalationPercent = row.getOrNull(escIdx)?.trim().orEmpty().ifBlank { "5" },
+                lockInEndDate = row.getOrNull(lockInEndIdx)?.trim().orEmpty(),
+                status = row.getOrNull(statusIdx)?.trim().orEmpty().ifBlank { "Active" },
+                moveInChecklistJson = row.getOrNull(checklistIdx)?.trim().orEmpty(),
+                openIssuesJson = row.getOrNull(issuesIdx)?.trim().orEmpty(),
+                ownerName = row.getOrNull(ownerNameIdx)?.trim().orEmpty(),
+                ownerContact = row.getOrNull(ownerPhoneIdx)?.trim().orEmpty(),
+                updatedAt = java.time.Instant.now().toString(),
+                assignedTo = row.getOrNull(assignedToIdx)?.trim().orEmpty()
+            )
+            mergedMap[id] = rec
+            merged++
+        }
+        if (merged > 0) {
+            val all = mergedMap.values.toList()
+            _tenants.value = all
+            OfflineDiskCache.saveTenants(appContext, all)
+            _syncRevision.value++
+        }
+        return merged
+    }
+
+    /**
+     * Batch 18: Local-first immediate write + background Master Sheet push for 22-col `Tenants` tab (Cols A-V).
+     */
+    fun saveTenantLocalAndSync(tenant: OfflineDiskCache.TenantCacheRecord) {
+        val appContext = context ?: return
+        val stampedTenant = tenant.copy(updatedAt = java.time.Instant.now().toString())
+        val updated = (_tenants.value.filterNot { it.id == stampedTenant.id } + stampedTenant)
+            .sortedBy { it.tenantName.lowercase(Locale.ENGLISH) }
+        _tenants.value = updated
+        OfflineDiskCache.saveTenants(appContext, updated)
+        _syncRevision.value++
+        ioWriterScope.launch {
+            pushTenantToMasterSheet(stampedTenant)
+        }
+    }
+
+    suspend fun pushTenantToMasterSheet(tenant: OfflineDiskCache.TenantCacheRecord): Result<Unit> = withContext(Dispatchers.IO) {
+        val endpoint = _sheetsScriptUrl.value.trim().ifBlank { DEFAULT_MASTER_SHEET_URL }
+        if (!endpoint.startsWith("https://") || !endpoint.contains("script.google.com", ignoreCase = true)) {
+            return@withContext Result.failure(IllegalStateException("Configure a valid Google Apps Script Web App URL to sync Tenants."))
+        }
+        val record = JSONObject().apply {
+            put("Tenant ID", tenant.id)
+            put("Property Code", tenant.propertyCode)
+            put("Project / Building", tenant.projectName)
+            put("Unit No", tenant.unitNumber)
+            put("Location", tenant.location)
+            put("Division", tenant.division)
+            put("Tenant Name", tenant.tenantName)
+            put("Company / Brand", tenant.companyName)
+            put("Tenant Phone", tenant.contactNumber)
+            put("Tenant Email", tenant.tenantEmail)
+            put("Monthly Rent", tenant.monthlyRent)
+            put("Deposit Amount", tenant.depositAmount)
+            put("Escalation %", tenant.escalationPercent)
+            put("Lease Start Date", tenant.leaseStartDate)
+            put("Lease Expiry Date", tenant.leaseExpiryDate)
+            put("Lock-in End Date", tenant.lockInEndDate.ifBlank { tenant.lockInPeriod })
+            put("Status", tenant.status)
+            put("Move-in Checklist", tenant.moveInChecklistJson)
+            put("Open Issues", tenant.openIssuesJson)
+            put("Owner Name", tenant.ownerName)
+            put("Owner Phone", tenant.ownerContact)
+            put("Notes", tenant.notes)
+            if (tenant.assignedTo.isNotBlank()) put("Assigned To", tenant.assignedTo)
+        }
+        val request = JSONObject().apply {
+            put("action", "UPSERT_TENANT")
+            put("tenantId", tenant.id)
+            put("record", record)
+        }
+        val response = postAppsScriptJsonRequest(endpoint, request).getOrElse { err ->
+            logSyncEvent("TENANT_SYNC", "FAILED", 0, "Tenant push failed for ${tenant.id}: ${err.message}", actor())
+            return@withContext Result.failure(err)
+        }
+        val statusStr = response.optString("status", "").trim().lowercase(Locale.ENGLISH)
+        val okFlag = if (response.has("ok")) response.optBoolean("ok", false)
+        else if (response.has("success")) response.optBoolean("success", false)
+        else statusStr != "error" && statusStr != "failed"
+        if (statusStr == "error" || statusStr == "failed" || !okFlag) {
+            val errMsg = response.optString("message", response.optString("error", "Failed to push Tenant to Master Sheet."))
+                .ifBlank { "Failed to push Tenant to Master Sheet." }
+            logSyncEvent("TENANT_SYNC", "FAILED", 0, errMsg, actor())
+            return@withContext Result.failure(IllegalStateException(errMsg))
+        }
+        logSyncEvent("TENANT_SYNC", "SUCCESS", 1, "Pushed Tenant ${tenant.id} (${tenant.tenantName})", actor())
+        Result.success(Unit)
+    }
+
+    /**
+     * Batch 18: 9-Column `Brokers & Vendors` Sheet Parser (Cols A-I).
+     */
+    private fun mergeBrokersVendorsSheetRowsIntoCache(rows: List<List<String>>): Int {
+        val appContext = context ?: return 0
+        if (rows.size < 2) return 0
+        val headers = rows.first()
+        val dataRows = rows.drop(1)
+
+        fun col(vararg aliases: String): Int {
+            for (a in aliases) {
+                val exact = headers.indexOfFirst { it.trim().equals(a, ignoreCase = true) }
+                if (exact >= 0) return exact
+            }
+            for (a in aliases) {
+                val partial = headers.indexOfFirst { it.trim().contains(a, ignoreCase = true) }
+                if (partial >= 0) return partial
+            }
+            return -1
+        }
+
+        val idIdx = col("Record ID", "ID", "id")
+        val nameIdx = col("Name", "Contact Name")
+        val phoneIdx = col("Phone", "Mobile", "Contact")
+        val roleIdx = col("Role Category", "Role", "Category")
+        val subRoleIdx = col("Sub-Role", "Specialty", "Sub Role")
+        val firmIdx = col("Firm / Agency", "Firm", "Agency", "Company")
+        val areaIdx = col("Operating Areas", "Areas", "Location")
+        val notesIdx = col("Notes", "Remarks")
+        val updatedIdx = col("Updated At", "Updated")
+
+        val mergedMap = OfflineDiskCache.loadBrokersVendors(appContext).associateBy { it.id }.toMutableMap()
+        var merged = 0
+        dataRows.forEachIndexed { idx, row ->
+            if (row.all { it.isBlank() }) return@forEachIndexed
+            val name = row.getOrNull(nameIdx)?.trim().orEmpty()
+            val phone = row.getOrNull(phoneIdx)?.trim().orEmpty()
+            if (name.isBlank() && phone.isBlank()) return@forEachIndexed
+            val id = row.getOrNull(idIdx)?.trim()?.takeIf { it.isNotBlank() }
+                ?: "BV-${phone.filter { it.isDigit() }.takeLast(10).ifBlank { (idx + 1).toString() }}"
+            val rec = BrokerVendorRecord(
+                id = id,
+                name = name.ifBlank { "Contact" },
+                phone = phone,
+                roleCategory = row.getOrNull(roleIdx)?.trim().orEmpty().ifBlank { "Broker / CP" },
+                subRole = row.getOrNull(subRoleIdx)?.trim().orEmpty().ifBlank { "Channel Partner" },
+                firmName = row.getOrNull(firmIdx)?.trim().orEmpty(),
+                operatingAreas = row.getOrNull(areaIdx)?.trim().orEmpty(),
+                notes = row.getOrNull(notesIdx)?.trim().orEmpty(),
+                updatedAt = row.getOrNull(updatedIdx)?.trim().orEmpty()
+            )
+            mergedMap[id] = rec
+            if (!rec.roleCategory.contains("Ops", true) && !rec.roleCategory.contains("Vendor", true) && rec.phone.isNotBlank()) {
+                com.example.crm.CrmCallManager.saveBrokerContact(
+                    context = appContext,
+                    phone = rec.phone,
+                    name = rec.name,
+                    firm = rec.firmName,
+                    notes = rec.notes
+                )
+            }
+            merged++
+        }
+        if (merged > 0) {
+            val all = mergedMap.values.sortedBy { it.name.lowercase(Locale.ENGLISH) }
+            _brokersVendors.value = all
+            OfflineDiskCache.saveBrokersVendors(appContext, all)
+            _syncRevision.value++
+        }
+        return merged
+    }
+
+    fun saveBrokerVendorLocalAndSync(record: BrokerVendorRecord) {
+        val appContext = context ?: return
+        val stampedRecord = record.copy(updatedAt = java.time.Instant.now().toString())
+        val updated = (_brokersVendors.value.filterNot {
+            it.id == stampedRecord.id ||
+                (stampedRecord.phone.filter { c -> c.isDigit() }.takeLast(10).length >= 7 &&
+                    it.phone.filter { c -> c.isDigit() }.takeLast(10) == stampedRecord.phone.filter { c -> c.isDigit() }.takeLast(10))
+        } + stampedRecord).sortedBy { it.name.lowercase(Locale.ENGLISH) }
+        _brokersVendors.value = updated
+        OfflineDiskCache.saveBrokersVendors(appContext, updated)
+        if (!stampedRecord.roleCategory.contains("Ops", true) && !stampedRecord.roleCategory.contains("Vendor", true) && stampedRecord.phone.isNotBlank()) {
+            com.example.crm.CrmCallManager.saveBrokerContact(
+                context = appContext,
+                phone = stampedRecord.phone,
+                name = stampedRecord.name,
+                firm = stampedRecord.firmName,
+                notes = stampedRecord.notes
+            )
+        }
+        _syncRevision.value++
+        ioWriterScope.launch {
+            pushBrokerVendorToMasterSheet(stampedRecord)
+        }
+    }
+
+    suspend fun pushBrokerVendorToMasterSheet(record: BrokerVendorRecord): Result<Unit> = withContext(Dispatchers.IO) {
+        val endpoint = _sheetsScriptUrl.value.trim().ifBlank { DEFAULT_MASTER_SHEET_URL }
+        if (!endpoint.startsWith("https://") || !endpoint.contains("script.google.com", ignoreCase = true)) {
+            return@withContext Result.failure(IllegalStateException("Configure a valid Google Apps Script Web App URL to sync Brokers & Vendors."))
+        }
+        val payload = JSONObject().apply {
+            put("Record ID", record.id)
+            put("Name", record.name)
+            put("Phone", record.phone)
+            put("Role Category", record.roleCategory)
+            put("Sub-Role", record.subRole)
+            put("Firm / Agency", record.firmName)
+            put("Operating Areas", record.operatingAreas)
+            put("Notes", record.notes)
+            put("Updated At", record.updatedAt.ifBlank { java.time.Instant.now().toString() })
+        }
+        val request = JSONObject().apply {
+            put("action", "UPSERT_BROKER_VENDOR")
+            put("recordId", record.id)
+            put("record", payload)
+        }
+        val response = postAppsScriptJsonRequest(endpoint, request).getOrElse { err ->
+            logSyncEvent("BROKER_VENDOR_SYNC", "FAILED", 0, "Broker/Vendor push failed for ${record.id}: ${err.message}", actor())
+            return@withContext Result.failure(err)
+        }
+        val statusStr = response.optString("status", "").trim().lowercase(Locale.ENGLISH)
+        val okFlag = if (response.has("ok")) response.optBoolean("ok", false)
+        else if (response.has("success")) response.optBoolean("success", false)
+        else statusStr != "error" && statusStr != "failed"
+        if (statusStr == "error" || statusStr == "failed" || !okFlag) {
+            val errMsg = response.optString("message", response.optString("error", "Failed to push Broker/Vendor to Master Sheet."))
+                .ifBlank { "Failed to push Broker/Vendor to Master Sheet." }
+            logSyncEvent("BROKER_VENDOR_SYNC", "FAILED", 0, errMsg, actor())
+            return@withContext Result.failure(IllegalStateException(errMsg))
+        }
+        logSyncEvent("BROKER_VENDOR_SYNC", "SUCCESS", 1, "Pushed ${record.roleCategory} ${record.name} to Master Sheet", actor())
+        Result.success(Unit)
+    }
+
+    /**
+     * Pushes a daily report record to the Apps Script Web App (`UPSERT_DAILY_REPORT`).
+     */
+    suspend fun pushDailyReport(report: DailyReportRecord): Result<Unit> = withContext(Dispatchers.IO) {
+        context?.let { appCtx ->
+            val current = _dailyReports.value.filterNot { it.reportId == report.reportId }
+            val updated = listOf(report) + current
+            _dailyReports.value = updated
+            OfflineDiskCache.saveDailyReports(appCtx, updated)
+        }
+        val endpoint = _sheetsScriptUrl.value.trim().ifBlank { DEFAULT_MASTER_SHEET_URL }
+        if (!endpoint.startsWith("https://") || !endpoint.contains("script.google.com", ignoreCase = true)) {
+            return@withContext Result.failure(IllegalStateException("Configure a valid Google Apps Script Web App URL to sync Daily Reports."))
+        }
+
+        val record = JSONObject().apply {
+            put("Report ID", report.reportId)
+            put("Date", report.date)
+            put("Employee ID", report.employeeId)
+            put("Employee Name", report.employeeName)
+            put("Division", report.division)
+            put("POA Submitted At", report.poaSubmittedAt)
+            put("POA Tasks Count", report.poaTasksCount)
+            put("POA Plan Summary", report.poaPlanSummary)
+            put("EOD Submitted At", report.eodSubmittedAt)
+            put("Calls Total", report.callsTotal)
+            put("Calls Duration Mins", report.callsDurationMins)
+            put("New Leads", report.newLeads)
+            put("Follow-ups Done", report.followUpsDone)
+            put("Properties Added", report.propertiesAdded)
+            put("Properties Verified", report.propertiesVerified)
+            put("Site Visits", report.siteVisits)
+            put("Proposals Shared", report.proposalsShared)
+            put("POA Score", report.poaScore)
+            put("Key Wins / Hot Deals", report.keyWins)
+            put("Blockers / Notes", report.blockers)
+            put("Updated At", report.updatedAt.ifBlank { java.time.Instant.now().toString() })
+        }
+
+        val request = JSONObject().apply {
+            put("action", "UPSERT_DAILY_REPORT")
+            put("reportId", report.reportId)
+            put("record", record)
+        }
+
+        val response = postAppsScriptJsonRequest(endpoint, request).getOrElse { err ->
+            logSyncEvent("DAILY_REPORT_SYNC", "FAILED", 0, "Daily Report push failed for ${report.reportId}: ${err.message}", actor())
+            return@withContext Result.failure(err)
+        }
+
+        val statusStr = response.optString("status", "").trim().lowercase(Locale.ENGLISH)
+        val okFlag = if (response.has("ok")) response.optBoolean("ok", false)
+            else if (response.has("success")) response.optBoolean("success", false)
+            else statusStr != "error" && statusStr != "failed"
+        if (statusStr == "error" || statusStr == "failed" || !okFlag) {
+            val errMsg = response.optString("message", response.optString("error", "Failed to push Daily Report to Master Sheet."))
+                .ifBlank { "Failed to push Daily Report to Master Sheet." }
+            logSyncEvent("DAILY_REPORT_SYNC", "FAILED", 0, errMsg, actor())
+            return@withContext Result.failure(IllegalStateException(errMsg))
+        }
+
+        logSyncEvent(
+            direction = "DAILY_REPORT_SYNC",
+            status = "SUCCESS",
+            recordCount = 1,
+            details = "Pushed Daily Report ${report.reportId} for ${report.employeeName}",
+            triggeredBy = actor()
+        )
+        Result.success(Unit)
+    }
+
+    /**
+     * Parses `Call Logs` rows from `doGet` sync and merges into `CrmCallManager` local storage
+     * by `Call ID` without duplicates so logged-in users download saved call history on any phone.
+     */
+    private fun mergeCallLogsSheetRowsIntoPrefs(rows: List<List<String>>): Int {
+        val appContext = context ?: return 0
+        if (rows.size < 2) return 0
+        val headers = rows.first()
+        val dataRows = rows.drop(1)
+
+        fun colIndex(exactHeader: String, fallbackIndex: Int? = null, vararg containsAliases: String): Int {
+            val exact = headers.indexOfFirst { it.trim().equals(exactHeader, ignoreCase = true) }
+            if (exact >= 0) return exact
+            for (alias in containsAliases) {
+                val found = headers.indexOfFirst { it.trim().contains(alias, ignoreCase = true) }
+                if (found >= 0) return found
+            }
+            return fallbackIndex?.takeIf { it in headers.indices } ?: -1
+        }
+
+        val callIdIdx = colIndex("Call ID", 0, "callid", "id")
+        val timestampIdx = colIndex("Timestamp", 1, "date & time", "datetime", "timestamp", "time")
+        val callerNameIdx = colIndex("Caller Name", 2, "caller", "client name", "contact name")
+        val phoneIdx = colIndex("Phone Number", 3, "phone", "mobile", "number")
+        val callTypeIdx = colIndex("Call Type", 4, "type", "direction")
+        val durationIdx = colIndex("Duration Seconds", 5, "duration")
+        val notesIdx = colIndex("Call Notes", 6, "notes", "summary", "remark")
+        val agentIdx = colIndex("Assigned Agent", 7, "agent", "employee", "assigned")
+        val actionIdx = colIndex("Action Required", 8, "action")
+        val followUpIdx = colIndex("Next Follow-up", 9, "follow-up", "followup", "nextFollowUpDateTime")
+        val statusIdx = colIndex("Lead Status", 10, "leadStatus", "outcome", "status")
+        val stagingIdx = colIndex("Staging Status", 11, "staging")
+        val isLinkedIdx = colIndex("Is Linked", 12, "isLinked", "linked")
+        val linkedTypeIdx = colIndex("Linked Role", 13, "linkedOpportunityType", "role")
+        val linkedTitleIdx = colIndex("Linked Title", 14, "linkedOpportunityTitle")
+        val linkedIdIdx = colIndex("Linked ID", 15, "linkedOpportunityId")
+        val waLoggedIdx = colIndex("WA Logged", -1, "waLogged", "whatsapp logged")
+        val subRoleIdx = colIndex("Sub-Role", -1, "pocSubRole", "sub role")
+        val handoverStatusIdx = colIndex("Handover Status", -1, "handoverStatus")
+        val handoverAssignedToIdx = colIndex("Handover Assigned To", -1, "handoverAssignedTo")
+        val handedOverAtIdx = colIndex("Handed Over At", -1, "handedOverAt")
+        val handoverCallbackAtIdx = colIndex("Callback At", -1, "handoverCallbackAt")
+
+        fun cell(row: List<String>, idx: Int): String =
+            if (idx in row.indices) row[idx].trim() else ""
+
+        return runCatching {
+            val existing = com.example.crm.CrmCallManager.readCalls(appContext).toMutableList()
+            val byId = existing.associateBy { it.id }.toMutableMap()
+            var mergedCount = 0
+
+            dataRows.forEach { row ->
+                if (row.all { it.isBlank() }) return@forEach
+                val phone = cell(row, phoneIdx)
+                val caller = cell(row, callerNameIdx).ifBlank { "Unknown Caller" }
+                if (phone.isBlank() && caller == "Unknown Caller") return@forEach
+
+                val rawTs = cell(row, timestampIdx)
+                val parsedTs = rawTs.toLongOrNull() ?: runCatching {
+                    SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).parse(rawTs)?.time
+                }.getOrNull() ?: runCatching {
+                    java.time.Instant.parse(rawTs).toEpochMilli()
+                }.getOrNull() ?: System.currentTimeMillis()
+
+                val rawCallId = cell(row, callIdIdx).ifBlank {
+                    "CALL-${phone.filter { it.isDigit() }.takeLast(10)}-$parsedTs"
+                }
+
+                val durationSec = cell(row, durationIdx).filter { it.isDigit() }.toIntOrNull() ?: 0
+                val callType = com.example.crm.CallType.fromString(cell(row, callTypeIdx).ifBlank { "INCOMING" })
+                val notes = cell(row, notesIdx)
+                val assignedAgent = cell(row, agentIdx).ifBlank { "Executive" }
+                val actionReq = cell(row, actionIdx).ifBlank { "Schedule Site Visit" }
+                val nextFollowUp = cell(row, followUpIdx).ifBlank { "Today, 4:00 PM" }
+                val leadStatus = cell(row, statusIdx).ifBlank { "Active" }
+                val stagingStatus = cell(row, stagingIdx).ifBlank { "Live" }
+                val linkedRole = cell(row, linkedTypeIdx).ifBlank { null }
+                val linkedTitle = cell(row, linkedTitleIdx).ifBlank { null }
+                val linkedId = cell(row, linkedIdIdx).ifBlank { null }
+                val rawLinked = cell(row, isLinkedIdx).lowercase(Locale.ENGLISH)
+                val isLinked = rawLinked == "true" || rawLinked == "yes" || rawLinked == "1" || !linkedId.isNullOrBlank()
+                val rawWaLogged = cell(row, waLoggedIdx).lowercase(Locale.ENGLISH)
+                val waLogged = rawWaLogged == "true" || rawWaLogged == "yes" || rawWaLogged == "1" ||
+                    notes.contains("Connected on WhatsApp", ignoreCase = true)
+                val pocSubRole = cell(row, subRoleIdx)
+                val handoverStatus = cell(row, handoverStatusIdx)
+                val handoverAssignedTo = cell(row, handoverAssignedToIdx)
+                val handedOverAt = cell(row, handedOverAtIdx).toLongOrNull() ?: 0L
+                val handoverCallbackAt = cell(row, handoverCallbackAtIdx).toLongOrNull() ?: 0L
+
+                val rawRecord = com.example.crm.CrmCallRecord(
+                    id = rawCallId,
+                    callerName = caller,
+                    phoneNumber = phone,
+                    callType = callType,
+                    timestamp = parsedTs,
+                    durationSeconds = durationSec,
+                    notes = notes,
+                    assignedAgent = assignedAgent,
+                    actionRequired = actionReq,
+                    nextFollowUpDateTime = nextFollowUp,
+                    leadStatus = leadStatus,
+                    stagingStatus = stagingStatus,
+                    isLinked = isLinked,
+                    linkedOpportunityType = linkedRole,
+                    linkedOpportunityTitle = linkedTitle,
+                    linkedOpportunityId = linkedId,
+                    waLogged = waLogged,
+                    pocSubRole = pocSubRole,
+                    handoverStatus = handoverStatus,
+                    handoverAssignedTo = handoverAssignedTo,
+                    handedOverAt = handedOverAt,
+                    handoverCallbackAt = handoverCallbackAt
+                )
+                val record = com.example.crm.CrmCallManager.tagInternalTeamCallIfNeeded(appContext, rawRecord)
+
+                val prev = byId[rawCallId]
+                if (prev == null) {
+                    // Check if same phone & timestamp within 3 seconds already exists
+                    val nearMatch = byId.values.firstOrNull {
+                        it.phoneNumber.filter { c -> c.isDigit() }.takeLast(10) == phone.filter { c -> c.isDigit() }.takeLast(10) &&
+                            kotlin.math.abs(it.timestamp - parsedTs) <= 3000L
+                    }
+                    if (nearMatch == null) {
+                        byId[rawCallId] = record
+                        mergedCount++
+                    } else if (nearMatch.notes.isBlank() && record.notes.isNotBlank()) {
+                        byId[nearMatch.id] = record.copy(id = nearMatch.id)
+                        mergedCount++
+                    }
+                } else if (prev.notes.isBlank() && record.notes.isNotBlank()) {
+                    byId[rawCallId] = record
+                    mergedCount++
+                }
+            }
+
+            val finalSorted = byId.values.sortedByDescending { it.timestamp }
+            if (mergedCount > 0) {
+                com.example.crm.CrmCallManager.saveCalls(appContext, finalSorted)
+                _syncRevision.value++
+            }
+            com.example.crm.TeamHandoverStore.reconcileWithCallLogs(appContext, finalSorted)
+            mergedCount
+        }.getOrDefault(0)
+    }
+
+    /**
+     * Pushes a `CrmCallRecord` to the `Call Logs` tab on the Master Sheet (`UPSERT_CALL_LOG`).
+     */
+    suspend fun pushCallLogToMasterSheet(call: com.example.crm.CrmCallRecord): Result<Unit> = withContext(Dispatchers.IO) {
+        val endpoint = _sheetsScriptUrl.value.trim().ifBlank { DEFAULT_MASTER_SHEET_URL }
+        if (!endpoint.startsWith("https://") || !endpoint.contains("script.google.com", ignoreCase = true)) {
+            return@withContext Result.failure(IllegalStateException("Configure a valid Google Apps Script Web App URL to sync Call Logs."))
+        }
+
+        val formattedDate = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date(call.timestamp))
+        val updatedNow = java.time.Instant.now().toString()
+
+        val record = JSONObject().apply {
+            put("Call ID", call.id)
+            put("Date & Time", formattedDate)
+            put("Timestamp", call.timestamp)
+            put("Caller Name", call.callerName)
+            put("Phone Number", call.phoneNumber)
+            put("Call Type", call.callType.name)
+            put("Duration Seconds", call.durationSeconds)
+            put("Call Notes", call.notes)
+            put("Assigned Agent", call.assignedAgent)
+            put("Action Required", call.actionRequired)
+            put("Next Follow-up", call.nextFollowUpDateTime)
+            put("Lead Status", call.leadStatus)
+            put("Staging Status", call.stagingStatus)
+            put("Is Linked", call.isLinked)
+            put("Linked Role", call.linkedOpportunityType.orEmpty())
+            put("Linked Title", call.linkedOpportunityTitle.orEmpty())
+            put("Linked ID", call.linkedOpportunityId.orEmpty())
+            put("WA Logged", call.waLogged)
+            put("Sub-Role", call.pocSubRole)
+            put("Handover Status", call.handoverStatus)
+            put("Handover Assigned To", call.handoverAssignedTo)
+            put("Handed Over At", call.handedOverAt)
+            put("Callback At", call.handoverCallbackAt)
+            put("Updated At", updatedNow)
+
+            // Also include camelCase keys for flexible Apps Script handlers
+            put("id", call.id)
+            put("callerName", call.callerName)
+            put("phoneNumber", call.phoneNumber)
+            put("callType", call.callType.name)
+            put("timestamp", call.timestamp)
+            put("durationSeconds", call.durationSeconds)
+            put("notes", call.notes)
+            put("assignedAgent", call.assignedAgent)
+            put("actionRequired", call.actionRequired)
+            put("nextFollowUpDateTime", call.nextFollowUpDateTime)
+            put("leadStatus", call.leadStatus)
+            put("stagingStatus", call.stagingStatus)
+            put("isLinked", call.isLinked)
+            put("linkedOpportunityType", call.linkedOpportunityType.orEmpty())
+            put("linkedOpportunityTitle", call.linkedOpportunityTitle.orEmpty())
+            put("linkedOpportunityId", call.linkedOpportunityId.orEmpty())
+            put("waLogged", call.waLogged)
+            put("pocSubRole", call.pocSubRole)
+            put("handoverStatus", call.handoverStatus)
+            put("handoverAssignedTo", call.handoverAssignedTo)
+            put("handedOverAt", call.handedOverAt)
+            put("handoverCallbackAt", call.handoverCallbackAt)
+        }
+
+        val request = JSONObject().apply {
+            put("action", "UPSERT_CALL_LOG")
+            put("callId", call.id)
+            put("record", record)
+        }
+
+        val response = postAppsScriptJsonRequest(endpoint, request).getOrElse { err ->
+            logSyncEvent("CALL_LOG_SYNC", "FAILED", 0, "Call Log push failed for ${call.id}: ${err.message}", actor())
+            return@withContext Result.failure(err)
+        }
+
+        val statusStr = response.optString("status", "").trim().lowercase(Locale.ENGLISH)
+        val okFlag = if (response.has("ok")) response.optBoolean("ok", false)
+            else if (response.has("success")) response.optBoolean("success", false)
+            else statusStr != "error" && statusStr != "failed"
+        if (statusStr == "error" || statusStr == "failed" || !okFlag) {
+            val errMsg = response.optString("message", response.optString("error", "Failed to push Call Log to Master Sheet."))
+                .ifBlank { "Failed to push Call Log to Master Sheet." }
+            logSyncEvent("CALL_LOG_SYNC", "FAILED", 0, errMsg, actor())
+            return@withContext Result.failure(IllegalStateException(errMsg))
+        }
+
+        logSyncEvent(
+            direction = "CALL_LOG_SYNC",
+            status = "SUCCESS",
+            recordCount = 1,
+            details = "Pushed Call Log ${call.id} (${call.callerName} • ${call.phoneNumber})",
+            triggeredBy = actor()
+        )
+        Result.success(Unit)
+    }
+
+    /**
+     * Batch 21: Pushes a newly created or updated DirectoryProject to the Master Google Sheet
+     * ("Commercial Projects" or "Residential Projects" tab) via Apps Script UPSERT_PROJECT.
+     */
+    suspend fun pushDirectoryProjectToMasterSheet(project: com.example.data.projects.DirectoryProject): Result<Unit> = withContext(Dispatchers.IO) {
+        val endpoint = _sheetsScriptUrl.value.trim().ifBlank { DEFAULT_MASTER_SHEET_URL }
+        if (!endpoint.startsWith("https://") || !endpoint.contains("script.google.com", ignoreCase = true)) {
+            return@withContext Result.failure(IllegalStateException("Configure a valid Google Apps Script Web App URL to sync Projects."))
+        }
+
+        val isResidential = project.division.contains("res", ignoreCase = true)
+        val tabName = if (isResidential) "Residential Projects" else "Commercial Projects"
+        val salesPoc = project.raw.optString("salesPoc").ifBlank { project.raw.optString("Sales POC") }
+        val salesPocPhone = project.raw.optString("salesPocPhone").ifBlank { project.raw.optString("Sales POC Phone") }
+        val updatedNow = java.time.Instant.now().toString()
+
+        val record = JSONObject().apply {
+            put("Project ID", project.id)
+            put("Project Code", project.id)
+            put("Project Name", project.name)
+            put("Division", if (isResidential) "Residential" else "Commercial")
+            put("Developer", project.developer)
+            put("Location", project.location)
+            put("Micro Market", project.location)
+            put("Sales POC", salesPoc)
+            put("Sales POC Phone", salesPocPhone)
+            put("Verification", project.verification.ifBlank { "Unverified" })
+            put("Record Status", project.archiveStatus.ifBlank { "Active" })
+            put("Updated At", updatedNow)
+
+            put("id", project.id)
+            put("name", project.name)
+            put("division", if (isResidential) "residential" else "commercial")
+            put("developer", project.developer)
+            put("location", project.location)
+            put("salesPoc", salesPoc)
+            put("salesPocPhone", salesPocPhone)
+            put("verification", project.verification.ifBlank { "Unverified" })
+            put("archiveStatus", project.archiveStatus.ifBlank { "Active" })
+        }
+
+        val request = JSONObject().apply {
+            put("action", "UPSERT_PROJECT")
+            put("tabName", tabName)
+            put("projectId", project.id)
+            put("record", record)
+        }
+
+        val response = postAppsScriptJsonRequest(endpoint, request).getOrElse { err ->
+            logSyncEvent("PROJECT_SYNC", "FAILED", 0, "Project sync failed for ${project.id}: ${err.message}", actor())
+            return@withContext Result.failure(err)
+        }
+
+        val statusStr = response.optString("status", "").trim().lowercase(Locale.ENGLISH)
+        val okFlag = if (response.has("ok")) response.optBoolean("ok", false)
+            else if (response.has("success")) response.optBoolean("success", false)
+            else statusStr != "error" && statusStr != "failed"
+        if (statusStr == "error" || statusStr == "failed" || !okFlag) {
+            val errMsg = response.optString("message", response.optString("error", "Failed to push Project to Master Sheet."))
+                .ifBlank { "Failed to push Project to Master Sheet." }
+            logSyncEvent("PROJECT_SYNC", "FAILED", 0, errMsg, actor())
+            return@withContext Result.failure(IllegalStateException(errMsg))
+        }
+
+        logSyncEvent(
+            direction = "PROJECT_SYNC",
+            status = "SUCCESS",
+            recordCount = 1,
+            details = "Pushed ${project.id} (${project.name}) to $tabName",
+            triggeredBy = actor()
+        )
+        Result.success(Unit)
+    }
+
+    /**
+     * Batch 12: One-Tap Cloud Migration & Recovery for all local edits, photos, leads, and call logs:
+     * 1. Uploads any local `file://` or `content://` image URIs on `PropertyItem.images` to Google Drive (`uploadMediaToDrive`),
+     *    replacing local URIs with the returned Drive `directUrl`.
+     * 2. Pushes all unsynced `PropertyItem`s (`UPSERT_PROPERTY`), `CrmLead`s (`UPSERT_CRM_LEAD`), and `CrmCallRecord`s (`UPSERT_CALL_LOG`).
+     * 3. Returns a summary string of uploaded photos, properties, leads, and call logs.
+     */
+    suspend fun pushAllUnsyncedLocalDataToCloud(): String = withContext(Dispatchers.IO) {
+        val appContext = context ?: return@withContext "Application context unavailable for cloud migration."
+        var uploadedPhotosCount = 0
+        var pushedPropertiesCount = 0
+        var pushedLeadsCount = 0
+        var pushedCallLogsCount = 0
+        val photoUpdatedPropIds = mutableSetOf<String>()
+
+        // 1. Scan all properties for local file:// or content:// image URIs and upload to Google Drive
+        val snapshotProps = _properties.value.toList()
+        for (prop in snapshotProps) {
+            if (prop.images.isEmpty()) continue
+            var changed = false
+            val newImages = prop.images.mapIndexed { idx, imgUri ->
+                val trimmed = imgUri.trim()
+                val isLocalUri = trimmed.startsWith("file://", ignoreCase = true) ||
+                    trimmed.startsWith("content://", ignoreCase = true) ||
+                    (trimmed.isNotBlank() && !trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("https://", ignoreCase = true))
+                if (!isLocalUri) {
+                    trimmed
+                } else {
+                    val bytes = runCatching {
+                        when {
+                            trimmed.startsWith("content://", ignoreCase = true) || trimmed.startsWith("file://", ignoreCase = true) -> {
+                                val parsedUri = android.net.Uri.parse(trimmed)
+                                appContext.contentResolver.openInputStream(parsedUri)?.use { it.readBytes() }
+                                    ?: java.io.File(parsedUri.path.orEmpty()).takeIf { it.exists() }?.readBytes()
+                            }
+                            else -> {
+                                java.io.File(trimmed).takeIf { it.exists() }?.readBytes()
+                            }
+                        }
+                    }.getOrNull()
+
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        val propCodeOrId = prop.propertyCode.ifBlank { prop.id.ifBlank { "PROP" } }
+                        val uploadRes = uploadMediaToDrive(
+                            propertyId = propCodeOrId,
+                            fileName = "${propCodeOrId}_photo_${idx + 1}.jpg",
+                            mimeType = "image/jpeg",
+                            bytes = bytes
+                        )
+                        val driveUrl = uploadRes.getOrNull()
+                        if (!driveUrl.isNullOrBlank()) {
+                            uploadedPhotosCount++
+                            changed = true
+                            driveUrl
+                        } else {
+                            trimmed
+                        }
+                    } else {
+                        trimmed
+                    }
+                }
+            }
+            if (changed) {
+                val updatedProp = prop.copy(images = newImages, isSyncedToSheet = false)
+                photoUpdatedPropIds.add(prop.id)
+                _properties.update { currentList ->
+                    currentList.map { if (it.id == prop.id) updatedProp else it }
+                }
+                runCatching { PropertiesLocalDatabase.saveProperties(appContext, _properties.value) }
+            }
+        }
+
+        // 2. Push all unsynced PropertyItems (or locally modified properties) via UPSERT_PROPERTY
+        val currentProps = _properties.value.toList()
+        val propsToPush = currentProps.filter { !it.isSyncedToSheet || it.id in photoUpdatedPropIds }
+        for (prop in propsToPush) {
+            if (pushPropertyToMasterSheet(prop).isSuccess) {
+                pushedPropertiesCount++
+            }
+        }
+
+        // 3. Push all local CrmLeads via UPSERT_CRM_LEAD
+        val localLeads = runCatching {
+            com.example.ui.screens.readCrmLeads(appContext).filter { !it.id.startsWith("demo-lead-") }
+        }.getOrDefault(emptyList())
+        for (lead in localLeads) {
+            if (pushCrmLeadToMasterSheet(lead).isSuccess) {
+                pushedLeadsCount++
+            }
+        }
+
+        // 4. Push all local CrmCallRecords via UPSERT_CALL_LOG
+        val localCalls = runCatching {
+            com.example.crm.CrmCallManager.readCalls(appContext)
+        }.getOrDefault(emptyList())
+        for (call in localCalls) {
+            if (pushCallLogToMasterSheet(call).isSuccess) {
+                pushedCallLogsCount++
+            }
+        }
+
+        val summary = buildString {
+            append("Cloud Migration & Sync Complete: ")
+            append("$uploadedPhotosCount Drive Photo(s) • ")
+            append("$pushedPropertiesCount Property(s) • ")
+            append("$pushedLeadsCount CRM Lead(s) • ")
+            append("$pushedCallLogsCount Call Log(s) pushed to Master Sheet.")
+        }
+
+        logSyncEvent(
+            direction = "CLOUD_MIGRATION",
+            status = "SUCCESS",
+            recordCount = uploadedPhotosCount + pushedPropertiesCount + pushedLeadsCount + pushedCallLogsCount,
+            details = summary,
+            triggeredBy = actor()
+        )
+        summary
     }
 }
 

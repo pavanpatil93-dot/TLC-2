@@ -186,10 +186,15 @@ object PropertiesLocalDatabase {
 
     @Synchronized
     fun loadProperties(context: Context): List<PropertyItem> = try {
-        readState(context).properties
+        val primary = readState(context).properties
+        val loaded = if (primary.isNotEmpty()) primary else OfflineDiskCache.loadInventorySplits(context)
+        com.example.inventory.PropertyPrecomputedCache.warmUp(loaded)
+        loaded
     } catch (error: Exception) {
         Log.e(TAG, "Cannot read inventory; original file retained", error)
-        emptyList()
+        OfflineDiskCache.loadInventorySplits(context).also {
+            com.example.inventory.PropertyPrecomputedCache.warmUp(it)
+        }
     }
 
     @Synchronized
@@ -201,6 +206,7 @@ object PropertiesLocalDatabase {
         android.util.AtomicFile(File(context.filesDir, DB_FILE_NAME)).delete()
         File(context.filesDir, LEGACY_DB_FILE_NAME).delete()
         File(context.filesDir, "pending_sync_ops_v1.json").delete()
+        com.example.inventory.PropertyPrecomputedCache.clear()
     }
 
     @Synchronized
@@ -215,10 +221,14 @@ object PropertiesLocalDatabase {
                 incoming.copy(isSyncedToSheet = true)
             } else incoming
         }
+        com.example.inventory.PropertyPrecomputedCache.warmUp(prepared)
         val pending = PendingSyncQueue.reconcile(prepared, old.pending, System.currentTimeMillis())
         val saved = writeState(context, InventoryState(prepared, pending))
-        if (saved) runCatching { BackgroundSyncScheduler.ensureScheduled(context) }
-            .onFailure { Log.e(TAG, "Background scheduling unavailable; queue retained", it) }
+        if (saved) {
+            runCatching { OfflineDiskCache.saveInventorySplits(context, prepared) }
+            runCatching { BackgroundSyncScheduler.ensureScheduled(context) }
+                .onFailure { Log.e(TAG, "Background scheduling unavailable; queue retained", it) }
+        }
         saved
     } catch (error: Exception) {
         Log.e(TAG, "Cannot save inventory/queue; previous data retained", error)
@@ -252,7 +262,7 @@ object PropertiesLocalDatabase {
                 if (testSimulateWriteFailure) {
                     throw java.io.IOException("Simulated storage write failure")
                 }
-                stream.write(envelope.toString(2).toByteArray(Charsets.UTF_8))
+                stream.write(envelope.toString().toByteArray(Charsets.UTF_8))
                 atomic.finishWrite(stream)
             } catch (error: Exception) {
                 atomic.failWrite(stream)
@@ -303,12 +313,25 @@ object PropertiesLocalDatabase {
             pending = state.pending.filterNot { it.operationId == operationId }))
     }
 
+    @Synchronized
+    internal fun acknowledgePropertySynced(context: Context, property: PropertyItem): Boolean {
+        val state = readState(context)
+        val properties = AppsScriptSyncProtocol.markAcknowledged(state.properties, property)
+        val remainingPending = state.pending.filterNot { pending ->
+            pending.property.id == property.id ||
+                (property.recordId.isNotBlank() && pending.property.recordId.equals(property.recordId, ignoreCase = true)) ||
+                (property.propertyCode.isNotBlank() && pending.property.propertyCode.equals(property.propertyCode, ignoreCase = true))
+        }
+        return writeState(context, state.copy(properties = properties, pending = remainingPending))
+    }
+
     internal fun pendingWritePayload(entry: PendingSyncWrite): JSONObject =
         serializeProperty(entry.property).apply {
             put("action", "UPSERT")
             put("operationId", entry.operationId)
             put("subType", entry.property.tab.title)
             put("source", entry.property.sourceInfo ?: "")
+            put("Type of POC", entry.property.pocType)
             put("furnishing", entry.property.furnishing.label)
             put("status", entry.property.status.label)
         }
@@ -336,12 +359,10 @@ object PropertiesLocalDatabase {
         "lockInMonths", "escalationIntervalMonths", "createdAt", "recordVersion",
         "unmappedColumns", "fullAddress", "city", "locationPrecision",
         "physicalUnitKey", "hasDualSaleAndLeaseOffer", "saleOfferStatus",
-        "leaseOfferStatus", "saleSourceInfo", "leaseSourceInfo"
+        "leaseOfferStatus", "saleSourceInfo", "leaseSourceInfo", "Type of POC", "pocType"
     )
 
     internal fun serializePropertyJson(item: PropertyItem): JSONObject = serializeProperty(item)
-
-    internal fun deserializePropertyJson(obj: JSONObject): PropertyItem = deserializeProperty(obj)
 
     private fun serializeProperty(item: PropertyItem): JSONObject {
         val obj = JSONObject()
@@ -474,6 +495,7 @@ object PropertiesLocalDatabase {
         item.leaseOfferStatus?.let { obj.put("leaseOfferStatus", it.name) } ?: obj.remove("leaseOfferStatus")
         item.saleSourceInfo?.let { obj.put("saleSourceInfo", it) } ?: obj.remove("saleSourceInfo")
         item.leaseSourceInfo?.let { obj.put("leaseSourceInfo", it) } ?: obj.remove("leaseSourceInfo")
+        obj.put("Type of POC", item.pocType)
         if (item.unmappedColumns.isNotEmpty()) {
             obj.put("unmappedColumns", JSONObject(item.unmappedColumns))
             item.unmappedColumns.forEach { (key, value) ->
@@ -485,6 +507,8 @@ object PropertiesLocalDatabase {
 
         return obj
     }
+
+    internal fun deserializePropertyJson(obj: JSONObject): PropertyItem = deserializeProperty(obj)
 
     private fun deserializeProperty(obj: JSONObject): PropertyItem {
         val tabName = obj.optString("tab", InventoryTab.OFF_LEASE.name)
@@ -672,7 +696,8 @@ object PropertiesLocalDatabase {
             saleOfferStatus = obj.optString("saleOfferStatus").takeIf { it.isNotBlank() }?.let { runCatching { AvailabilityStatus.valueOf(it) }.getOrNull() },
             leaseOfferStatus = obj.optString("leaseOfferStatus").takeIf { it.isNotBlank() }?.let { runCatching { AvailabilityStatus.valueOf(it) }.getOrNull() },
             saleSourceInfo = optionalString(obj, "saleSourceInfo"),
-            leaseSourceInfo = optionalString(obj, "leaseSourceInfo")
+            leaseSourceInfo = optionalString(obj, "leaseSourceInfo"),
+            pocType = normalizePocType(obj.optString("Type of POC").ifBlank { obj.optString("pocType") })
         )
     }
 

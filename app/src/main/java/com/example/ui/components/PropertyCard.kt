@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -28,10 +29,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.example.R
 import com.example.inventory.InventoryQuality
 import com.example.model.*
 import com.example.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 val LocalPropertyMapHandler = compositionLocalOf<((PropertyItem) -> Unit)?> { null }
 
@@ -58,45 +63,30 @@ fun PropertyCard(
     onToggleSelectForShare: (() -> Unit)? = null,
     onSaveVerification: ((AvailabilityStatus, String, String) -> Unit)? = null,
     onVerificationSwitchChange: ((Boolean) -> Unit)? = null,
-    linkedUnitCount: Int = 1
+    linkedUnitCount: Int = 1,
+    onInlineUpdateProperty: ((PropertyItem, Boolean) -> Unit)? = null,
+    onUploadPhoto: (suspend (String, String, String, ByteArray) -> Result<String>)? = null
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val mapHandler = LocalPropertyMapHandler.current
     var moreMenuExpanded by remember(property.id) { mutableStateOf(false) }
     var showCompletenessSheet by remember(property.id) { mutableStateOf(false) }
     var showVerifySheet by remember(property.id) { mutableStateOf(false) }
     var showMissingRequiredSheet by remember(property.id) { mutableStateOf(false) }
-    val selectedRateBasis = AreaRateBasis.CARPET
-
-    val stdTx = remember(property.transactionType, property.tab) {
-        StandardTransactionType.fromString(property.transactionType, property.tab)
+    val precomputed = remember(property) {
+        com.example.inventory.PropertyPrecomputedCache.get(property)
     }
-
-    val primaryAmount = remember(property) { CalculationUtils.primaryAmountForProperty(property) }
-    val priceDisplay = remember(primaryAmount, stdTx) {
-        if (primaryAmount > 0.0) {
-            CalculationUtils.formatIndianCurrency(
-                amount = primaryAmount,
-                isMonthly = stdTx == StandardTransactionType.LEASE
-            )
-        } else {
-            "Price Pending"
-        }
+    val stdTx = precomputed.stdTx
+    val primaryAmount = precomputed.primaryAmount
+    val priceDisplay = precomputed.priceDisplay
+    val rateDisplay = precomputed.rateDisplay
+    val isStrictlyLive = precomputed.isStrictlyLive
+    val requiredMissingFields = precomputed.requiredMissingFields
+    val coverPhotoUrl = remember(property.id, property.images) {
+        property.images.firstOrNull { it.isNotBlank() }
     }
-
-    val rateDisplay = remember(property, selectedRateBasis) {
-        CalculationUtils.formatRateForBasis(property, selectedRateBasis, includeBasisSuffix = true)
-    }
-
-    val isVerifiedLive = property.verificationStatus == VerificationStatus.VERIFIED &&
-        property.archiveStatus != ArchiveStatus.ARCHIVED
-    val requiredMissingFields = remember(property) {
-        InventoryQuality.minimumRequiredMissingFields(property)
-    }
-
-    val verificationAgeState = remember(property) {
-        getVerificationAgeState(property, validityDays = 60)
-    }
+    val verificationAgeState = precomputed.verificationAgeState
 
     val verificationBadgeLabel = when {
         property.archiveStatus == ArchiveStatus.ARCHIVED -> "Archived"
@@ -112,9 +102,7 @@ fun PropertyCard(
         else -> StatusDangerRed
     }
 
-    val detailedCompleteness = remember(property) {
-        CalculationUtils.computeDetailedCompleteness(property)
-    }
+    val detailedCompleteness = precomputed.detailedCompleteness
 
     val completionColor = when {
         requiredMissingFields.isEmpty() && detailedCompleteness.percent >= 80 -> StatusSuccessGreen
@@ -212,34 +200,6 @@ fun PropertyCard(
                     expanded = moreMenuExpanded,
                     onDismissRequest = { moreMenuExpanded = false }
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("View Details") },
-                        onClick = {
-                            moreMenuExpanded = false
-                            onCardClick()
-                        },
-                        leadingIcon = { Icon(Icons.Default.Visibility, contentDescription = null, tint = PrimaryActionOrange) }
-                    )
-                    if (onEditClick != null) {
-                        DropdownMenuItem(
-                            text = { Text("Edit Property") },
-                            onClick = {
-                                moreMenuExpanded = false
-                                onEditClick()
-                            },
-                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = PrimaryActionOrange) }
-                        )
-                    }
-                    if (onSaveVerification != null) {
-                        DropdownMenuItem(
-                            text = { Text("Detailed Verification Log") },
-                            onClick = {
-                                moreMenuExpanded = false
-                                showVerifySheet = true
-                            },
-                            leadingIcon = { Icon(Icons.Default.Verified, contentDescription = null, tint = PrimaryActionOrange) }
-                        )
-                    }
                     if (onToggleShortlist != null) {
                         DropdownMenuItem(
                             text = { Text(if (isInShortlist) "Remove from Shortlist" else "Add to Shortlist") },
@@ -262,12 +222,69 @@ fun PropertyCard(
             }
         }
 
+        val triggerCompleteAndGoLive: () -> Unit = {
+            if (requiredMissingFields.isNotEmpty()) {
+                showMissingRequiredSheet = true
+            } else if (onVerificationSwitchChange != null) {
+                onVerificationSwitchChange(true)
+            } else if (onSaveVerification != null) {
+                showVerifySheet = true
+            } else {
+                onCardClick()
+            }
+        }
+
         if (compact) {
             // ── 2-COLUMN GRID CARD REDESIGN ──
             Column(
                 modifier = Modifier.padding(10.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                // Rounded cover photo thumbnail or subtle building placeholder
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(86.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SurfaceMuted)
+                        .border(0.8.dp, BorderSubtle, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (coverPhotoUrl != null) {
+                        AsyncImage(
+                            model = coverPhotoUrl,
+                            contentDescription = "${property.projectName.ifBlank { "Property" }} photo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (property.isResidential()) Icons.Default.Apartment else Icons.Default.Business,
+                            contentDescription = "Property building placeholder",
+                            tint = SecondaryText.copy(alpha = 0.45f),
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                }
+
+                val updatedByName = property.updatedBy.trim()
+                val isRecentlyUpdated = updatedByName.isNotBlank() && property.updatedAt.isNotBlank()
+                if (isRecentlyUpdated) {
+                    Surface(
+                        color = WarningAmberSubtle,
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.padding(bottom = 2.dp)
+                    ) {
+                        Text(
+                            text = "Updated by $updatedByName · Today",
+                            color = StatusWarningAmber,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
                 // Row 1: Compact ● Available dot on left + PropertyCode pill on right
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -418,6 +435,41 @@ fun PropertyCard(
                     )
                 }
 
+                if (!isStrictlyLive && property.archiveStatus != ArchiveStatus.ARCHIVED) {
+                    Surface(
+                        onClick = triggerCompleteAndGoLive,
+                        color = PrimaryActionOrange.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, PrimaryActionOrange.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 36.dp)
+                            .testTag("property_grid_complete_go_live_btn_${property.id}")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.RocketLaunch,
+                                contentDescription = null,
+                                tint = PrimaryActionOrange,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Complete & Go Live",
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryActionOrange,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
                 HorizontalDivider(color = BorderSubtle)
 
                 // Row 6: Single clean icon row [ 📞 ] [ 💬 ] [ ⋮ ] (no Edit, no Switch)
@@ -465,12 +517,37 @@ fun PropertyCard(
                 modifier = Modifier.padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Row 1: Building/Project + Availability & Verification Pill
+                // Row 1: Thumbnail + Building/Project + Availability & Verification Pill
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.Top
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .size(58.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(SurfaceMuted)
+                            .border(0.8.dp, BorderSubtle, RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (coverPhotoUrl != null) {
+                            AsyncImage(
+                                model = coverPhotoUrl,
+                                contentDescription = "${property.projectName.ifBlank { "Property" }} photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (property.isResidential()) Icons.Default.Apartment else Icons.Default.Business,
+                                contentDescription = "Property building placeholder",
+                                tint = SecondaryText.copy(alpha = 0.5f),
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = property.projectName.ifBlank { "Project Not Mentioned" },
@@ -732,41 +809,65 @@ fun PropertyCard(
                         )
                     }
 
-                    // 4. Live / Verification Toggle
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .padding(horizontal = 2.dp)
-                    ) {
-                        Switch(
-                            checked = isVerifiedLive,
-                            onCheckedChange = { targetLive ->
-                                if (targetLive) {
-                                    if (requiredMissingFields.isNotEmpty()) {
-                                        showMissingRequiredSheet = true
-                                    } else if (onVerificationSwitchChange != null) {
-                                        onVerificationSwitchChange(true)
-                                    } else if (onSaveVerification != null) {
-                                        showVerifySheet = true
-                                    }
-                                } else {
-                                    onVerificationSwitchChange?.invoke(false)
-                                }
-                            },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = OnPrimaryActionColor,
-                                checkedTrackColor = StatusSuccessGreen,
-                                uncheckedThumbColor = TextPrimary,
-                                uncheckedTrackColor = SurfaceMuted,
-                                uncheckedBorderColor = BorderGrey
-                            ),
+                    // 4. Live Switch (ONLY when strictly Live) or "Complete & Go Live" Pill Button (when Pending)
+                    if (isStrictlyLive) {
+                        Box(
+                            contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .semantics {
-                                    contentDescription = if (isVerifiedLive) "Verified Live" else "Verify and Publish Live"
-                                }
-                                .testTag("property_card_verify_switch_${property.id}")
-                        )
+                                .heightIn(min = 48.dp)
+                                .padding(horizontal = 2.dp)
+                        ) {
+                            Switch(
+                                checked = true,
+                                onCheckedChange = { targetLive ->
+                                    if (!targetLive) {
+                                        onVerificationSwitchChange?.invoke(false)
+                                    }
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = OnPrimaryActionColor,
+                                    checkedTrackColor = StatusSuccessGreen,
+                                    uncheckedThumbColor = TextPrimary,
+                                    uncheckedTrackColor = SurfaceMuted,
+                                    uncheckedBorderColor = BorderGrey
+                                ),
+                                modifier = Modifier
+                                    .semantics {
+                                        contentDescription = "Verified Live — Toggle off to move to Pending"
+                                    }
+                                    .testTag("property_card_verify_switch_${property.id}")
+                            )
+                        }
+                    } else if (property.archiveStatus != ArchiveStatus.ARCHIVED) {
+                        Surface(
+                            onClick = triggerCompleteAndGoLive,
+                            color = PrimaryActionOrange.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, PrimaryActionOrange.copy(alpha = 0.55f)),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("property_complete_go_live_btn_${property.id}")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.RocketLaunch,
+                                    contentDescription = null,
+                                    tint = PrimaryActionOrange,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "Complete & Go Live",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryActionOrange,
+                                    maxLines = 1
+                                )
+                            }
+                        }
                     }
 
                     // 5. More Actions Menu
@@ -776,157 +877,54 @@ fun PropertyCard(
         }
     }
 
-    // ── MISSING 100% REQUIRED DETAILS DIALOG/SHEET ──
-    if (showMissingRequiredSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showMissingRequiredSheet = false },
-            containerColor = SurfaceWhite
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(20.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Complete 100% Required Details to Go Live",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                    color = TextPrimary
-                )
-                Text(
-                    text = "Fill these mandatory fields before verifying and publishing to Live Sheet:",
-                    fontSize = 12.5.sp,
-                    color = SecondaryText
-                )
-                HorizontalDivider(color = BorderGrey)
-                requiredMissingFields.forEach { field ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = StatusDangerRed, modifier = Modifier.size(18.dp))
-                        Text(field, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { showMissingRequiredSheet = false },
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 48.dp)
-                    ) {
-                        Text("Close", color = TextPrimary)
-                    }
-                    if (onEditClick != null) {
-                        Button(
-                            onClick = {
-                                showMissingRequiredSheet = false
-                                onEditClick()
-                            },
-                            modifier = Modifier
-                                .weight(1.5f)
-                                .heightIn(min = 48.dp)
-                                .testTag("property_complete_missing_btn_${property.id}"),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = PrimaryActionOrange,
-                                contentColor = OnPrimaryActionColor
+    // ── INTERACTIVE INLINE DATA COMPLETENESS EDITOR SHEET (Batch 14) ──
+    if (showCompletenessSheet || showMissingRequiredSheet) {
+        val openedFromGoLive = showMissingRequiredSheet
+        DataCompletenessInlineSheet(
+            property = property,
+            initiallyPromptGoLive = openedFromGoLive,
+            onDismiss = {
+                showCompletenessSheet = false
+                showMissingRequiredSheet = false
+            },
+            onUploadPhoto = onUploadPhoto,
+            onOpenFullEdit = onEditClick,
+            onSaveProperty = { updatedProp, promoteToLive ->
+                showCompletenessSheet = false
+                showMissingRequiredSheet = false
+                if (onInlineUpdateProperty != null) {
+                    onInlineUpdateProperty(updatedProp, promoteToLive)
+                } else {
+                    coroutineScope.launch {
+                        val saved = withContext(Dispatchers.IO) {
+                            val fallbackRepo = com.example.data.SheetsRepository(
+                                context.applicationContext,
+                                startForegroundSync = false
                             )
-                        ) {
-                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Complete Details", fontWeight = FontWeight.Bold)
+                            val finalProp = if (promoteToLive) {
+                                updatedProp.copy(
+                                    verificationStatus = VerificationStatus.VERIFIED,
+                                    archiveStatus = ArchiveStatus.ACTIVE,
+                                    lastVerifiedDateClean = java.time.LocalDate.now().toString()
+                                )
+                            } else {
+                                updatedProp
+                            }
+                            val ok = fallbackRepo.updateProperty(finalProp, "Inline Completeness Update")
+                            if (ok) {
+                                runCatching { fallbackRepo.pushPropertyToMasterSheet(finalProp) }
+                            }
+                            ok
                         }
+                        Toast.makeText(
+                            context,
+                            if (saved) "Saved & syncing in background" else "Saved locally",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
             }
-        }
-    }
-
-    // ── TAPPABLE COMPLETENESS BREAKDOWN SHEET ──
-    if (showCompletenessSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showCompletenessSheet = false },
-            containerColor = SurfaceWhite
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(20.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Data Completeness", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = TextPrimary)
-                    Text("${detailedCompleteness.percent}%", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = completionColor)
-                }
-
-                if (requiredMissingFields.isNotEmpty()) {
-                    Text("Required to Go Live (${requiredMissingFields.size})", fontWeight = FontWeight.Bold, fontSize = 13.5.sp, color = StatusDangerRed)
-                    requiredMissingFields.forEach { field ->
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = StatusDangerRed, modifier = Modifier.size(16.dp))
-                            Text(field, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                        }
-                    }
-                    HorizontalDivider(color = BorderGrey)
-                }
-
-                Text("Completed Fields (${detailedCompleteness.completedFields.size})", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
-                if (detailedCompleteness.completedFields.isEmpty()) {
-                    Text("None recorded", fontSize = 12.sp, color = SecondaryText)
-                } else {
-                    detailedCompleteness.completedFields.forEach { field ->
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusSuccessGreen, modifier = Modifier.size(16.dp))
-                            Text(field, fontSize = 13.sp, color = TextPrimary)
-                        }
-                    }
-                }
-
-                Text("Additional Applicable Fields (${detailedCompleteness.missingFields.size})", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
-                if (detailedCompleteness.missingFields.isEmpty()) {
-                    Text("All applicable fields completed.", fontSize = 12.sp, color = StatusSuccessGreen, fontWeight = FontWeight.Bold)
-                } else {
-                    detailedCompleteness.missingFields.forEach { field ->
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.Info, contentDescription = null, tint = StatusWarningAmber, modifier = Modifier.size(16.dp))
-                            Text(field, fontSize = 13.sp, color = TextPrimary)
-                        }
-                    }
-                }
-
-                if (onEditClick != null) {
-                    Button(
-                        onClick = {
-                            showCompletenessSheet = false
-                            onEditClick()
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 48.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = PrimaryActionOrange,
-                            contentColor = OnPrimaryActionColor
-                        )
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Edit Property to Complete", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
+        )
     }
 
     // ── VERIFY PROPERTY BOTTOM SHEET ──

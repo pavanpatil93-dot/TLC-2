@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.crm.PendingLoopTaskStore
 import com.example.data.UserSettingsManager
 import com.example.model.CalculationUtils
 import com.example.model.PropertyItem
@@ -529,7 +530,24 @@ internal fun CrmSiteVisitsDialog(
                                                             ) else it
                                                         }
                                                         saveCrmLeads(context, updatedLeads)
+                                                        PendingLoopTaskStore.enqueueBrokerStatusUpdateForLeadVisit(
+                                                            context = context,
+                                                            lead = lead,
+                                                            visitId = updatedVisit.id,
+                                                            propertyOrProject = visit.property,
+                                                            feedbackSummary = updatedVisit.outcome,
+                                                            agentName = userProfile.username
+                                                        )
                                                     }
+                                                    PendingLoopTaskStore.enqueueSiteVisitDoneOwnerUpdate(
+                                                        context = context,
+                                                        visitId = updatedVisit.id,
+                                                        propertyOrProject = visit.property,
+                                                        feedbackSummary = updatedVisit.outcome,
+                                                        clientName = clientName,
+                                                        agentName = userProfile.username,
+                                                        inventory = inventory
+                                                    )
 
                                                     feedbackVisit = null
                                                     onOpenCalculatorForProperty(matchedProp)
@@ -702,7 +720,24 @@ internal fun CrmSiteVisitsDialog(
                                 ) else it
                             }
                             saveCrmLeads(context, updatedLeads)
+                            PendingLoopTaskStore.enqueueBrokerStatusUpdateForLeadVisit(
+                                context = context,
+                                lead = lead,
+                                visitId = updatedVisit.id,
+                                propertyOrProject = visit.property,
+                                feedbackSummary = outcomeText,
+                                agentName = userProfile.username
+                            )
                         }
+                        PendingLoopTaskStore.enqueueSiteVisitDoneOwnerUpdate(
+                            context = context,
+                            visitId = updatedVisit.id,
+                            propertyOrProject = visit.property,
+                            feedbackSummary = outcomeText,
+                            clientName = clientName,
+                            agentName = userProfile.username,
+                            inventory = inventory
+                        )
 
                         Toast.makeText(context, "Feedback logged & CRM stage updated!", Toast.LENGTH_SHORT).show()
                         feedbackVisit = null
@@ -817,8 +852,27 @@ internal fun CrmSiteVisitsDialog(
                         }
                         saveVisits(context, leadId, visits)
 
-                        // If marked completed right here, prompt for feedback
+                        // If marked completed right here, prompt for feedback & create owner update loop
                         if (statusInput == "Completed" && editingVisit?.status != "Completed") {
+                            PendingLoopTaskStore.enqueueSiteVisitDoneOwnerUpdate(
+                                context = context,
+                                visitId = record.id,
+                                propertyOrProject = record.property,
+                                feedbackSummary = record.outcome.ifBlank { "Site visit marked completed" },
+                                clientName = clientName,
+                                agentName = userProfile.username,
+                                inventory = inventory
+                            )
+                            if (lead != null) {
+                                PendingLoopTaskStore.enqueueBrokerStatusUpdateForLeadVisit(
+                                    context = context,
+                                    lead = lead,
+                                    visitId = record.id,
+                                    propertyOrProject = record.property,
+                                    feedbackSummary = record.outcome.ifBlank { "Site visit completed" },
+                                    agentName = userProfile.username
+                                )
+                            }
                             feedbackVisit = record
                         }
 

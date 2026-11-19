@@ -6,15 +6,22 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -49,7 +56,8 @@ import java.util.Locale
 
 enum class ShareAudienceMode(val label: String) {
     CLIENT("Client"),
-    BROKER("Broker")
+    BROKER("Broker"),
+    FB_MARKETPLACE("FB Marketplace Ad")
 }
 
 object WhatsAppIntentRouter {
@@ -168,6 +176,7 @@ fun WhatsAppShareDialog(
 
     var audienceMode by rememberSaveable { mutableStateOf(ShareAudienceMode.CLIENT) }
     var conciseMode by rememberSaveable { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     val userProfile = userSettingsManager?.userProfile?.collectAsState()?.value
     val employeeName = senderName ?: userProfile?.username?.takeIf { it.isNotBlank() } ?: "TLC Executive"
@@ -186,6 +195,7 @@ fun WhatsAppShareDialog(
     var shareText by remember(generatedText) { mutableStateOf(generatedText) }
     var copiedConfirmed by remember { mutableStateOf(false) }
     var feedbackError by remember { mutableStateOf<String?>(null) }
+    var isGeneratingPdf by remember { mutableStateOf(false) }
 
     // Live Leak Guard: check if shareText contains any sensitive owner/broker info from normalizedProperties
     val hasSensitiveLeak = remember(shareText, normalizedProperties) {
@@ -201,8 +211,11 @@ fun WhatsAppShareDialog(
         }
     }
 
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         containerColor = BackgroundSoft,
         dragHandle = { BottomSheetDefaults.DragHandle(color = TextPrimary) },
         modifier = Modifier.testTag("whatsapp_share_dialog")
@@ -252,27 +265,36 @@ fun WhatsAppShareDialog(
                     color = SurfaceMuted,
                     shape = RoundedCornerShape(8.dp)
                 ) {
+                    val availableModes = remember(normalizedProperties.size) {
+                        if (normalizedProperties.isNotEmpty()) {
+                            ShareAudienceMode.entries
+                        } else {
+                            listOf(ShareAudienceMode.CLIENT, ShareAudienceMode.BROKER)
+                        }
+                    }
                     Row(modifier = Modifier.padding(2.dp)) {
-                        ShareAudienceMode.entries.forEach { mode ->
+                        availableModes.forEach { mode ->
                             val selected = audienceMode == mode
                             Surface(
                                 color = if (selected) PrimaryActionOrange else Color.Transparent,
                                 shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier.clickable { audienceMode = mode }
+                                modifier = Modifier
+                                    .clickable { audienceMode = mode }
+                                    .testTag("share_mode_tab_${mode.name.lowercase()}")
                             ) {
                                 Text(
                                     text = mode.label,
                                     color = if (selected) OnPrimaryActionColor else TextPrimary,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                 )
                             }
                         }
                     }
                 }
 
-                if (normalizedProperties.size >= 3 || shareText.length > 1500) {
+                if (audienceMode != ShareAudienceMode.FB_MARKETPLACE && (normalizedProperties.size >= 3 || shareText.length > 1500)) {
                     FilterChipItem(
                         label = "Concise Mode",
                         isSelected = conciseMode,
@@ -281,170 +303,200 @@ fun WhatsAppShareDialog(
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
 
-            // Employee Mobile Missing Warning
-            if (employeeMobile.isBlank()) {
-                Surface(
-                    color = Color(0xFFFEF3C7),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(0.8.dp, Color(0xFFF59E0B)),
-                    modifier = Modifier.fillMaxWidth()
+            if (audienceMode == ShareAudienceMode.FB_MARKETPLACE && normalizedProperties.isNotEmpty()) {
+                FbMarketplaceAdPanel(
+                    property = normalizedProperties.first(),
+                    employeeName = employeeName,
+                    employeeMobile = employeeMobile,
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                // Upper 1-Tap Action Bar right below Client | Broker toggle (above Editable Message Preview)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(BackgroundSoft)
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Employee mobile missing in Settings — using desk fallback 9766880099",
-                        color = Color(0xFF92400E),
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(8.dp)
-                    )
-                }
-                Spacer(Modifier.height(6.dp))
-            }
+                    OutlinedButton(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                            clipboard?.setPrimaryClip(ClipData.newPlainText("Property Share", shareText))
+                            copiedConfirmed = true
+                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier
+                            .weight(0.85f)
+                            .heightIn(min = 48.dp)
+                            .testTag("whatsapp_share_copy_btn"),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, FocusOutlineColor)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, tint = FocusOutlineColor, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Copy", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = FocusOutlineColor, maxLines = 1)
+                    }
 
-            // Sensitive Data Leak Guard Banner
-            if (hasSensitiveLeak) {
-                Surface(
-                    color = Color(0xFFFEF2F2),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color(0xFFEF4444)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
+                    OutlinedButton(
+                        onClick = {
+                            if (isGeneratingPdf) return@OutlinedButton
+                            isGeneratingPdf = true
+                            feedbackError = null
+                            coroutineScope.launch {
+                                val result = TlcProposalPdfGenerator.generateAndShareProposalPdf(
+                                    context = context,
+                                    properties = normalizedProperties,
+                                    project = project,
+                                    shareBodyText = shareText,
+                                    employeeName = employeeName,
+                                    employeeMobile = employeeMobile
+                                )
+                                isGeneratingPdf = false
+                                if (result.isFailure) {
+                                    feedbackError = result.exceptionOrNull()?.localizedMessage ?: "Failed to generate PDF proposal"
+                                }
+                            }
+                        },
+                        enabled = !isGeneratingPdf,
+                        modifier = Modifier
+                            .weight(1.35f)
+                            .heightIn(min = 48.dp)
+                            .testTag("export_branded_pdf_proposal_btn"),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, PrimaryActionOrange)
+                    ) {
+                        if (isGeneratingPdf) {
+                            CircularProgressIndicator(
+                                color = PrimaryActionOrange,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        } else {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = PrimaryActionOrange, modifier = Modifier.size(15.dp))
+                        }
+                        Spacer(Modifier.width(4.dp))
                         Text(
-                            text = "Warning: Edited text appears to contain a saved owner/source contact.",
-                            color = Color(0xFF991B1B),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
+                            text = if (isGeneratingPdf) "Preparing PDF..." else "Share PDF Proposal",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.5.sp,
+                            color = TextPrimary,
+                            maxLines = 1
                         )
                     }
-                }
-                Spacer(Modifier.height(6.dp))
-            }
 
-            // Editable Message Preview
-            OutlinedTextField(
-                value = shareText,
-                onValueChange = { shareText = it },
-                label = { Text("Editable Message Preview") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .heightIn(min = 160.dp, max = 320.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = SurfaceWhite,
-                    unfocusedContainerColor = SurfaceWhite,
-                    focusedBorderColor = FocusOutlineColor,
-                    unfocusedBorderColor = BorderGrey,
-                    focusedTextColor = TextPrimary,
-                    unfocusedTextColor = TextPrimary
-                )
-            )
-
-            if (copiedConfirmed) {
-                Text(
-                    text = "Message copied to clipboard successfully.",
-                    color = StatusSuccessGreen,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            if (feedbackError != null) {
-                Text(
-                    text = feedbackError.orEmpty(),
-                    color = StatusDangerRed,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // Branded PDF Proposal Export Button (draws exact 3-polygon TLC wing logo on Page 1 top-left)
-            OutlinedButton(
-                onClick = {
-                    val result = TlcProposalPdfGenerator.generateAndShareProposalPdf(
-                        context = context,
-                        properties = normalizedProperties,
-                        project = project,
-                        shareBodyText = shareText,
-                        employeeName = employeeName,
-                        employeeMobile = employeeMobile
-                    )
-                    if (result.isFailure) {
-                        feedbackError = result.exceptionOrNull()?.localizedMessage ?: "Failed to generate PDF proposal"
+                    Button(
+                        onClick = {
+                            WhatsAppIntentRouter.launchWhatsAppSafely(context, shareText, recipientPhone) { err ->
+                                feedbackError = err
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1.1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("whatsapp_share_send_btn"),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryActionOrange,
+                            contentColor = OnPrimaryActionColor
+                        )
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("WhatsApp", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
                     }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 44.dp)
-                    .testTag("export_branded_pdf_proposal_btn"),
-                shape = RoundedCornerShape(10.dp),
-                border = BorderStroke(1.dp, PrimaryActionOrange)
-            ) {
-                Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = PrimaryActionOrange, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Export Branded PDF Proposal", fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = TextPrimary)
-            }
-
-            Spacer(Modifier.height(6.dp))
-
-            // Pinned Bottom Action Bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(BackgroundSoft)
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedButton(
-                    onClick = { shareText = generatedText; copiedConfirmed = false },
-                    modifier = Modifier.weight(0.9f).heightIn(min = 48.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, BorderGrey)
-                ) {
-                    Text("Reset", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextPrimary)
                 }
 
-                OutlinedButton(
-                    onClick = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                        clipboard?.setPrimaryClip(ClipData.newPlainText("Property Share", shareText))
-                        copiedConfirmed = true
-                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, FocusOutlineColor)
-                ) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = FocusOutlineColor, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Copy", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = FocusOutlineColor)
-                }
-
-                Button(
-                    onClick = {
-                        WhatsAppIntentRouter.launchWhatsAppSafely(context, shareText, recipientPhone) { err ->
-                            feedbackError = err
-                        }
-                    },
-                    modifier = Modifier.weight(1.4f).heightIn(min = 48.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = PrimaryActionOrange,
-                        contentColor = OnPrimaryActionColor
+                if (copiedConfirmed) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Message copied to clipboard successfully.",
+                        color = StatusSuccessGreen,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
                     )
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("WhatsApp", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
                 }
+
+                if (feedbackError != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = feedbackError.orEmpty(),
+                        color = StatusDangerRed,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Employee Mobile Missing Warning
+                if (employeeMobile.isBlank()) {
+                    Surface(
+                        color = Color(0xFFFEF3C7),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(0.8.dp, Color(0xFFF59E0B)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Employee mobile missing in Settings — using desk fallback 9766880099",
+                            color = Color(0xFF92400E),
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+
+                // Sensitive Data Leak Guard Banner
+                if (hasSensitiveLeak) {
+                    Surface(
+                        color = Color(0xFFFEF2F2),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "Warning: Edited text appears to contain a saved owner/source contact.",
+                                color = Color(0xFF991B1B),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+
+                // Editable Message Preview
+                OutlinedTextField(
+                    value = shareText,
+                    onValueChange = { shareText = it },
+                    label = { Text("Editable Message Preview") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .heightIn(min = 180.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = SurfaceWhite,
+                        unfocusedContainerColor = SurfaceWhite,
+                        focusedBorderColor = FocusOutlineColor,
+                        unfocusedBorderColor = BorderGrey,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    )
+                )
             }
-            Spacer(Modifier.height(12.dp))
+
+            Spacer(Modifier.height(10.dp))
         }
     }
 }
@@ -456,12 +508,17 @@ private fun buildMultiPropertyShareMessage(
     employeeName: String,
     employeeMobile: String
 ): String = buildString {
-    append("🏢 *Curated Property Portfolio* (${properties.size} Properties)\n\n")
+    append("🏢 *Property Options* (${properties.size} ${if (properties.size == 1) "Property" else "Properties"})\n\n")
     properties.forEachIndexed { index, prop ->
-        append("${index + 1}. *${prop.projectName.ifBlank { prop.propertyType }}* (${prop.propertyCode})\n")
-        append("• Location: ${prop.location}\n")
+        val cleanProjectTitle = prop.projectName.ifBlank { prop.propertyType }
+        append("${index + 1}. *$cleanProjectTitle* (${prop.propertyCode})\n")
+        if (prop.location.isNotBlank() && !prop.location.equals("Unverified Location", ignoreCase = true)) {
+            append("• Location: ${prop.location}\n")
+        }
         append("• Type: ${prop.propertyType} (${prop.transactionType.ifBlank { prop.tab.title }})\n")
-        append("• Carpet Area: ${CalculationUtils.formatNumber(prop.carpetAreaSqFt)} sq.ft\n")
+        if (prop.carpetAreaSqFt > 0.0) {
+            append("• Carpet Area: ${CalculationUtils.formatNumber(prop.carpetAreaSqFt)} sq.ft\n")
+        }
 
         if (!concise) {
             if (prop.builtUpArea > 0.0) append("• Built-up Area: ${CalculationUtils.formatNumber(prop.builtUpArea)} sq.ft\n")
@@ -472,15 +529,30 @@ private fun buildMultiPropertyShareMessage(
             }
         }
 
-        val priceText = if (prop.tab.isRental) {
-            "${CalculationUtils.formatCurrency(prop.rent ?: prop.priceOrRent)} / month"
+        val resolvedAmount = if (prop.tab.isRental) {
+            (prop.rent ?: 0.0).takeIf { it > 0.0 }
+                ?: prop.priceOrRent.takeIf { it > 0.0 }
+                ?: (prop.priceSale ?: 0.0).takeIf { it > 0.0 }
+                ?: 0.0
         } else {
-            CalculationUtils.formatCurrency(prop.priceSale ?: prop.priceOrRent)
+            (prop.priceSale ?: 0.0).takeIf { it > 0.0 }
+                ?: prop.priceOrRent.takeIf { it > 0.0 }
+                ?: (prop.rent ?: 0.0).takeIf { it > 0.0 }
+                ?: 0.0
+        }
+        val priceText = if (resolvedAmount > 0.0) {
+            if (prop.tab.isRental) {
+                "${CalculationUtils.formatIndianCurrency(resolvedAmount)} / month"
+            } else {
+                CalculationUtils.formatIndianCurrency(resolvedAmount)
+            }
+        } else {
+            "Rent / Price on Request"
         }
         append("• Price / Rent: $priceText\n")
 
         val rateText = CalculationUtils.formatRateForBasis(prop, AreaRateBasis.CARPET)
-        if (rateText != "Not Available" && !concise) {
+        if (rateText != "Not Available" && !rateText.contains("₹0") && !concise) {
             append("• Rate: $rateText\n")
         }
 
@@ -507,7 +579,8 @@ object TlcProposalPdfGenerator {
         canvas: Canvas,
         leftX: Float = 36f,
         topY: Float = 26f,
-        targetWidthPt: Float = 84f
+        targetWidthPt: Float = 84f,
+        tintColor: Int = android.graphics.Color.parseColor("#111827")
     ) {
         val scale = targetWidthPt / 1000f
         val matrix = Matrix().apply {
@@ -516,7 +589,7 @@ object TlcProposalPdfGenerator {
         }
 
         val crestPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = android.graphics.Color.parseColor("#111827")
+            color = tintColor
             style = Paint.Style.FILL
         }
 
@@ -578,7 +651,8 @@ object TlcProposalPdfGenerator {
         project: UnderConstProject?,
         shareBodyText: String,
         employeeName: String,
-        employeeMobile: String
+        employeeMobile: String,
+        coverBitmap: Bitmap? = null
     ): File {
         val pdfDocument = PdfDocument()
         val pageWidth = 595
@@ -625,7 +699,115 @@ object TlcProposalPdfGenerator {
         canvas.drawText("Date: $dateStr", 455f, 41f, mutedPaint)
         canvas.drawLine(36f, 68f, pageWidth - 36f, 68f, dividerPaint)
 
-        var y = 92f
+        // Hero Cover Photo or Clean Navy & Gold Editorial Header Banner on Page 1
+        val primaryProp = properties.firstOrNull()
+        val bannerTitle = project?.projectName?.takeIf { it.isNotBlank() }
+            ?: primaryProp?.projectName?.takeIf { it.isNotBlank() }
+            ?: primaryProp?.propertyType?.takeIf { it.isNotBlank() }
+            ?: "Curated Real Estate Proposal"
+        val bannerSub = listOfNotNull(
+            project?.location?.takeIf { it.isNotBlank() } ?: primaryProp?.location?.takeIf { it.isNotBlank() },
+            primaryProp?.propertyCode?.takeIf { it.isNotBlank() } ?: project?.projectCode?.takeIf { it.isNotBlank() }
+        ).joinToString(" • ")
+
+        val bannerLeft = 36f
+        val bannerTop = 80f
+        val bannerRight = pageWidth - 36f
+        val bannerWidth = bannerRight - bannerLeft
+
+        var y = if (coverBitmap != null && coverBitmap.width > 0 && coverBitmap.height > 0) {
+            val bannerHeight = 176f
+            val bannerRect = RectF(bannerLeft, bannerTop, bannerRight, bannerTop + bannerHeight)
+            val clipPath = Path().apply { addRoundRect(bannerRect, 10f, 10f, Path.Direction.CW) }
+            canvas.save()
+            canvas.clipPath(clipPath)
+
+            // Center-crop scale preserves original aspect ratio with zero stretching or clipping distortion
+            val scale = maxOf(
+                bannerWidth / coverBitmap.width.toFloat(),
+                bannerHeight / coverBitmap.height.toFloat()
+            )
+            val scaledW = coverBitmap.width * scale
+            val scaledH = coverBitmap.height * scale
+            val dx = bannerRect.left + (bannerWidth - scaledW) / 2f
+            val dy = bannerRect.top + (bannerHeight - scaledH) / 2f
+            val matrix = Matrix().apply {
+                setScale(scale, scale)
+                postTranslate(dx, dy)
+            }
+            val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            canvas.drawBitmap(coverBitmap, matrix, bitmapPaint)
+
+            // Dark gradient scrim along bottom edge for readable caption
+            val scrimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                shader = LinearGradient(
+                    0f, bannerRect.bottom - 52f, 0f, bannerRect.bottom,
+                    android.graphics.Color.TRANSPARENT,
+                    android.graphics.Color.argb(205, 11, 27, 43),
+                    Shader.TileMode.CLAMP
+                )
+            }
+            canvas.drawRect(bannerRect.left, bannerRect.bottom - 52f, bannerRect.right, bannerRect.bottom, scrimPaint)
+
+            val captionTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = android.graphics.Color.WHITE
+                typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
+                textSize = 13.5f
+            }
+            val captionSubPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = android.graphics.Color.parseColor("#EAD17A")
+                typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+                textSize = 9.5f
+            }
+            canvas.drawText(bannerTitle, bannerRect.left + 14f, bannerRect.bottom - 22f, captionTitlePaint)
+            if (bannerSub.isNotBlank()) {
+                canvas.drawText(bannerSub, bannerRect.left + 14f, bannerRect.bottom - 9f, captionSubPaint)
+            }
+            canvas.restore()
+
+            val framePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = android.graphics.Color.parseColor("#D4AF37")
+                style = Paint.Style.STROKE
+                strokeWidth = 1.2f
+            }
+            canvas.drawRoundRect(bannerRect, 10f, 10f, framePaint)
+            bannerRect.bottom + 20f
+        } else {
+            // Clean Luxury Navy & Gold Editorial Fallback Header when no photo is available
+            val bannerHeight = 62f
+            val bannerRect = RectF(bannerLeft, bannerTop, bannerRight, bannerTop + bannerHeight)
+            val fallbackBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = android.graphics.Color.parseColor("#0B1B2B")
+                style = Paint.Style.FILL
+            }
+            canvas.drawRoundRect(bannerRect, 10f, 10f, fallbackBgPaint)
+
+            val goldAccentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = android.graphics.Color.parseColor("#D4AF37")
+                style = Paint.Style.FILL
+            }
+            canvas.drawRoundRect(
+                RectF(bannerRect.left, bannerRect.top, bannerRect.left + 5f, bannerRect.bottom),
+                3f, 3f, goldAccentPaint
+            )
+
+            val fallbackTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = android.graphics.Color.WHITE
+                typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
+                textSize = 14f
+            }
+            val fallbackSubPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = android.graphics.Color.parseColor("#D4AF37")
+                typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+                textSize = 9.5f
+            }
+            canvas.drawText(bannerTitle, bannerRect.left + 16f, bannerRect.top + 26f, fallbackTitlePaint)
+            if (bannerSub.isNotBlank()) {
+                canvas.drawText(bannerSub, bannerRect.left + 16f, bannerRect.top + 44f, fallbackSubPaint)
+            }
+            bannerRect.bottom + 20f
+        }
+
         val maxLineWidth = pageWidth - 72f
 
         val lines = shareBodyText.split("\n")
@@ -666,7 +848,7 @@ object TlcProposalPdfGenerator {
         return outFile
     }
 
-    fun generateAndShareProposalPdf(
+    suspend fun generateAndShareProposalPdf(
         context: Context,
         properties: List<PropertyItem>,
         project: UnderConstProject?,
@@ -674,14 +856,18 @@ object TlcProposalPdfGenerator {
         employeeName: String,
         employeeMobile: String
     ): Result<File> = runCatching {
-        val pdfFile = generateProposalPdfFile(
-            context = context,
-            properties = properties,
-            project = project,
-            shareBodyText = shareBodyText,
-            employeeName = employeeName,
-            employeeMobile = employeeMobile
-        )
+        val coverBitmap = resolveBestCoverBitmap(context, properties, project)
+        val pdfFile = withContext(Dispatchers.IO) {
+            generateProposalPdfFile(
+                context = context,
+                properties = properties,
+                project = project,
+                shareBodyText = shareBodyText,
+                employeeName = employeeName,
+                employeeMobile = employeeMobile,
+                coverBitmap = coverBitmap
+            )
+        }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pdfFile)
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "application/pdf"
@@ -694,7 +880,9 @@ object TlcProposalPdfGenerator {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
         }
-        context.startActivity(chooser)
+        withContext(Dispatchers.Main) {
+            context.startActivity(chooser)
+        }
         pdfFile
     }
 

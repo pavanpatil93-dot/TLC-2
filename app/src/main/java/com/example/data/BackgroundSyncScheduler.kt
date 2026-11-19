@@ -17,6 +17,8 @@ import java.util.concurrent.TimeUnit
 internal object BackgroundSyncScheduler {
     const val IMMEDIATE_WORK = "tlc-pending-sync-once"
     const val PERIODIC_WORK = "tlc-pending-sync-periodic"
+    const val MASTER_AUTO_SYNC_WORK = "tlc-master-auto-sync-15m"
+    const val AUTO_SYNC_INTERVAL_MINUTES = 15L
     const val TAG = "tlc-pending-sync"
 
     fun validEndpoint(endpoint: String): Boolean {
@@ -38,11 +40,32 @@ internal object BackgroundSyncScheduler {
             .build()
 
     fun periodicRequest(): PeriodicWorkRequest =
-        PeriodicWorkRequestBuilder<PendingSyncWorker>(15, TimeUnit.MINUTES)
+        PeriodicWorkRequestBuilder<PendingSyncWorker>(AUTO_SYNC_INTERVAL_MINUTES, TimeUnit.MINUTES)
             .setConstraints(constraints())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .addTag(TAG)
             .build()
+
+    fun masterAutoSyncPeriodicRequest(): PeriodicWorkRequest =
+        PeriodicWorkRequestBuilder<PendingSyncWorker>(AUTO_SYNC_INTERVAL_MINUTES, TimeUnit.MINUTES)
+            .setConstraints(constraints())
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 1, TimeUnit.MINUTES)
+            .addTag(TAG)
+            .build()
+
+    fun ensureMasterAutoSyncScheduled(context: Context): Boolean {
+        val rawEndpoint = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            .getString("google_sheet_url", "")?.trim().orEmpty()
+        val endpoint = rawEndpoint.ifBlank { SheetsRepository.DEFAULT_MASTER_SHEET_URL }
+        if (!validEndpoint(endpoint)) return false
+        val manager = WorkManager.getInstance(context.applicationContext)
+        manager.enqueueUniquePeriodicWork(
+            MASTER_AUTO_SYNC_WORK,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            masterAutoSyncPeriodicRequest()
+        )
+        return true
+    }
 
     fun ensureScheduled(context: Context): Boolean {
         val endpoint = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)

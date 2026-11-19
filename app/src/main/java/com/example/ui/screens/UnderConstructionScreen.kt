@@ -32,6 +32,9 @@ import com.example.model.CalculationUtils
 import com.example.model.UnderConstProject
 import com.example.ui.theme.*
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
 @Composable
 fun UnderConstructionScreen(
     projects: List<UnderConstProject>,
@@ -39,6 +42,27 @@ fun UnderConstructionScreen(
     onProjectClick: (UnderConstProject) -> Unit,
     onShareWhatsApp: (UnderConstProject) -> Unit
 ) {
+    val context = LocalContext.current
+    var directoryRecords by remember { mutableStateOf<List<com.example.data.projects.DirectoryProject>>(emptyList()) }
+    LaunchedEffect(context) {
+        directoryRecords = withContext(Dispatchers.IO) {
+            runCatching { ProjectDirectoryStore.read(context) }.getOrDefault(emptyList())
+        }
+    }
+    val directoryLookup = remember(projects, directoryRecords) {
+        if (directoryRecords.isEmpty()) {
+            emptyMap()
+        } else {
+            val byId = directoryRecords.associateBy { it.id.lowercase() }
+            val byName = directoryRecords.associateBy { it.name.lowercase() }
+            projects.mapNotNull { uc ->
+                val match = (uc.projectCode.takeIf { it.isNotBlank() }?.let { byId[it.lowercase()] })
+                    ?: byName[uc.projectName.lowercase()]
+                match?.let { uc.id to it }
+            }.toMap()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -98,7 +122,8 @@ fun UnderConstructionScreen(
                     project = project,
                     isInternalMode = isInternalMode,
                     onClick = { onProjectClick(project) },
-                    onShareWhatsApp = { onShareWhatsApp(project) }
+                    onShareWhatsApp = { onShareWhatsApp(project) },
+                    directoryRecord = directoryLookup[project.id]
                 )
             }
         }
@@ -110,19 +135,11 @@ fun UnderConstructionProjectCard(
     project: UnderConstProject,
     isInternalMode: Boolean,
     onClick: () -> Unit,
-    onShareWhatsApp: () -> Unit
+    onShareWhatsApp: () -> Unit,
+    directoryRecord: com.example.data.projects.DirectoryProject? = null
 ) {
     val context = LocalContext.current
     var isExpanded by remember { mutableStateOf(false) }
-
-    val directoryRecord = remember(context, project.projectCode, project.projectName) {
-        runCatching {
-            ProjectDirectoryStore.read(context).firstOrNull { dir ->
-                (project.projectCode.isNotBlank() && dir.id.equals(project.projectCode, ignoreCase = true)) ||
-                    dir.name.equals(project.projectName, ignoreCase = true)
-            }
-        }.getOrNull()
-    }
 
     val coverImageUrl = remember(project.photoGallery, directoryRecord) {
         project.photoGallery.firstOrNull { it.isNotBlank() }
@@ -239,8 +256,12 @@ fun UnderConstructionProjectCard(
                         }
                     }
 
+                    val salesPocDisplay = remember(project, directoryRecord) {
+                        val pocFromDir = directoryRecord?.salesPocDisplay().orEmpty()
+                        pocFromDir.ifBlank { project.builderName.ifBlank { "Developer Desk" } }
+                    }
                     Text(
-                        text = "${project.builderName.ifBlank { "Developer" }} • ${project.location}",
+                        text = "$salesPocDisplay • ${project.location}",
                         color = TextSecondaryDark,
                         fontSize = 11.5.sp,
                         maxLines = 1,
@@ -251,9 +272,17 @@ fun UnderConstructionProjectCard(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        if (areaRangeDisplay.isNotBlank()) {
+                            Text(
+                                text = areaRangeDisplay,
+                                color = TextSecondaryDark,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                         if (priceFromDisplay.isNotBlank()) {
                             Text(
-                                text = "From $priceFromDisplay",
+                                text = "· $priceFromDisplay+",
                                 color = BrandGoldLight,
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Bold
@@ -261,17 +290,10 @@ fun UnderConstructionProjectCard(
                         }
                         if (rentFromDisplay.isNotBlank()) {
                             Text(
-                                text = "Rent $rentFromDisplay",
+                                text = "· Rent $rentFromDisplay",
                                 color = UnderConstTeal,
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        if (areaRangeDisplay.isNotBlank()) {
-                            Text(
-                                text = "• $areaRangeDisplay",
-                                color = TextSecondaryDark,
-                                fontSize = 11.sp
                             )
                         }
                     }

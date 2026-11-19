@@ -1,5 +1,21 @@
 package com.example.model
 
+import org.json.JSONObject
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
+
 enum class Brand(val displayName: String, val tagline: String) {
     COMMERCIAL(
         "COMMERCIAL INVENTORY",
@@ -167,7 +183,7 @@ enum class VerificationStatus(val label: String) {
             val v = value?.lowercase()?.trim() ?: ""
             // Only an explicit positive label verifies a record. "Needs Verification",
             // "Unverified" and "Not Verified" must remain pending.
-            return if (v == "verified") VERIFIED else PENDING
+            return if (v == "verified" || v == "live" || v == "verified & live" || v == "verified/live") VERIFIED else PENDING
         }
     }
 }
@@ -214,6 +230,20 @@ data class PropertyItemSnapshot(
     val ownerContact: String?,
     val remarks: String?
 )
+
+val POC_TYPE_OPTIONS = listOf("Property Owner", "Broker", "Developer Sales Team")
+
+fun normalizePocType(raw: String?): String {
+    val clean = raw?.trim().orEmpty()
+    if (clean.isBlank()) return ""
+    val lower = clean.lowercase()
+    return when {
+        lower == "property owner" || lower == "owner" || lower.contains("landlord") || lower.contains("direct owner") -> "Property Owner"
+        lower == "broker" || lower.contains("cp") || lower.contains("channel partner") || lower.contains("agent") -> "Broker"
+        lower == "developer sales team" || lower.contains("developer") || lower.contains("builder") -> "Developer Sales Team"
+        else -> clean
+    }
+}
 
 data class PropertyItem(
     val id: String = "",
@@ -318,7 +348,8 @@ data class PropertyItem(
     val saleOfferStatus: AvailabilityStatus? = null,
     val leaseOfferStatus: AvailabilityStatus? = null,
     val saleSourceInfo: String? = null,
-    val leaseSourceInfo: String? = null
+    val leaseSourceInfo: String? = null,
+    val pocType: String = ""
 )
 
 enum class LocationPrecision(val label: String) {
@@ -464,7 +495,10 @@ data class ImportPreviewRow(
     val verifiedBy: String? = null,
     val isAreaEstimated: Boolean = false,
     val unmappedColumns: Map<String, String> = emptyMap(),
-    val conflictResolution: String = "REVIEW" // "SKIP", "UPDATE", "CANCEL", "NEW_CODE"
+    val conflictResolution: String = "REVIEW", // "SKIP", "UPDATE", "CANCEL", "NEW_CODE"
+    val pocType: String = "",
+    val archiveStatus: ArchiveStatus = ArchiveStatus.ACTIVE,
+    val lastUpdated: String = ""
 )
 
 // 35 Standard Columns for ASCEND_AUREA_MASTER_INVENTORY
@@ -551,10 +585,18 @@ data class UserProfile(
     val profilePhotoUri: String? = null,
     val employeeId: String = "",
     val division: String = "Commercial + Residential",
-    val accountStatus: String = "Active"
+    val accountStatus: String = "Active",
+    val canViewFullOwnerContacts: Boolean = role == UserRole.ADMIN || role == UserRole.COMMERCIAL_MANAGER || role == UserRole.RESIDENTIAL_MANAGER || role == UserRole.INVENTORY_MANAGER,
+    val canBulkExport: Boolean = role == UserRole.ADMIN || role == UserRole.COMMERCIAL_MANAGER || role == UserRole.RESIDENTIAL_MANAGER || role == UserRole.INVENTORY_MANAGER,
+    val canDeleteRecords: Boolean = role == UserRole.ADMIN || role == UserRole.COMMERCIAL_MANAGER || role == UserRole.RESIDENTIAL_MANAGER
 ) {
     val contactInfo: String
         get() = if (email.isNotBlank()) email else mobileNumber
+
+    val isAdminOrSuperAdmin: Boolean
+        get() = role == UserRole.ADMIN ||
+            username.equals("Pawan Patil", ignoreCase = true) ||
+            username.equals("Pawan", ignoreCase = true)
 }
 
 data class CompanyProfile(
@@ -1123,6 +1165,262 @@ object TlcStandardOptions {
         NumericPresetOption("Custom", null, null)
     )
 }
+
+@androidx.compose.runtime.Composable
+fun TlcSurfaceDropdownField(
+    label: String,
+    selectedValue: String,
+    options: List<String>,
+    onValueSelected: (String) -> Unit,
+    modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
+    allowCustom: Boolean = false
+) {
+    var expanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var showCustomDialog by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var customInput by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    val displayText = selectedValue.ifBlank { "Select $label" }
+
+    androidx.compose.foundation.layout.Column(modifier = modifier) {
+        androidx.compose.material3.Text(
+            text = label,
+            color = com.example.ui.theme.SecondaryText,
+            fontSize = androidx.compose.ui.unit.TextUnit(10f, androidx.compose.ui.unit.TextUnitType.Sp),
+            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = androidx.compose.ui.Modifier.padding(
+                start = androidx.compose.ui.unit.Dp(2f),
+                bottom = androidx.compose.ui.unit.Dp(3f)
+            )
+        )
+        androidx.compose.foundation.layout.Box(modifier = androidx.compose.ui.Modifier.fillMaxWidth()) {
+            androidx.compose.material3.Surface(
+                color = com.example.ui.theme.SurfaceWhite,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(10f)),
+                border = androidx.compose.foundation.BorderStroke(
+                    width = if (expanded) androidx.compose.ui.unit.Dp(1.5f) else androidx.compose.ui.unit.Dp(1f),
+                    color = if (expanded) com.example.ui.theme.PrimaryActionOrange else com.example.ui.theme.BorderGrey
+                ),
+                modifier = androidx.compose.ui.Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = androidx.compose.ui.unit.Dp(48f))
+                    .clip(androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(10f)))
+                    .clickable { expanded = true }
+            ) {
+                androidx.compose.foundation.layout.Row(
+                    modifier = androidx.compose.ui.Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            horizontal = androidx.compose.ui.unit.Dp(12f),
+                            vertical = androidx.compose.ui.unit.Dp(10f)
+                        ),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+                ) {
+                    androidx.compose.material3.Text(
+                        text = displayText,
+                        color = if (selectedValue.isBlank()) com.example.ui.theme.SecondaryText else com.example.ui.theme.TextPrimary,
+                        fontSize = androidx.compose.ui.unit.TextUnit(13f, androidx.compose.ui.unit.TextUnitType.Sp),
+                        fontWeight = if (selectedValue.isBlank()) androidx.compose.ui.text.font.FontWeight.Normal else androidx.compose.ui.text.font.FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        modifier = androidx.compose.ui.Modifier.weight(1f)
+                    )
+                    androidx.compose.foundation.layout.Spacer(androidx.compose.ui.Modifier.width(androidx.compose.ui.unit.Dp(4f)))
+                    androidx.compose.material3.Icon(
+                        imageVector = if (expanded) androidx.compose.material.icons.Icons.Default.KeyboardArrowUp else androidx.compose.material.icons.Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Select $label",
+                        tint = if (expanded) com.example.ui.theme.PrimaryActionOrange else com.example.ui.theme.SecondaryText,
+                        modifier = androidx.compose.ui.Modifier.size(androidx.compose.ui.unit.Dp(18f))
+                    )
+                }
+            }
+
+            androidx.compose.material3.DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                containerColor = com.example.ui.theme.SurfaceWhite
+            ) {
+                options.forEach { option ->
+                    val isSelected = option.equals(selectedValue, ignoreCase = true)
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = {
+                            androidx.compose.material3.Text(
+                                text = option,
+                                fontSize = androidx.compose.ui.unit.TextUnit(13f, androidx.compose.ui.unit.TextUnitType.Sp),
+                                fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium,
+                                color = if (isSelected) com.example.ui.theme.PrimaryActionOrange else com.example.ui.theme.TextPrimary,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        },
+                        trailingIcon = if (isSelected) {
+                            {
+                                androidx.compose.material3.Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = com.example.ui.theme.PrimaryActionOrange,
+                                    modifier = androidx.compose.ui.Modifier.size(androidx.compose.ui.unit.Dp(16f))
+                                )
+                            }
+                        } else null,
+                        onClick = {
+                            onValueSelected(option)
+                            expanded = false
+                        }
+                    )
+                }
+                if (allowCustom) {
+                    androidx.compose.material3.HorizontalDivider(color = com.example.ui.theme.BorderGrey)
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = {
+                            androidx.compose.material3.Text(
+                                text = "+ Custom / Other...",
+                                fontSize = androidx.compose.ui.unit.TextUnit(12.5f, androidx.compose.ui.unit.TextUnitType.Sp),
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                color = com.example.ui.theme.PrimaryActionOrange
+                            )
+                        },
+                        onClick = {
+                            expanded = false
+                            customInput = selectedValue
+                            showCustomDialog = true
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    if (showCustomDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showCustomDialog = false },
+            containerColor = com.example.ui.theme.SurfaceWhite,
+            title = {
+                androidx.compose.material3.Text(
+                    text = "Custom $label",
+                    color = com.example.ui.theme.TextPrimary,
+                    fontSize = androidx.compose.ui.unit.TextUnit(15f, androidx.compose.ui.unit.TextUnitType.Sp),
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                )
+            },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = customInput,
+                    onValueChange = { newText: String -> customInput = newText },
+                    label = { androidx.compose.material3.Text(label, fontSize = androidx.compose.ui.unit.TextUnit(11f, androidx.compose.ui.unit.TextUnitType.Sp)) },
+                    singleLine = true,
+                    modifier = androidx.compose.ui.Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.Button(
+                    onClick = {
+                        val cleaned = customInput.trim()
+                        if (cleaned.isNotBlank()) {
+                            onValueSelected(cleaned)
+                        }
+                        showCustomDialog = false
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = com.example.ui.theme.PrimaryActionOrange,
+                        contentColor = com.example.ui.theme.OnPrimaryActionColor
+                    )
+                ) {
+                    androidx.compose.material3.Text("Apply", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showCustomDialog = false }) {
+                    androidx.compose.material3.Text("Cancel", color = com.example.ui.theme.SecondaryText)
+                }
+            }
+        )
+    }
+}
+
+data class DailyReportRecord(
+    val reportId: String = "REP-${System.currentTimeMillis()}",
+    val date: String = "",
+    val employeeId: String = "",
+    val employeeName: String = "",
+    val division: String = "",
+    val poaSubmittedAt: String = "",
+    val poaTasksCount: Int = 0,
+    val poaPlanSummary: String = "",
+    val eodSubmittedAt: String = "",
+    val callsTotal: Int = 0,
+    val callsDurationMins: Int = 0,
+    val newLeads: Int = 0,
+    val followUpsDone: Int = 0,
+    val propertiesAdded: Int = 0,
+    val propertiesVerified: Int = 0,
+    val siteVisits: Int = 0,
+    val proposalsShared: Int = 0,
+    val poaScore: Int = 0,
+    val keyWins: String = "",
+    val blockers: String = "",
+    val updatedAt: String = ""
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("Report ID", reportId)
+        put("Date", date)
+        put("Employee ID", employeeId)
+        put("Employee Name", employeeName)
+        put("Division", division)
+        put("POA Submitted At", poaSubmittedAt)
+        put("POA Tasks Count", poaTasksCount)
+        put("POA Plan Summary", poaPlanSummary)
+        put("EOD Submitted At", eodSubmittedAt)
+        put("Calls Total", callsTotal)
+        put("Calls Duration Mins", callsDurationMins)
+        put("New Leads", newLeads)
+        put("Follow-ups Done", followUpsDone)
+        put("Properties Added", propertiesAdded)
+        put("Properties Verified", propertiesVerified)
+        put("Site Visits", siteVisits)
+        put("Proposals Shared", proposalsShared)
+        put("POA Score", poaScore)
+        put("Key Wins / Hot Deals", keyWins)
+        put("Blockers / Notes", blockers)
+        put("Updated At", updatedAt)
+    }
+
+    companion object {
+        fun fromJson(obj: JSONObject): DailyReportRecord = DailyReportRecord(
+            reportId = obj.optString("Report ID", obj.optString("reportId", "REP-${System.currentTimeMillis()}")),
+            date = obj.optString("Date", obj.optString("date", "")),
+            employeeId = obj.optString("Employee ID", obj.optString("employeeId", "")),
+            employeeName = obj.optString("Employee Name", obj.optString("employeeName", "")),
+            division = obj.optString("Division", obj.optString("division", "")),
+            poaSubmittedAt = obj.optString("POA Submitted At", obj.optString("poaSubmittedAt", "")),
+            poaTasksCount = obj.optInt("POA Tasks Count", obj.optInt("poaTasksCount", 0)),
+            poaPlanSummary = obj.optString("POA Plan Summary", obj.optString("poaPlanSummary", "")),
+            eodSubmittedAt = obj.optString("EOD Submitted At", obj.optString("eodSubmittedAt", "")),
+            callsTotal = obj.optInt("Calls Total", obj.optInt("callsTotal", 0)),
+            callsDurationMins = obj.optInt("Calls Duration Mins", obj.optInt("callsDurationMins", 0)),
+            newLeads = obj.optInt("New Leads", obj.optInt("newLeads", 0)),
+            followUpsDone = obj.optInt("Follow-ups Done", obj.optInt("followUpsDone", 0)),
+            propertiesAdded = obj.optInt("Properties Added", obj.optInt("propertiesAdded", 0)),
+            propertiesVerified = obj.optInt("Properties Verified", obj.optInt("propertiesVerified", 0)),
+            siteVisits = obj.optInt("Site Visits", obj.optInt("siteVisits", 0)),
+            proposalsShared = obj.optInt("Proposals Shared", obj.optInt("proposalsShared", 0)),
+            poaScore = obj.optInt("POA Score", obj.optInt("poaScore", 0)),
+            keyWins = obj.optString("Key Wins / Hot Deals", obj.optString("keyWins", "")),
+            blockers = obj.optString("Blockers / Notes", obj.optString("blockers", "")),
+            updatedAt = obj.optString("Updated At", obj.optString("updatedAt", ""))
+        )
+    }
+}
+
+data class OnlineProjectPhotoCandidate(
+    val title: String,
+    val imageUrl: String,
+    val thumbnailUrl: String,
+    val source: String
+)
+
+
 
 
 

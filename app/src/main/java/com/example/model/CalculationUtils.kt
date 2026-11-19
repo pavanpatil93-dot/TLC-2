@@ -187,21 +187,36 @@ object CalculationUtils {
     }
 
     /**
-     * Parses currency input string supporting shorthand suffixes (K, L, Lac, Lakh, Cr, Crore) and raw digits.
+     * Parses currency input string supporting shorthand suffixes (K, L, Lac, Lakh, Cr, Crore),
+     * scientific notation (e.g. 1.4E8, 2.25E7), currency prefixes ("Rs.", "INR", "₹"), and raw digits.
      */
     fun parseCurrencyInput(input: String): Double? {
         if (input.isBlank()) return null
-        val trimmed = input.trim().replace(",", "").replace("₹", "").trim()
-        val sciMatch = Regex("""^[+-]?\d+(?:\.\d+)?[eE][+-]?\d+$""").matches(trimmed)
-        if (sciMatch) {
-            return trimmed.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
+        val cleaned = input.trim()
+            .replace(",", "")
+            .replace("₹", "")
+            .replace(Regex("""\b(?:rs\.?|inr)\b""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""/\s*mo(?:nth)?|\bper\s+month\b|\bmonthly\b""", RegexOption.IGNORE_CASE), "")
+            .trim()
+        if (cleaned.isBlank()) return null
+
+        val exactSciMatch = Regex("""^[+-]?\d+(?:\.\d+)?[eE][+-]?\d+$""").matches(cleaned)
+        if (exactSciMatch) {
+            return cleaned.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
         }
-        val clean = trimmed.lowercase(Locale.ENGLISH)
-        val numPart = clean.filter { it.isDigit() || it == '.' }.toDoubleOrNull() ?: return null
+
+        val match = Regex(
+            """([+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*(crores?|cr\.?|lakhs?|lacs?|l\.?|thousands?|k)?""",
+            RegexOption.IGNORE_CASE
+        ).find(cleaned) ?: return null
+
+        val numPart = match.groupValues[1].toDoubleOrNull() ?: return null
+        if (!numPart.isFinite()) return null
+        val unitPart = match.groupValues[2].lowercase(Locale.ENGLISH).trimEnd('.')
         return when {
-            clean.contains("cr") || clean.contains("crore") -> numPart * 10_000_000.0
-            clean.contains("l") || clean.contains("lac") || clean.contains("lakh") -> numPart * 100_000.0
-            clean.contains("k") || clean.contains("thousand") -> numPart * 1_000.0
+            unitPart.startsWith("cr") -> numPart * 10_000_000.0
+            unitPart == "l" || unitPart.startsWith("lac") || unitPart.startsWith("lakh") -> numPart * 100_000.0
+            unitPart == "k" || unitPart.startsWith("thousand") -> numPart * 1_000.0
             else -> numPart
         }
     }
@@ -238,16 +253,38 @@ object CalculationUtils {
     }
 
     /**
+     * Normalizes bare Crore figures (e.g., 14.0 or 22.0 from "14 Cr" / "22 Cr") into full INR rupees.
+     * In real estate Sale / Pre-Leased listings, no property costs between ₹0.25 and ₹500 total rupees.
+     */
+    fun normalizeSalePriceInr(raw: Double): Double {
+        if (!raw.isFinite() || raw <= 0.0) return 0.0
+        return if (raw in 0.25..500.0) raw * 10_000_000.0 else raw
+    }
+
+    /**
+     * Resolves the effective sale price in full INR rupees for a property.
+     */
+    fun effectiveSaleAmount(property: PropertyItem): Double {
+        val raw = property.priceSale?.takeIf { it > 0.0 }
+            ?: if (!property.tab.isRental) property.priceOrRent else 0.0
+        return normalizeSalePriceInr(raw)
+    }
+
+    /**
      * Resolves the primary financial amount for a property (Monthly Rent for Lease; Asking Price for Sale/Pre-Leased).
      */
     fun primaryAmountForProperty(property: PropertyItem): Double {
         val stdTx = StandardTransactionType.fromString(property.transactionType, property.tab)
-        val raw = when (stdTx) {
-            StandardTransactionType.LEASE -> property.rent?.takeIf { it > 0.0 } ?: property.priceOrRent
-            StandardTransactionType.SALE, StandardTransactionType.PRE_LEASED_SALE ->
-                property.priceSale?.takeIf { it > 0.0 } ?: property.priceOrRent
+        return when (stdTx) {
+            StandardTransactionType.LEASE -> {
+                val raw = property.rent?.takeIf { it > 0.0 } ?: property.priceOrRent
+                if (raw.isFinite() && raw > 0.0) raw else 0.0
+            }
+            StandardTransactionType.SALE, StandardTransactionType.PRE_LEASED_SALE -> {
+                val raw = property.priceSale?.takeIf { it > 0.0 } ?: property.priceOrRent
+                normalizeSalePriceInr(raw)
+            }
         }
-        return if (raw.isFinite() && raw > 0.0) raw else 0.0
     }
 
     /**

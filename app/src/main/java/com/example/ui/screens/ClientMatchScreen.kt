@@ -29,9 +29,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ai.ClientMatchCategory
 import com.example.ai.GeminiRealEstateService
+import com.example.data.projects.DirectoryProject
+import com.example.inventory.InventoryQuality
 import com.example.model.*
 import com.example.ui.components.PropertyCard
 import com.example.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ClientMatchScreen(
@@ -42,15 +47,85 @@ fun ClientMatchScreen(
     onViewMatchesOnMap: ((List<PropertyItem>) -> Unit)? = null,
     initialRequirement: String? = null,
     brandName: String = "REAL ESTATE INVENTORY PORTAL",
-    contactNumbers: String = "9766880099 | 9766668099"
+    contactNumbers: String = "9766880099 | 9766668099",
+    directoryProjects: List<DirectoryProject> = emptyList(),
+    onOpenProjectById: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val aiService = remember { GeminiRealEstateService() }
+
+    var searchableInventory by remember { mutableStateOf(tenantInventory) }
+    LaunchedEffect(tenantInventory, directoryProjects) {
+        searchableInventory = withContext(Dispatchers.Default) {
+            val representedKeys = HashSet<String>()
+            for (prop in tenantInventory) {
+                if (InventoryQuality.isBuilderProjectStock(prop)) {
+                    if (prop.projectId.isNotBlank()) representedKeys.add(prop.projectId.lowercase())
+                    if (prop.projectName.isNotBlank()) representedKeys.add(prop.projectName.lowercase())
+                }
+            }
+            val projectStocks = directoryProjects.mapNotNull { proj ->
+                val alreadyRepresented = representedKeys.contains(proj.id.lowercase()) ||
+                    representedKeys.contains(proj.name.lowercase()) ||
+                    tenantInventory.any { prop ->
+                        InventoryQuality.isBuilderProjectStock(prop) && proj.matchesProperty(prop)
+                    }
+                if (alreadyRepresented) return@mapNotNull null
+
+                val rentFrom = proj.raw.optString("rentFrom").takeIf { it.isNotBlank() }
+                    ?.let { CalculationUtils.parseCurrencyInput(it) } ?: 0.0
+                val priceFrom = proj.raw.optString("priceFrom").takeIf { it.isNotBlank() }
+                    ?.let { CalculationUtils.parseCurrencyInput(it) }
+                    ?.let { CalculationUtils.normalizeSalePriceInr(it) }
+                    ?: proj.priceRange.takeIf { it.isNotBlank() }
+                        ?.let { CalculationUtils.parseCurrencyInput(it) }
+                        ?.let { CalculationUtils.normalizeSalePriceInr(it) }
+                    ?: 0.0
+
+                val areaSource = proj.areaRange.ifBlank { proj.raw.optString("publishedAreaRange") }
+                val areaNum = Regex("""\d[\d,]*(?:\.\d+)?""").find(areaSource)?.value
+                    ?.replace(",", "")?.toDoubleOrNull() ?: 0.0
+                val isComm = proj.division.equals("commercial", ignoreCase = true)
+                val useRent = isComm && rentFrom > 0.0 && priceFrom <= 0.0
+                val tab = when {
+                    isComm && useRent -> InventoryTab.OFF_LEASE
+                    isComm -> InventoryTab.OFF_OUT
+                    else -> InventoryTab.RESI_RESALE
+                }
+                PropertyItem(
+                    id = "PROJ_STOCK_${proj.id}",
+                    recordId = "TLC-PRJ-${proj.id}",
+                    propertyCode = proj.id,
+                    projectId = proj.id,
+                    projectName = proj.name,
+                    location = proj.location.ifBlank { "Pune" },
+                    builderName = proj.developer.ifBlank { null },
+                    propertyType = proj.category.ifBlank { if (isComm) "Office" else "Apartment" },
+                    bhk = proj.configurations.takeIf { it.isNotBlank() },
+                    tab = tab,
+                    carpetAreaSqFt = areaNum,
+                    priceOrRent = if (useRent) rentFrom else priceFrom,
+                    priceSale = if (!useRent && priceFrom > 0.0) priceFrom else null,
+                    rent = if (useRent && rentFrom > 0.0) rentFrom else null,
+                    possession = proj.possession.ifBlank { "Under Construction" },
+                    status = AvailabilityStatus.AVAILABLE,
+                    archiveStatus = ArchiveStatus.ACTIVE,
+                    portfolio = if (isComm) "Commercial" else "Residential",
+                    transactionType = if (useRent) "Lease" else "Sale",
+                    sourceInfo = "Builder Project Stock",
+                    images = listOfNotNull(proj.coverImageUrl.takeIf { it.startsWith("http") })
+                )
+            }
+            tenantInventory + projectStocks
+        }
+    }
 
     var requirementInput by remember(initialRequirement) {
         mutableStateOf(initialRequirement?.ifBlank { null } ?: "Client needs a fully furnished office in Kharadi, 1,000 to 1,500 carpet, rent under ₹1 lakh, minimum 15 workstations, immediate possession.")
     }
     var hasSearched by remember { mutableStateOf(false) }
+    var isMatching by remember { mutableStateOf(false) }
     var matchCategories by remember { mutableStateOf<List<ClientMatchCategory>>(emptyList()) }
     var selectedShortlist by remember { mutableStateOf<Set<String>>(emptySet()) }
 
@@ -59,11 +134,20 @@ fun ClientMatchScreen(
     var promptStyle by remember { mutableStateOf("Make a premium short WhatsApp message") }
     var generatedWhatsAppText by remember { mutableStateOf("") }
 
-    // Run client matching on inventory
+    // Run client matching on BOTH Direct Units & Builder Stock off Main thread
     fun runMatching() {
-        if (requirementInput.isNotBlank()) {
-            matchCategories = aiService.matchClientRequirementsCategorized(requirementInput, tenantInventory)
-            hasSearched = true
+        val queryText = requirementInput
+        val snapshot = searchableInventory
+        if (queryText.isNotBlank()) {
+            isMatching = true
+            coroutineScope.launch {
+                val results = withContext(Dispatchers.Default) {
+                    aiService.matchClientRequirementsCategorized(queryText, snapshot)
+                }
+                matchCategories = results
+                hasSearched = true
+                isMatching = false
+            }
         }
     }
 
@@ -113,7 +197,7 @@ fun ClientMatchScreen(
                 if (selectedShortlist.isNotEmpty()) {
                     Button(
                         onClick = {
-                            val selectedProps = tenantInventory.filter { selectedShortlist.contains(it.id) }
+                            val selectedProps = searchableInventory.filter { selectedShortlist.contains(it.id) }
                             generatedWhatsAppText = aiService.generateCustomWhatsAppPitch(
                                 properties = selectedProps,
                                 promptStyle = promptStyle,
@@ -156,8 +240,12 @@ fun ClientMatchScreen(
             )
 
             Spacer(modifier = Modifier.height(6.dp))
-            Button(onClick = { runMatching() }, enabled = requirementInput.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                Text("Find Matching Properties")
+            Button(
+                onClick = { runMatching() },
+                enabled = requirementInput.isNotBlank() && !isMatching,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (isMatching) "Matching Properties..." else "Find Matching Properties")
             }
             if (hasSearched) {
                 Text(if (matchCategories.isEmpty()) "No matching properties found. Try changing your requirement."
@@ -209,7 +297,7 @@ fun ClientMatchScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             matchCategories.forEach { category ->
-                item {
+                item(key = "cat_${category.categoryName}") {
                     Text(
                         text = category.categoryName.uppercase(),
                         color = when {
@@ -225,6 +313,15 @@ fun ClientMatchScreen(
 
                 items(category.results, key = { it.property.id }) { match ->
                     val isShortlisted = selectedShortlist.contains(match.property.id)
+                    val isBuilderStock = InventoryQuality.isBuilderProjectStock(match.property) ||
+                        match.property.id.startsWith("PROJ_STOCK_")
+                    val openMatchTarget: () -> Unit = {
+                        if (match.property.id.startsWith("PROJ_STOCK_") && onOpenProjectById != null) {
+                            onOpenProjectById(match.property.projectId)
+                        } else {
+                            onPropertyClick(match.property)
+                        }
+                    }
 
                     Card(
                         modifier = Modifier
@@ -234,7 +331,7 @@ fun ClientMatchScreen(
                                 if (isShortlisted) BrandGold else BrandCharcoalBorder,
                                 RoundedCornerShape(12.dp)
                             )
-                            .clickable { onPropertyClick(match.property) },
+                            .clickable { openMatchTarget() },
                         colors = CardDefaults.cardColors(containerColor = BrandCharcoalSurface)
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
@@ -243,7 +340,10 @@ fun ClientMatchScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(6.dp))
@@ -253,22 +353,60 @@ fun ClientMatchScreen(
                                         Text(match.property.propertyCode, color = BrandGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                     }
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text(match.property.projectName, color = TextPrimaryDark, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = match.property.projectName,
+                                        color = TextPrimaryDark,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1
+                                    )
                                 }
 
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(if (match.matchScorePercent >= 80) StatusAvailable.copy(alpha = 0.2f) else BrandGold.copy(alpha = 0.2f))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Text("${match.matchScorePercent}% Match", color = if (match.matchScorePercent >= 80) StatusAvailable else BrandGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(
+                                                if (isBuilderStock) BrandGold.copy(alpha = 0.22f)
+                                                else StatusAvailable.copy(alpha = 0.18f)
+                                            )
+                                            .border(
+                                                0.8.dp,
+                                                if (isBuilderStock) BrandGold else StatusAvailable,
+                                                RoundedCornerShape(6.dp)
+                                            )
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isBuilderStock) "Builder Stock" else "Direct Unit",
+                                            color = if (isBuilderStock) BrandGold else StatusAvailable,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(if (match.matchScorePercent >= 80) StatusAvailable.copy(alpha = 0.2f) else BrandGold.copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("${match.matchScorePercent}% Match", color = if (match.matchScorePercent >= 80) StatusAvailable else BrandGold, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
 
                             Spacer(modifier = Modifier.height(4.dp))
+                            val areaDisplay = if (match.property.carpetAreaSqFt > 0.0) {
+                                "${match.property.carpetAreaSqFt.toInt()} sq.ft"
+                            } else "Area flexible"
+                            val priceDisplay = if (match.property.priceOrRent > 0.0) {
+                                CalculationUtils.formatIndianCurrency(match.property.priceOrRent, match.property.tab.isRental)
+                            } else "Price on request"
                             Text(
-                                text = "${match.property.location} • ${match.property.carpetAreaSqFt.toInt()} sq.ft • ${CalculationUtils.formatIndianCurrency(match.property.priceOrRent, match.property.tab.isRental)}",
+                                text = "${match.property.location} • $areaDisplay • $priceDisplay",
                                 color = TextSecondaryDark,
                                 fontSize = 12.sp
                             )
@@ -311,14 +449,14 @@ fun ClientMatchScreen(
 
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     OutlinedButton(
-                                        onClick = { onPropertyClick(match.property) },
+                                        onClick = openMatchTarget,
                                         shape = RoundedCornerShape(6.dp),
                                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                         modifier = Modifier.height(30.dp),
                                         colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimaryDark),
                                         border = androidx.compose.foundation.BorderStroke(0.8.dp, BrandCharcoalBorder)
                                     ) {
-                                        Text("View", fontSize = 11.sp)
+                                        Text(if (match.property.id.startsWith("PROJ_STOCK_")) "Open Project" else "View", fontSize = 11.sp)
                                     }
 
                                     Button(
@@ -343,7 +481,7 @@ fun ClientMatchScreen(
 
     // AI WHATSAPP CONTENT GENERATOR MODAL
     if (showWhatsAppGenerator) {
-        val selectedProps = tenantInventory.filter { selectedShortlist.contains(it.id) }
+        val selectedProps = searchableInventory.filter { selectedShortlist.contains(it.id) }
 
         AlertDialog(
             onDismissRequest = { showWhatsAppGenerator = false },

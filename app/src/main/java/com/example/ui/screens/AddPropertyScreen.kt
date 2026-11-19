@@ -40,6 +40,7 @@ import com.example.inventory.CompletenessColorTier
 import com.example.inventory.InventoryQuality
 import com.example.model.*
 import com.example.ui.components.CompactDropdownField
+import com.example.ui.components.PocTypeChipSelector
 import com.example.ui.components.PropertyMediaUploadSection
 import com.example.ui.components.SearchableDropdownField
 import com.example.ui.theme.*
@@ -81,7 +82,12 @@ fun AddPropertyScreen(
     onGenerateCode: (InventoryTab) -> String,
     onCancel: () -> Unit,
     onUploadMediaToDrive: (suspend (propertyId: String, fileName: String, mimeType: String, bytes: ByteArray) -> Result<String>)? = null,
-    onPushPropertyToSheet: (suspend (PropertyItem) -> Result<Unit>)? = null
+    onPushPropertyToSheet: (suspend (PropertyItem) -> Result<Unit>)? = null,
+    initialOwnerName: String = "",
+    initialOwnerPhone: String = "",
+    initialRemarks: String = "",
+    initialPocType: String = "Property Owner",
+    fromCallIntelligence: Boolean = false
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -172,10 +178,11 @@ fun AddPropertyScreen(
     var formBhkConfig by remember { mutableStateOf("3 BHK") }
 
     // Confidential Owner / Source
+    var formPocType by remember(initialPocType) { mutableStateOf(initialPocType.ifBlank { "Property Owner" }) }
     var formSourceType by remember { mutableStateOf("Direct Owner / Landlord") }
-    var formOwnerName by remember { mutableStateOf("") }
-    var formOwnerContact by remember { mutableStateOf("") }
-    var formRemarks by remember { mutableStateOf("") }
+    var formOwnerName by remember(initialOwnerName) { mutableStateOf(initialOwnerName) }
+    var formOwnerContact by remember(initialOwnerPhone) { mutableStateOf(initialOwnerPhone) }
+    var formRemarks by remember(initialRemarks) { mutableStateOf(initialRemarks) }
     var formGoogleMapsLink by remember { mutableStateOf("") }
 
     // Google Drive Media & Documents
@@ -254,13 +261,14 @@ fun AddPropertyScreen(
         formDeveloper, formUnitNo, formFloor, formPropertyType, selectedTab, formCategory,
         formTransactionType, carpetDouble, builtUpDouble, rentDouble, saleDouble, depositDouble,
         autoGrossYield, formPossession, formFurnishing, formStatus, formParking, formEscalation,
-        formLockInPeriod, formWorkstations, formCabins, formBhkConfig, formSourceType,
+        formLockInPeriod, formWorkstations, formCabins, formBhkConfig, formPocType, formSourceType,
         formOwnerName, formOwnerContact, formRemarks, formGoogleMapsLink,
         uploadedPhotos, uploadedAttachments, formVideoUrl, formFloorPlanUrl
     ) {
         val lockInMonths = formLockInPeriod.filter { it.isDigit() }.toIntOrNull()
         val escalationNum = formEscalation.substringBefore("%").trim().toDoubleOrNull()
-        val isBroker = formSourceType.contains("Broker", ignoreCase = true) ||
+        val isBroker = formPocType.equals("Broker", ignoreCase = true) ||
+            formSourceType.contains("Broker", ignoreCase = true) ||
             formSourceType.contains("Channel Partner", ignoreCase = true)
         PropertyItem(
             id = draftId,
@@ -298,6 +306,7 @@ fun AddPropertyScreen(
             ownerContact = if (!isBroker) formOwnerContact.trim().ifBlank { null } else null,
             brokerName = if (isBroker) formOwnerName.trim().ifBlank { null } else null,
             brokerContact = if (isBroker) formOwnerContact.trim().ifBlank { null } else null,
+            pocType = normalizePocType(formPocType),
             sourceInfo = listOf(formSourceType.trim(), formOwnerName.trim()).filter { it.isNotBlank() }.joinToString(" - "),
             remarks = formRemarks.trim().ifBlank { null },
             listingLink = formGoogleMapsLink.trim().ifBlank { uploadedPhotos.firstOrNull { it.startsWith("http") } },
@@ -405,13 +414,27 @@ fun AddPropertyScreen(
             val syncedVideo = syncedAttachments.firstOrNull { it.type == AttachmentType.VIDEO }?.localUriOrPath
                 ?: draftPropertyItem.videoUrl
 
-            val finalPropertyItem = draftPropertyItem.copy(
+            val baseFinalItem = draftPropertyItem.copy(
                 images = syncedPhotos,
                 attachments = syncedAttachments,
                 floorPlanUrl = syncedFloorPlan,
                 videoUrl = syncedVideo,
                 listingLink = formGoogleMapsLink.trim().ifBlank { syncedPhotos.firstOrNull { it.startsWith("http") } }
             )
+            val isReadyLive = (fromCallIntelligence || initialOwnerPhone.isNotBlank()) &&
+                InventoryQuality.isReadyForLiveVerification(baseFinalItem)
+            val finalPropertyItem = if (isReadyLive) {
+                val todayIso = java.time.LocalDate.now().toString()
+                val todayReadable = java.text.SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH).format(java.util.Date())
+                baseFinalItem.copy(
+                    verificationStatus = VerificationStatus.VERIFIED,
+                    archiveStatus = ArchiveStatus.ACTIVE,
+                    lastVerifiedDateClean = baseFinalItem.lastVerifiedDateClean.ifBlank { todayIso },
+                    lastVerificationDate = baseFinalItem.lastVerificationDate.ifBlank { todayReadable }
+                )
+            } else {
+                baseFinalItem
+            }
 
             val savedLocally = onSaveProperty(finalPropertyItem)
             if (!savedLocally) {
@@ -1081,12 +1104,50 @@ fun AddPropertyScreen(
                         modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = "CONFIDENTIAL OWNER & SOURCE DETAILS",
-                            color = FocusOutlineColor,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 0.6.sp
+                        val pickAddContact = com.example.crm.rememberPickContactCallback { pickedName, cleanPhone ->
+                            if (pickedName.isNotBlank()) formOwnerName = pickedName
+                            if (cleanPhone.isNotBlank()) formOwnerContact = cleanPhone
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "CONFIDENTIAL OWNER & SOURCE DETAILS",
+                                color = FocusOutlineColor,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.6.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(
+                                onClick = pickAddContact,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.testTag("add_pick_from_contacts_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContactPhone,
+                                    contentDescription = "Pick from Contacts",
+                                    tint = PrimaryActionOrange,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = "Pick from Contacts",
+                                    color = PrimaryActionOrange,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        PocTypeChipSelector(
+                            selectedPocType = formPocType,
+                            onSelect = { formPocType = it },
+                            title = "Type of POC",
+                            testTagPrefix = "add_poc_chip"
                         )
 
                         // Row 9a: Owner / POC | Contact Number

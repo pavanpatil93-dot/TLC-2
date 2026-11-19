@@ -7,6 +7,17 @@
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <!-- Optional runtime permission to detect call completion transitions safely. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <!-- Optional runtime permission to read phone numbers when user picks a contact. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Optional runtime permission to auto-save linked TLC callers to Google Contacts. -->
+    <uses-permission android:name="android.permission.WRITE_CONTACTS" />
+    <!-- Location permission for Near Me 2km/5km GPS radius mode -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- In-app APK update installer permission for TLC_App_Updates -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Android 13+ runtime permission for Team Alerts notifications -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"

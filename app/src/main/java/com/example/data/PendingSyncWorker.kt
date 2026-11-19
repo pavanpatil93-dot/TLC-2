@@ -18,26 +18,36 @@ class PendingSyncWorker(appContext: Context, parameters: WorkerParameters) :
                 return@withContext Result.retry()
             }
             val queue = PropertiesLocalDatabase.loadPendingWrites(applicationContext)
-            if (queue.isEmpty() || !PendingSyncQueue.hasRetryableWrites(queue)) {
-                return@withContext Result.success()
-            }
-            val endpoint = applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
-                .getString("google_sheet_url", "").orEmpty()
+            val hasRetryable = queue.isNotEmpty() && PendingSyncQueue.hasRetryableWrites(queue)
+            val rawEndpoint = applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                .getString("google_sheet_url", "")?.trim().orEmpty()
+            val endpoint = rawEndpoint.ifBlank { SheetsRepository.DEFAULT_MASTER_SHEET_URL }
             if (!BackgroundSyncScheduler.validEndpoint(endpoint)) {
                 return@withContext Result.success()
             }
-            if (PendingSyncQueue.nextDue(queue, System.currentTimeMillis()) == null) {
-                return@withContext Result.retry()
-            }
+
             // Never start the screen repository's persistent polling loops in a worker.
             val repository = SheetsRepository(applicationContext, startForegroundSync = false)
-            // Leave room for a bounded in-progress HTTP request before Android's
-            // worker execution limit. Remaining operations stay durable for retry.
             val deadline = System.currentTimeMillis() + 2 * 60 * 1000L
             try {
                 withTimeout(120000L) {
-                    toWorkResult(repository.retryPendingWrites(
-                        deadlineMillis = deadline, maxOperations = 3))
+                    var writeResult = ListenableWorker.Result.success()
+                    if (hasRetryable) {
+                        if (PendingSyncQueue.nextDue(queue, System.currentTimeMillis()) == null) {
+                            return@withTimeout ListenableWorker.Result.retry()
+                        }
+                        writeResult = toWorkResult(
+                            repository.retryPendingWrites(
+                                deadlineMillis = deadline,
+                                maxOperations = 3
+                            )
+                        )
+                    }
+                    // Every 15 minutes (or when stale), silently pull Master Sheet datasets to local filesDir cache and run team alert diff
+                    if (repository.isSyncStale()) {
+                        runCatching { repository.syncWithGoogleSheetNow() }
+                    }
+                    writeResult
                 }
             } finally {
                 repository.close()

@@ -78,6 +78,39 @@ object InventoryQuality {
     }
 
     /**
+     * Identifies project-level / bulk developer Builder Stock rows that belong inside the Projects
+     * directory & Project Detail screens rather than Direct Unit Inventory (ExploreScreen).
+     * Never misclassifies an actual unit that has a specific unitNumber.
+     */
+    fun isBuilderProjectStock(property: PropertyItem): Boolean {
+        val ids = listOf(property.id, property.propertyCode, property.recordId)
+        if (ids.any { it.trim().startsWith("TLC-PRJ-", ignoreCase = true) }) {
+            return true
+        }
+        val hasUnit = isMeaningfulText(property.unitNumber)
+        if (hasUnit) return false
+        if (property.projectId?.trim()?.startsWith("TLC-PRJ-", ignoreCase = true) == true) {
+            return true
+        }
+        val markers = listOfNotNull(
+            property.sourceInfo,
+            property.remarks,
+            property.internalRemarks,
+            property.unmappedColumns["Listing Scope"],
+            property.unmappedColumns["Inventory Type"],
+            property.unmappedColumns["Record Type"]
+        )
+        return markers.any { raw ->
+            val lower = raw.lowercase()
+            lower.contains("builder stock") ||
+                lower.contains("builder project stock") ||
+                lower.contains("developer stock") ||
+                lower.contains("developer bulk") ||
+                lower.contains("bulk stock")
+        }
+    }
+
+    /**
      * Strict 100% minimum required details required to promote an archived property to Verified & Live.
      */
     fun minimumRequiredMissingFields(property: PropertyItem): List<String> = buildList {
@@ -108,6 +141,28 @@ object InventoryQuality {
 
     fun isReadyForLiveVerification(property: PropertyItem): Boolean =
         minimumRequiredMissingFields(property).isEmpty()
+
+    /**
+     * Strict 4-rule check for whether a property belongs in the "Live" (or "Verified") tab:
+     * 1) Not archived and not Sold Out / Leased Out / Not Available / Withdrawn.
+     * 2) Availability Status is confirmed (never NOT_CONFIRMED / blank).
+     * 3) Verification / Listing Status is Verified (not Pending).
+     * 4) 100% of "Required to Go Live" fields are complete (missingRequiredCount == 0).
+     */
+    fun isStrictlyLive(property: PropertyItem): Boolean {
+        if (property.archiveStatus == ArchiveStatus.ARCHIVED) return false
+        if (property.status in setOf(
+                com.example.model.AvailabilityStatus.NOT_CONFIRMED,
+                com.example.model.AvailabilityStatus.SOLD,
+                com.example.model.AvailabilityStatus.LEASED,
+                com.example.model.AvailabilityStatus.NOT_AVAILABLE,
+                com.example.model.AvailabilityStatus.WITHDRAWN
+            )
+        ) return false
+        if (property.status.label.isBlank()) return false
+        if (property.verificationStatus != com.example.model.VerificationStatus.VERIFIED) return false
+        return minimumRequiredMissingFields(property).isEmpty()
+    }
 
     fun date(value: String): LocalDate? = runCatching { LocalDate.parse(value) }.getOrNull()
 
@@ -145,6 +200,7 @@ object InventoryQuality {
      * Never invents a source name and hides confidential names when [isAuthorized] is false.
      */
     fun resolveSourceInfo(property: PropertyItem, isAuthorized: Boolean): SourceBadgeInfo {
+        val rawPoc = normalizePocType(property.pocType).lowercase()
         val rawSource = property.sourceInfo?.trim().orEmpty()
         val srcLower = rawSource.lowercase()
         val hasBroker = isMeaningfulText(property.brokerName)
@@ -152,6 +208,9 @@ object InventoryQuality {
         val hasOwner = isMeaningfulText(property.ownerName)
 
         val badgeType = when {
+            rawPoc.contains("developer") || rawPoc.contains("builder") -> SourceBadgeType.DEVELOPER
+            rawPoc.contains("broker") || rawPoc.contains("cp") -> SourceBadgeType.CP_BROKER
+            rawPoc.contains("owner") -> SourceBadgeType.OWNER
             srcLower.contains("developer") || srcLower.contains("builder") ||
                 (hasBuilder && !hasOwner && !hasBroker) -> SourceBadgeType.DEVELOPER
             srcLower.contains("broker") || srcLower.contains("cp") ||

@@ -48,12 +48,15 @@ fun ProjectDetailScreen(
     onOpenProperty: (PropertyItem) -> Unit,
     onAddUnitForProject: (UnderConstProject) -> Unit,
     onEditProject: ((UnderConstProject) -> Unit)? = null,
-    onViewOnMap: ((UnderConstProject) -> Unit)? = null
+    onViewOnMap: ((UnderConstProject) -> Unit)? = null,
+    onPromoteUnit: ((PropertyItem) -> Unit)? = null,
+    onDeleteProjectPermanently: ((UnderConstProject) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val userSettingsManager = remember(context) { UserSettingsManager(context) }
     val userProfile by userSettingsManager.userProfile.collectAsState()
+    val canPermanentDelete = isInternalMode && userProfile.isAdminOrSuperAdmin
 
     // State persistence keyed by project.id
     val listState = rememberSaveable(project.id, saver = LazyListState.Saver) { LazyListState() }
@@ -65,10 +68,13 @@ fun ProjectDetailScreen(
     var showAllAmenities by rememberSaveable(project.id) { mutableStateOf(false) }
     var overflowMenuExpanded by remember { mutableStateOf(false) }
     var showVerificationSheet by rememberSaveable(project.id) { mutableStateOf(false) }
+    var showPromoteDialog by remember { mutableStateOf(false) }
+    var promotePrefillStock by remember { mutableStateOf<PropertyItem?>(null) }
+    var showPermanentDeleteDialog by remember { mutableStateOf(false) }
 
-    // Confirmed section sequence: Overview -> Configurations -> Amenities -> Units -> Documents
+    // Confirmed section sequence: Overview -> Builder Stock -> Amenities -> Units -> Documents
     val sections = remember {
-        listOf("Overview", "Configurations", "Amenities", "Units", "Documents")
+        listOf("Overview", "Builder Stock", "Amenities", "Units", "Documents")
     }
 
     // Track programmatic tab clicks so the slider line moves smoothly without jitter during scroll animation
@@ -121,12 +127,18 @@ fun ProjectDetailScreen(
 
     val activeSectionIndex = programmaticTargetSection ?: scrollDetectedSectionIndex
 
-    // Resolve linked units from allProperties
-    val linkedUnits = remember(project, allProperties) {
+    // Resolve matched properties and separate Builder Stock vs Direct Units
+    val matchedProjectProperties = remember(project, allProperties) {
         allProperties.filter { prop ->
             prop.projectId == project.projectCode ||
                 prop.projectName.trim().equals(project.projectName.trim(), ignoreCase = true)
         }
+    }
+    val builderStockRows = remember(matchedProjectProperties) {
+        matchedProjectProperties.filter { com.example.inventory.InventoryQuality.isBuilderProjectStock(it) }
+    }
+    val linkedUnits = remember(matchedProjectProperties, builderStockRows) {
+        matchedProjectProperties.filterNot { com.example.inventory.InventoryQuality.isBuilderProjectStock(it) }
     }
 
     // Effective configurations: use project.configurations if recorded, otherwise synthesize from linkedUnits so configuration details always appear
@@ -169,6 +181,7 @@ fun ProjectDetailScreen(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             // ── 1. THEME & COMPACT STICKY TOP TOOLBAR ──
             Surface(
@@ -319,6 +332,30 @@ fun ProjectDetailScreen(
                                         Icon(Icons.Default.Verified, contentDescription = null, tint = PrimaryActionOrange)
                                     }
                                 )
+                                if (canPermanentDelete) {
+                                    HorizontalDivider(color = BorderSubtle)
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                "Delete Permanently",
+                                                color = StatusDangerRed,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        },
+                                        onClick = {
+                                            overflowMenuExpanded = false
+                                            showPermanentDeleteDialog = true
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.DeleteForever,
+                                                contentDescription = null,
+                                                tint = StatusDangerRed
+                                            )
+                                        },
+                                        modifier = Modifier.testTag("project_detail_delete_permanently_menu_item")
+                                    )
+                                }
                             }
                         }
                     }
@@ -332,8 +369,9 @@ fun ProjectDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .navigationBarsPadding()
                 .testTag("project_detail_scroll_root"),
-            contentPadding = PaddingValues(bottom = 88.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // ── ITEM 0: SCROLLABLE PROJECT TITLE HEADER ──
@@ -462,7 +500,7 @@ fun ProjectDetailScreen(
                             selectedTabIndex = activeSectionIndex.coerceIn(0, sections.lastIndex),
                             containerColor = SurfaceWhite,
                             contentColor = TextPrimary,
-                            edgePadding = 12.dp,
+                            edgePadding = 8.dp,
                             indicator = { tabPositions ->
                                 val safeIndex = activeSectionIndex.coerceIn(0, sections.lastIndex)
                                 if (safeIndex < tabPositions.size) {
@@ -505,10 +543,11 @@ fun ProjectDetailScreen(
                                     Text(
                                         text = sectionTitle,
                                         color = textColor,
-                                        fontSize = 13.sp,
+                                        fontSize = 12.5.sp,
                                         fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
                                         maxLines = 1,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
+                                        softWrap = false,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp)
                                     )
                                 }
                             }
@@ -670,10 +709,84 @@ fun ProjectDetailScreen(
                 ) {
                     SectionHeaderWithSliderBadge(
                         stepNumber = 2,
-                        title = "Configuration Details (${displayConfigurations.size})",
+                        title = "Builder Stock / Configurations (${displayConfigurations.size + builderStockRows.size})",
                         nextHint = "Scroll down for Amenities ↓",
                         isActive = activeSectionIndex == 1
                     )
+
+                    if (onPromoteUnit != null) {
+                        Button(
+                            onClick = {
+                                promotePrefillStock = builderStockRows.firstOrNull()
+                                showPromoteDialog = true
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("uc_promote_specific_unit_btn"),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PrimaryActionOrange,
+                                contentColor = OnPrimaryActionColor
+                            )
+                        ) {
+                            Icon(Icons.Default.AddBusiness, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("+ Promote Specific Unit to Inventory", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                        }
+                    }
+
+                    if (builderStockRows.isNotEmpty()) {
+                        builderStockRows.forEach { stock ->
+                            val amt = CalculationUtils.primaryAmountForProperty(stock)
+                            val priceLabel = if (amt > 0.0) {
+                                CalculationUtils.formatIndianCurrency(amt, stock.tab.isRental)
+                            } else {
+                                "Price on Request"
+                            }
+                            Surface(
+                                color = SurfaceWhite,
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, FocusOutlineColor.copy(alpha = 0.5f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                        Text(
+                                            text = "${stock.propertyType} · ${stock.bhk ?: stock.transactionType}",
+                                            color = TextPrimary,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "${if (stock.carpetAreaSqFt > 0.0) "${CalculationUtils.formatNumber(stock.carpetAreaSqFt)} sq.ft." else "Area on request"} · $priceLabel",
+                                            color = FocusOutlineColor,
+                                            fontSize = 12.5.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    if (onPromoteUnit != null) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                promotePrefillStock = stock
+                                                showPromoteDialog = true
+                                            },
+                                            shape = RoundedCornerShape(8.dp),
+                                            border = BorderStroke(1.dp, PrimaryActionOrange)
+                                        ) {
+                                            Text("Promote", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = PrimaryActionOrange)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     if (displayConfigurations.isEmpty()) {
                         Surface(
@@ -1066,9 +1179,16 @@ fun ProjectDetailScreen(
                         }
                     }
 
-                    // [+ Add Unit] Button
+                    // [+ Promote Specific Unit / Add Unit] Button
                     Button(
-                        onClick = { onAddUnitForProject(project) },
+                        onClick = {
+                            if (onPromoteUnit != null) {
+                                promotePrefillStock = builderStockRows.firstOrNull()
+                                showPromoteDialog = true
+                            } else {
+                                onAddUnitForProject(project)
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp),
@@ -1080,7 +1200,11 @@ fun ProjectDetailScreen(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Add Unit", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(
+                            if (onPromoteUnit != null) "+ Promote Specific Unit to Inventory" else "Add Unit",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
                     }
 
                     SectionSliderTransitionBar(
@@ -1172,6 +1296,113 @@ fun ProjectDetailScreen(
                 onDismiss = { showVerificationSheet = false },
                 onProjectUpdated = {
                     // Refreshed via repository state flow or local recomposition
+                }
+            )
+        }
+
+        if (showPromoteDialog && onPromoteUnit != null) {
+            val dirProj = remember(project) {
+                com.example.data.projects.DirectoryProject(
+                    id = project.projectCode.ifBlank { project.id },
+                    division = "residential",
+                    name = project.projectName,
+                    developer = project.builderName,
+                    location = project.location,
+                    category = "Residential",
+                    phase = "",
+                    configurations = project.configurations.joinToString(", ") { it.configName },
+                    areaRange = "",
+                    priceRange = "",
+                    possession = project.possessionYear,
+                    sourceUrl = "",
+                    otherSourceUrl = "",
+                    verification = project.status.label,
+                    coverImageUrl = project.photoGallery.firstOrNull().orEmpty(),
+                    galleryImageUrls = project.photoGallery,
+                    raw = org.json.JSONObject(),
+                    archiveStatus = "Active"
+                )
+            }
+            PromoteSpecificUnitDialog(
+                project = dirProj,
+                prefillStock = promotePrefillStock,
+                generatePropertyCode = { tab -> repository.generateNextCode(tab) },
+                onDismiss = { showPromoteDialog = false },
+                onConfirmPromote = { newUnit ->
+                    onPromoteUnit(newUnit)
+                    showPromoteDialog = false
+                    android.widget.Toast.makeText(
+                        context,
+                        "${newUnit.unitNumber} added to Direct Inventory",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            )
+        }
+
+        if (showPermanentDeleteDialog) {
+            val projLabel = listOf(
+                project.projectName,
+                project.projectCode.ifBlank { project.id }
+            ).filter { it.isNotBlank() }.distinct().joinToString(" / ")
+            AlertDialog(
+                onDismissRequest = { showPermanentDeleteDialog = false },
+                containerColor = SurfaceWhite,
+                title = {
+                    Text(
+                        "Delete Permanently",
+                        color = StatusDangerRed,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        "Permanently delete $projLabel from this device and the Master Google Sheet? This cannot be undone.",
+                        color = TextPrimary
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showPermanentDeleteDialog = false
+                            if (onDeleteProjectPermanently != null) {
+                                onDeleteProjectPermanently(project)
+                            } else {
+                                val deleted = repository.permanentlyDeleteUnderConstProject(project)
+                                if (deleted) {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "Deleted ${project.projectName} permanently",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                    onBack()
+                                } else {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "Delete blocked or failed.",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = StatusDangerRed,
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("project_confirm_permanent_delete_btn")
+                    ) {
+                        Text("Delete Permanently", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showPermanentDeleteDialog = false },
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    ) {
+                        Text("Cancel", color = TextPrimary)
+                    }
                 }
             )
         }

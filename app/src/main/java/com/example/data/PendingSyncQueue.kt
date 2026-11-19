@@ -295,4 +295,12 @@ object PendingSyncOpStore {
         val current = loadAll(context)
         return saveAll(context, current.filterNot { it.opId == opId })
     }
+
+    @Synchronized
+    fun removeForEntity(context: Context, entityId: String): Boolean {
+        if (entityId.isBlank()) return true
+        val current = loadAll(context)
+        val remaining = current.filterNot { it.entityId.equals(entityId, ignoreCase = true) }
+        return if (remaining.size == current.size) true else saveAll(context, remaining)
+    }
 }

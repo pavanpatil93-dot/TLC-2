@@ -176,5 +176,99 @@ class InventoryImportMappingRegressionTest {
         assertEquals(1, stats.skippedCount)
         assertEquals(1, repository.properties.value.size)
     }
+
+    @Test fun insertingTypeOfPocBeforeOwnerNeverShiftsCommercialOrResidentialFields() {
+        val comHeadersWithPoc = commercialHeaders.toMutableList().apply {
+            add(indexOf("Owner / POC"), "Type of POC")
+        }
+        val resHeadersWithPoc = residentialHeaders.toMutableList().apply {
+            add(indexOf("Owner / POC"), "Type of POC")
+        }
+
+        fun parseWithHeaders(headers: List<String>, fields: Map<String, String>, tabName: String): ImportPreviewRow {
+            fun quote(value: String) = "\"" + value.replace("\"", "\"\"") + "\""
+            val csv = headers.joinToString(",") { quote(it) } + "\n" +
+                headers.joinToString(",") { quote(fields[it].orEmpty()) }
+            return repository.parseCsvOrTextData(csv, tabName).single()
+        }
+
+        val comRow = parseWithHeaders(
+            comHeadersWithPoc,
+            office(
+                "Type of POC" to "Broker",
+                "Owner / POC" to "Rajesh Sharma",
+                "Owner Contact" to "9822001122",
+                "Source" to "Channel Partner",
+                "Remarks" to "Corner unit on 5th floor",
+                "Availability Status" to "Available"
+            ),
+            "Commercial Inventory"
+        )
+        assertEquals("Broker", comRow.pocType)
+        assertEquals("Rajesh Sharma", comRow.ownerName)
+        assertEquals("9822001122", comRow.ownerContact)
+        assertEquals("Channel Partner", comRow.sourceInfo)
+        assertEquals("Corner unit on 5th floor", comRow.remarks)
+        assertEquals(AvailabilityStatus.AVAILABLE, comRow.status)
+
+        val resRow = parseWithHeaders(
+            resHeadersWithPoc,
+            mapOf(
+                "Property ID" to "RES-POC-1",
+                "Location" to "Kharadi",
+                "Property Type" to "Apartment",
+                "Configuration" to "3 BHK",
+                "Transaction Type" to "Sale",
+                "Sale Price INR" to "20000000",
+                "Type of POC" to "Developer Sales Team",
+                "Owner / POC" to "Gera Sales Desk",
+                "Owner Contact" to "9850002211",
+                "Source" to "Builder Stock",
+                "Remarks" to "Immediate possession",
+                "Availability Status" to "Available"
+            ),
+            "Residential Inventory"
+        )
+        assertEquals("Developer Sales Team", resRow.pocType)
+        assertEquals("Gera Sales Desk", resRow.ownerName)
+        assertEquals("9850002211", resRow.ownerContact)
+        assertEquals("Builder Stock", resRow.sourceInfo)
+        assertEquals("Immediate possession", resRow.remarks)
+        assertEquals(AvailabilityStatus.AVAILABLE, resRow.status)
+
+        val stats = repository.importRowsDetailed(listOf(comRow, resRow))
+        assertEquals(2, stats.addedCount)
+        val savedCom = repository.properties.value.first { it.recordId == "COM-TEST-1" }
+        val savedRes = repository.properties.value.first { it.recordId == "RES-POC-1" }
+        assertEquals("Broker", savedCom.pocType)
+        assertEquals("Developer Sales Team", savedRes.pocType)
+    }
+
+    @Test fun arbitraryHeaderOrderMapsTypeOfPocAndContactsByName() {
+        val shuffledHeaders = listOf(
+            "Remarks", "Owner Contact", "Type of POC", "Location",
+            "Property Type", "Transaction Type", "Rent INR/Month",
+            "Availability Status", "Owner / POC", "Source", "Property ID", "Legacy Property Code"
+        )
+        val values = office(
+            "Type of POC" to "Property Owner",
+            "Owner / POC" to "Meera Kulkarni",
+            "Owner Contact" to "9922113344",
+            "Source" to "Direct Owner",
+            "Remarks" to "Single owner corporate floor",
+            "Availability Status" to "On Hold"
+        )
+        fun quote(value: String) = "\"" + value.replace("\"", "\"\"") + "\""
+        val csv = shuffledHeaders.joinToString(",") { quote(it) } + "\n" +
+            shuffledHeaders.joinToString(",") { quote(values[it].orEmpty()) }
+
+        val row = repository.parseCsvOrTextData(csv, "Commercial Inventory").single()
+        assertEquals("Property Owner", row.pocType)
+        assertEquals("Meera Kulkarni", row.ownerName)
+        assertEquals("9922113344", row.ownerContact)
+        assertEquals("Direct Owner", row.sourceInfo)
+        assertEquals("Single owner corporate floor", row.remarks)
+        assertEquals(AvailabilityStatus.ON_HOLD, row.status)
+    }
 }
 

@@ -1,6 +1,9 @@
 package com.example.data.projects
 
 import android.content.Context
+import com.example.inventory.InventoryQuality
+import com.example.model.CalculationUtils
+import com.example.model.PropertyItem
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -58,6 +61,95 @@ data class DirectoryProject(
         get() = archiveStatus.equals("Active", ignoreCase = true) &&
             verification.contains("Verified", ignoreCase = true) &&
             !verification.contains("Unverified", ignoreCase = true)
+
+    fun matchesProperty(prop: PropertyItem): Boolean {
+        val normProjName = name.trim()
+        val propProjName = prop.projectName.trim()
+        val rawMasterId = raw.optJSONObject("raw")?.optString("Source Master Project ID").orEmpty().trim()
+        val propProjectId = prop.projectId?.trim().orEmpty()
+        val propCode = prop.propertyCode.trim()
+        val propRecId = prop.recordId.trim()
+        return propProjectId.equals(id, ignoreCase = true) ||
+            (rawMasterId.isNotBlank() && (propProjectId.equals(rawMasterId, ignoreCase = true) ||
+                propCode.equals(rawMasterId, ignoreCase = true) ||
+                propRecId.equals(rawMasterId, ignoreCase = true))) ||
+            (normProjName.isNotBlank() && propProjName.equals(normProjName, ignoreCase = true))
+    }
+
+    fun salesPocDisplay(linkedStock: List<PropertyItem> = emptyList()): String {
+        val rawInner = raw.optJSONObject("raw")
+        val pocFromRaw = listOf(
+            raw.optString("salesPoc"),
+            raw.optString("Sales POC"),
+            raw.optString("Developer Sales POC"),
+            rawInner?.optString("Developer Sales POC").orEmpty(),
+            rawInner?.optString("Sales POC").orEmpty(),
+            rawInner?.optString("Developer POC").orEmpty(),
+            rawInner?.optString("Builder Contact").orEmpty()
+        ).firstOrNull { InventoryQuality.isMeaningfulText(it) }.orEmpty().trim()
+
+        val stockPoc = linkedStock.firstNotNullOfOrNull { stock ->
+            stock.ownerName?.trim()?.takeIf { InventoryQuality.isMeaningfulText(it) }
+                ?: stock.builderName?.trim()?.takeIf { InventoryQuality.isMeaningfulText(it) }
+        }.orEmpty()
+
+        val pocName = pocFromRaw.ifBlank { stockPoc }
+        return when {
+            developer.isNotBlank() && pocName.isNotBlank() && !pocName.equals(developer, ignoreCase = true) ->
+                "$developer · POC: $pocName"
+            pocName.isNotBlank() -> pocName
+            developer.isNotBlank() -> developer
+            else -> ""
+        }
+    }
+
+    fun summarySizeAndPriceRange(linkedStock: List<PropertyItem> = emptyList()): String {
+        val rawInner = raw.optJSONObject("raw")
+        val rawArea = areaRange.takeIf { InventoryQuality.isMeaningfulText(it) }
+            ?: raw.optString("publishedAreaRange").takeIf { InventoryQuality.isMeaningfulText(it) }
+            ?: rawInner?.optString("Published Area Range")?.takeIf { InventoryQuality.isMeaningfulText(it) }
+            ?: rawInner?.optString("Carpet Area (Sq.Ft)")?.takeIf { InventoryQuality.isMeaningfulText(it) }
+            ?: ""
+
+        val areaText = if (rawArea.isNotBlank()) {
+            if (rawArea.contains("sq", ignoreCase = true)) rawArea else "$rawArea sq.ft."
+        } else {
+            val stockAreas = linkedStock.map { it.carpetAreaSqFt }.filter { it > 0.0 }
+            if (stockAreas.isNotEmpty()) {
+                val minA = stockAreas.minOrNull() ?: 0.0
+                val maxA = stockAreas.maxOrNull() ?: 0.0
+                if (minA == maxA) "${CalculationUtils.formatNumber(minA)} sq.ft."
+                else "${CalculationUtils.formatNumber(minA)} - ${CalculationUtils.formatNumber(maxA)} sq.ft."
+            } else ""
+        }
+
+        val rawPrice = priceRange.takeIf { InventoryQuality.isMeaningfulText(it) }
+            ?: rawInner?.optString("Advertised Price Range")?.takeIf { InventoryQuality.isMeaningfulText(it) }
+            ?: ""
+
+        val priceFromRaw = raw.optString("priceFrom").takeIf { InventoryQuality.isMeaningfulText(it) }
+            ?.let { CalculationUtils.formatSmartIndianAmount(it, isMonthly = false) }
+            .orEmpty()
+        val rentFromRaw = raw.optString("rentFrom").takeIf { InventoryQuality.isMeaningfulText(it) }
+            ?.let { CalculationUtils.formatSmartIndianAmount(it, isMonthly = true) }
+            .orEmpty()
+
+        val stockPrices = linkedStock.map { CalculationUtils.primaryAmountForProperty(it) }.filter { it > 0.0 }
+        val stockPriceText = if (stockPrices.isNotEmpty()) {
+            val minP = stockPrices.minOrNull() ?: 0.0
+            val isRent = linkedStock.any { it.tab.isRental } && linkedStock.none { !it.tab.isRental }
+            "${CalculationUtils.formatIndianCurrency(minP, isRent)}+"
+        } else ""
+
+        val priceText = when {
+            rawPrice.isNotBlank() -> rawPrice
+            priceFromRaw.isNotBlank() -> if (priceFromRaw.endsWith("+")) priceFromRaw else "$priceFromRaw+"
+            rentFromRaw.isNotBlank() -> rentFromRaw
+            else -> stockPriceText
+        }
+
+        return listOf(areaText, priceText).filter { it.isNotBlank() }.joinToString(" · ")
+    }
 }
 
 object ProjectDirectoryStore {
@@ -103,18 +195,55 @@ object ProjectDirectoryStore {
         }
     }
 
+    @Volatile
+    private var cachedSnapshotKey: String? = null
+    @Volatile
+    private var cachedProjects: List<DirectoryProject>? = null
+
+    fun invalidateCache() {
+        cachedSnapshotKey = null
+        cachedProjects = null
+    }
+
     fun read(context: Context): List<DirectoryProject> {
+        val prefs = context.getSharedPreferences("project_directory_v1", Context.MODE_PRIVATE)
+        val local = prefs.getString("local_projects", "[]") ?: "[]"
+        val overridesRaw = prefs.getString("project_overrides", "{}") ?: "{}"
+        val deletedIds = (prefs.getStringSet("deleted_project_ids", emptySet()) ?: emptySet())
+            .map { it.trim().uppercase(Locale.US) }
+            .filter { it.isNotBlank() }
+            .toSet()
+        val commLen = java.io.File(context.filesDir, com.example.data.OfflineDiskCache.FILE_COMMERCIAL_PROJECTS).let { if (it.exists()) it.length() else -1L }
+        val resLen = java.io.File(context.filesDir, com.example.data.OfflineDiskCache.FILE_RESIDENTIAL_PROJECTS).let { if (it.exists()) it.length() else -1L }
+        val snapshotKey = "${context.filesDir.absolutePath}|${local.hashCode()}|${overridesRaw.hashCode()}|${deletedIds.hashCode()}|$commLen|$resLen"
+        val existing = cachedProjects
+        if (existing != null && cachedSnapshotKey == snapshotKey) {
+            return existing
+        }
+
         val seeded = context.resources.openRawResource(com.example.R.raw.project_directory_seed).use { stream ->
             GZIPInputStream(stream).bufferedReader().use { parse(it.readText()) }
         }
-        val prefs = context.getSharedPreferences("project_directory_v1", Context.MODE_PRIVATE)
-        val local = prefs.getString("local_projects", "[]") ?: "[]"
-        val overridesJson = JSONObject(prefs.getString("project_overrides", "{}") ?: "{}")
-        return (seeded + parse(local)).distinctBy { it.id }.map { project ->
+        val cachedComm = com.example.data.OfflineDiskCache.loadProjectsRaw(context, "commercial")
+            ?.let { raw -> runCatching { parse(raw) }.getOrNull() }
+            .orEmpty()
+        val cachedRes = com.example.data.OfflineDiskCache.loadProjectsRaw(context, "residential")
+            ?.let { raw -> runCatching { parse(raw) }.getOrNull() }
+            .orEmpty()
+        val overridesJson = JSONObject(overridesRaw)
+        val resolved = ((cachedComm + cachedRes) + parse(local) + seeded)
+            .distinctBy { it.id }
+            .filterNot { it.id.trim().uppercase(Locale.US) in deletedIds }
+            .map { project ->
             val overrideObj = overridesJson.optJSONObject(project.id)
             if (overrideObj == null) {
                 val isAlreadyVerified = project.verification.equals("Verified", ignoreCase = true)
-                val resolvedArchive = if (isAlreadyVerified && isReadyForLiveVerification(project)) "Active" else "Archived"
+                val explicitArchive = project.archiveStatus
+                val resolvedArchive = when {
+                    explicitArchive.equals("Active", ignoreCase = true) -> "Active"
+                    isAlreadyVerified && isReadyForLiveVerification(project) -> "Active"
+                    else -> "Archived"
+                }
                 project.copy(archiveStatus = resolvedArchive)
             } else {
                 val overrideCover = overrideObj.optString("coverImageUrl", project.coverImageUrl)
@@ -145,6 +274,86 @@ object ProjectDirectoryStore {
                 merged.copy(archiveStatus = resolvedArchive)
             }
         }
+        if (cachedComm.isEmpty() && cachedRes.isEmpty() && resolved.isNotEmpty()) {
+            com.example.data.OfflineDiskCache.saveProjects(context, resolved)
+        }
+        cachedSnapshotKey = snapshotKey
+        cachedProjects = resolved
+        return resolved
+    }
+
+    fun mergeSyncedProjectRows(context: Context, division: String, rows: List<List<String>>): Int {
+        if (rows.size < 2) return 0
+        val headers = rows.first()
+        val dataRows = rows.drop(1)
+        val normDiv = if (division.contains("res", ignoreCase = true)) "residential" else "commercial"
+
+        fun col(vararg aliases: String): Int {
+            for (a in aliases) {
+                val exact = headers.indexOfFirst { it.trim().equals(a, ignoreCase = true) }
+                if (exact >= 0) return exact
+            }
+            for (a in aliases) {
+                val partial = headers.indexOfFirst { it.trim().contains(a, ignoreCase = true) }
+                if (partial >= 0) return partial
+            }
+            return -1
+        }
+
+        val idIdx = col("id", "Project ID", "Project Code", "Record ID")
+        val nameIdx = col("name", "Project Name", "Project / Building", "Building Name")
+        val devIdx = col("developer", "Developer", "Builder", "Developer Name")
+        val locIdx = col("location", "Location", "Micro Market", "Locality")
+        val catIdx = col("category", "Category", "Property Type")
+        val phaseIdx = col("phase", "Phase", "Stage", "Status")
+        val configIdx = col("configurations", "Configuration", "Configurations")
+        val areaIdx = col("areaRange", "Area Range", "Carpet Area (Sq.Ft)")
+        val priceIdx = col("priceRange", "Price Range")
+        val possIdx = col("possession", "Possession")
+        val srcIdx = col("sourceUrl", "Source URL", "RERA URL")
+        val verIdx = col("verification", "Verification", "Verification Status")
+        val coverIdx = col("coverImageUrl", "Cover Image", "Cover Photo", "Photo URL")
+        val salesPocIdx = col("Sales POC", "Developer Sales POC", "Developer POC", "POC Name", "Contact Name")
+        val salesPhoneIdx = col("Sales POC Phone", "Developer Phone", "Builder Contact", "POC Contact")
+
+        val arr = JSONArray()
+        var count = 0
+        dataRows.forEachIndexed { idx, row ->
+            if (row.all { it.isBlank() }) return@forEachIndexed
+            val name = row.getOrNull(nameIdx)?.trim().orEmpty()
+            if (name.isBlank()) return@forEachIndexed
+            val id = row.getOrNull(idIdx)?.trim()?.ifBlank { null }
+                ?: "${if (normDiv == "commercial") "CP" else "RP"}-SH-${idx + 1}"
+            val obj = JSONObject().apply {
+                put("id", id)
+                put("division", normDiv)
+                put("name", name)
+                put("developer", row.getOrNull(devIdx)?.trim().orEmpty())
+                put("location", row.getOrNull(locIdx)?.trim().orEmpty())
+                put("category", row.getOrNull(catIdx)?.trim().orEmpty())
+                put("phase", row.getOrNull(phaseIdx)?.trim().orEmpty())
+                put("configurations", row.getOrNull(configIdx)?.trim().orEmpty())
+                put("areaRange", row.getOrNull(areaIdx)?.trim().orEmpty())
+                put("priceRange", row.getOrNull(priceIdx)?.trim().orEmpty())
+                put("possession", row.getOrNull(possIdx)?.trim().orEmpty())
+                put("sourceUrl", row.getOrNull(srcIdx)?.trim().orEmpty())
+                put("otherSourceUrl", "")
+                put("verification", row.getOrNull(verIdx)?.trim().orEmpty().ifBlank { "Unverified" })
+                val cover = row.getOrNull(coverIdx)?.trim().orEmpty()
+                if (cover.isNotBlank()) put("coverImageUrl", cover)
+                val salesPoc = row.getOrNull(salesPocIdx)?.trim().orEmpty()
+                if (salesPoc.isNotBlank()) put("salesPoc", salesPoc)
+                val salesPhone = row.getOrNull(salesPhoneIdx)?.trim().orEmpty()
+                if (salesPhone.isNotBlank()) put("salesPocPhone", salesPhone)
+            }
+            arr.put(obj)
+            count++
+        }
+        if (count > 0) {
+            com.example.data.OfflineDiskCache.saveProjectsJsonArray(context, normDiv, arr)
+            invalidateCache()
+        }
+        return count
     }
 
     fun minimumRequiredMissingFields(project: DirectoryProject): List<String> = buildList {
@@ -197,7 +406,79 @@ object ProjectDirectoryStore {
             check(prefs.edit().putString("local_projects", local.toString()).commit()) {
                 "Project was not saved"
             }
-            return parse(JSONArray().put(j).toString()).single()
+            invalidateCache()
+            val created = parse(JSONArray().put(j).toString()).single()
+            runCatching { com.example.data.OfflineDiskCache.saveProjects(context, read(context)) }
+            return created
+        }
+    }
+
+    /**
+     * Batch 21: Quick "+ Add New Project" creation from Call Intelligence ("Link to Project").
+     * Generates next sequential CP-XXXX or RP-XXXX Project Code, saves immediately to
+     * context.filesDir cache & prefs, and returns the created DirectoryProject.
+     */
+    fun createWithSequentialCode(
+        context: Context,
+        division: String,
+        name: String,
+        location: String,
+        developer: String,
+        contactName: String = "",
+        contactPhone: String = ""
+    ): DirectoryProject {
+        val cleanName = name.trim()
+        val cleanLocation = location.trim().ifBlank { "Pune" }
+        val normDiv = if (division.contains("res", ignoreCase = true)) "residential" else "commercial"
+        require(cleanName.isNotBlank()) { "Project name is required" }
+
+        val prefs = context.getSharedPreferences("project_directory_v1", Context.MODE_PRIVATE)
+        synchronized(this) {
+            val allExisting = read(context)
+            val duplicate = allExisting.firstOrNull {
+                it.division.equals(normDiv, ignoreCase = true) &&
+                    it.name.equals(cleanName, ignoreCase = true) &&
+                    (it.location.equals(cleanLocation, ignoreCase = true) || cleanLocation.equals("Pune", ignoreCase = true))
+            }
+            if (duplicate != null) return duplicate
+
+            val prefix = if (normDiv == "commercial") "CP" else "RP"
+            val codePattern = Regex("""^$prefix-(\d+)$""", RegexOption.IGNORE_CASE)
+            val existingIds = allExisting.map { it.id.trim().uppercase(Locale.US) }.toSet()
+            var maxSeq = allExisting.mapNotNull { proj ->
+                codePattern.matchEntire(proj.id.trim())?.groupValues?.get(1)?.toIntOrNull()
+            }.maxOrNull() ?: 1000
+            var candidateId: String
+            do {
+                maxSeq += 1
+                candidateId = "$prefix-${maxSeq.toString().padStart(4, '0')}"
+            } while (candidateId in existingIds)
+
+            val cleanContactName = contactName.trim()
+            val cleanContactPhone = contactPhone.filter { it.isDigit() }.takeLast(10)
+            val obj = JSONObject().apply {
+                put("id", candidateId)
+                put("division", normDiv)
+                put("name", cleanName)
+                put("location", cleanLocation)
+                put("developer", developer.trim())
+                if (cleanContactName.isNotBlank()) put("salesPoc", cleanContactName)
+                if (cleanContactPhone.isNotBlank()) put("salesPocPhone", cleanContactPhone)
+                put("verification", "Unverified")
+                put("archiveStatus", "Active")
+                put("sourceWorkbook", "Added via Call Intelligence")
+            }
+
+            val local = JSONArray(prefs.getString("local_projects", "[]") ?: "[]")
+            local.put(obj)
+            check(prefs.edit().putString("local_projects", local.toString()).commit()) {
+                "Project was not saved locally"
+            }
+            invalidateCache()
+            val updatedAll = read(context)
+            runCatching { com.example.data.OfflineDiskCache.saveProjects(context, updatedAll) }
+            return updatedAll.firstOrNull { it.id.equals(candidateId, ignoreCase = true) }
+                ?: parse(JSONArray().put(obj).toString()).single().copy(archiveStatus = "Active")
         }
     }
 
@@ -390,8 +671,9 @@ object ProjectDirectoryStore {
             }
             overridesJson.put(project.id, existing)
             prefs.edit().putString("project_overrides", overridesJson.toString()).commit()
+            invalidateCache()
         }
-        return read(context).first { it.id == project.id }
+        return read(context).also { com.example.data.OfflineDiskCache.saveProjects(context, it) }.first { it.id == project.id }
     }
 
     fun editAndVerifyProject(
@@ -443,8 +725,9 @@ object ProjectDirectoryStore {
             check(prefs.edit().putString("project_overrides", overridesJson.toString()).commit()) {
                 "Failed to save project updates"
             }
+            invalidateCache()
         }
-        read(context).first { it.id == project.id }
+        read(context).also { com.example.data.OfflineDiskCache.saveProjects(context, it) }.first { it.id == project.id }
     }
 
     fun archiveProject(context: Context, projectId: String): DirectoryProject {
@@ -456,7 +739,61 @@ object ProjectDirectoryStore {
             existing.put("archiveStatus", "Archived")
             overridesJson.put(projectId, existing)
             prefs.edit().putString("project_overrides", overridesJson.toString()).commit()
+            invalidateCache()
         }
-        return read(context).first { it.id == projectId }
+        return read(context).also { com.example.data.OfflineDiskCache.saveProjects(context, it) }.first { it.id == projectId }
+    }
+
+    fun deletePermanently(context: Context, projectId: String): List<DirectoryProject> {
+        val cleanId = projectId.trim()
+        if (cleanId.isBlank()) return read(context)
+        val prefs = context.getSharedPreferences("project_directory_v1", Context.MODE_PRIVATE)
+        val linksPrefs = context.getSharedPreferences("project_unit_links_v1", Context.MODE_PRIVATE)
+        return synchronized(this) {
+            val nextDeleted = (prefs.getStringSet("deleted_project_ids", emptySet()) ?: emptySet())
+                .toMutableSet()
+                .apply { add(cleanId.uppercase(Locale.US)) }
+
+            val localArr = runCatching { JSONArray(prefs.getString("local_projects", "[]") ?: "[]") }
+                .getOrDefault(JSONArray())
+            val filteredLocal = JSONArray()
+            for (i in 0 until localArr.length()) {
+                val obj = localArr.optJSONObject(i) ?: continue
+                if (!obj.optString("id").trim().equals(cleanId, ignoreCase = true)) {
+                    filteredLocal.put(obj)
+                }
+            }
+
+            val overridesJson = runCatching { JSONObject(prefs.getString("project_overrides", "{}") ?: "{}") }
+                .getOrDefault(JSONObject())
+            overridesJson.remove(cleanId)
+
+            val stagedJson = runCatching { JSONObject(prefs.getString("staged_candidates", "{}") ?: "{}") }
+                .getOrDefault(JSONObject())
+            stagedJson.remove(cleanId)
+
+            prefs.edit()
+                .putStringSet("deleted_project_ids", nextDeleted)
+                .putString("local_projects", filteredLocal.toString())
+                .putString("project_overrides", overridesJson.toString())
+                .putString("staged_candidates", stagedJson.toString())
+                .commit()
+
+            val linkEditor = linksPrefs.edit()
+            var removedAnyLink = false
+            linksPrefs.all.forEach { (propId, linkedProjId) ->
+                if ((linkedProjId as? String)?.trim().equals(cleanId, ignoreCase = true)) {
+                    linkEditor.remove(propId)
+                    removedAnyLink = true
+                }
+            }
+            if (removedAnyLink) linkEditor.commit()
+
+            invalidateCache()
+            val remaining = read(context).filterNot { it.id.trim().equals(cleanId, ignoreCase = true) }
+            com.example.data.OfflineDiskCache.saveProjects(context, remaining)
+            invalidateCache()
+            remaining
+        }
     }
 }

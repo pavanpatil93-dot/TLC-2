@@ -13,6 +13,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddCircleOutline
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
@@ -276,7 +278,10 @@ fun SearchableDropdownField(
     options: List<String>,
     onValueSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
-    allowAddNew: Boolean = true
+    allowAddNew: Boolean = true,
+    addNewButtonLabel: String? = null,
+    onAddNewRequested: ((String) -> Unit)? = null,
+    emptySearchText: String? = null
 ) {
     var showSearchSheet by remember { mutableStateOf(false) }
     val displayText = selectedValue.ifBlank { "Search $label" }
@@ -473,7 +478,7 @@ fun SearchableDropdownField(
                         }
                     }
 
-                    if (allowAddNew && query.isNotBlank() && !hasExactMatch) {
+                    if (onAddNewRequested == null && allowAddNew && query.isNotBlank() && !hasExactMatch) {
                         item {
                             Surface(
                                 color = SelectedSurfaceContainer,
@@ -503,15 +508,92 @@ fun SearchableDropdownField(
                         }
                     }
 
-                    if (filteredOptions.isEmpty() && (!allowAddNew || query.isBlank())) {
+                    if (filteredOptions.isEmpty() && (onAddNewRequested != null || !allowAddNew || query.isBlank())) {
                         item {
-                            Text(
-                                text = "No matching $label found",
-                                color = SecondaryText,
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(vertical = 12.dp, horizontal = 4.dp)
-                            )
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = emptySearchText ?: "No matching $label found",
+                                    color = SecondaryText,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                )
+                                if (onAddNewRequested != null) {
+                                    val cleanQuery = query.trim()
+                                    val promptLabel = if (cleanQuery.isNotBlank()) {
+                                        "+ Add \"$cleanQuery\" as New Project"
+                                    } else {
+                                        addNewButtonLabel ?: "+ Add New $label"
+                                    }
+                                    Surface(
+                                        color = SelectedSurfaceContainer,
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(1.5.dp, FocusOutlineColor),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(min = 48.dp)
+                                            .clickable {
+                                                showSearchSheet = false
+                                                onAddNewRequested(cleanQuery)
+                                            }
+                                            .testTag("searchable_dropdown_zero_match_add_btn")
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.AddCircleOutline,
+                                                contentDescription = null,
+                                                tint = FocusOutlineColor,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Text(
+                                                text = promptLabel,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = FocusOutlineColor
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
+                    }
+                }
+                if (onAddNewRequested != null) {
+                    HorizontalDivider(color = BorderGrey.copy(alpha = 0.6f))
+                    OutlinedButton(
+                        onClick = {
+                            val cleanQuery = query.trim()
+                            showSearchSheet = false
+                            onAddNewRequested(cleanQuery)
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.2.dp, FocusOutlineColor),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("searchable_dropdown_add_new_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            tint = FocusOutlineColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = addNewButtonLabel ?: "+ Add New Project",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = FocusOutlineColor
+                        )
                     }
                 }
                 Spacer(Modifier.height(8.dp))

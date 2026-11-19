@@ -44,7 +44,9 @@ fun PortalTopBar(
     availableBusinessViews: List<ActiveBusinessView> = ActiveBusinessView.entries,
     onSelectBusinessView: ((ActiveBusinessView) -> Unit)? = null,
     employeeDisplayName: String? = null,
-    onOpenProfile: (() -> Unit)? = null
+    onOpenProfile: (() -> Unit)? = null,
+    unreadAlertCount: Int = 0,
+    onOpenAlerts: (() -> Unit)? = null
 ) {
     Surface(
         color = BackgroundSoft,
@@ -201,6 +203,56 @@ fun PortalTopBar(
                                 tint = OnPrimaryActionColor,
                                 modifier = Modifier.size(18.dp)
                             )
+                        }
+                    }
+
+                    // Notification Bell with unread badge (48.dp touch target)
+                    if (onOpenAlerts != null) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("topbar_notification_bell_btn"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            IconButton(
+                                onClick = onOpenAlerts,
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(SurfaceTint)
+                                    .border(
+                                        0.8.dp,
+                                        if (unreadAlertCount > 0) PrimaryActionOrange.copy(alpha = 0.6f) else BorderGrey,
+                                        RoundedCornerShape(10.dp)
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = if (unreadAlertCount > 0) Icons.Default.NotificationsActive else Icons.Default.Notifications,
+                                    contentDescription = if (unreadAlertCount > 0) "Team Alerts ($unreadAlertCount unread)" else "Team Alerts",
+                                    tint = if (unreadAlertCount > 0) PrimaryActionOrange else TextPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            if (unreadAlertCount > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(top = 4.dp, end = 4.dp)
+                                        .defaultMinSize(minWidth = 18.dp, minHeight = 18.dp)
+                                        .clip(CircleShape)
+                                        .background(ErrorRed)
+                                        .padding(horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (unreadAlertCount > 99) "99+" else unreadAlertCount.toString(),
+                                        color = androidx.compose.ui.graphics.Color.White,
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
                         }
                     }
 

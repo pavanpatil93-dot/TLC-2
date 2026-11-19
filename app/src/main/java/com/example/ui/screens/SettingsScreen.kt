@@ -1,8 +1,10 @@
 package com.example.ui.screens
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,8 +36,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.BuildConfig
 import com.example.access.*
+import com.example.crm.CallRecordingMatcher
 import com.example.crm.CrmCallManager
+import com.example.crm.GoogleContactsSyncHelper
+import com.example.data.AppUpdateManager
 import com.example.data.SheetsRepository
 import com.example.data.UserSettingsManager
 import com.example.data.ApprovalQueueStore
@@ -47,6 +53,7 @@ import com.example.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     userSettingsManager: UserSettingsManager,
@@ -142,7 +149,7 @@ fun SettingsScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             userSettingsManager.saveCommercialLogo(uri)
-            Toast.makeText(context, "Commercial Portfolio logo updated & saved.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Commercial Division logo updated & saved.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -151,7 +158,7 @@ fun SettingsScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             userSettingsManager.saveResidentialLogo(uri)
-            Toast.makeText(context, "Residential Portfolio logo updated & saved.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Residential Division logo updated & saved.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -328,12 +335,335 @@ fun SettingsScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Batch 18: Auto-Save Linked Callers to Google Contacts + Confidential Phone Masking Override
+        val autoSaveContacts by userSettingsManager.autoSaveGoogleContacts.collectAsState()
+        val revealConfidentialPhones by userSettingsManager.revealConfidentialPhonesForExec.collectAsState()
+        var contactsPermGranted by remember { mutableStateOf(GoogleContactsSyncHelper.hasContactsPermission(context)) }
+        val contactsPermLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions()
+        ) { grants ->
+            contactsPermGranted = grants.values.all { it } || GoogleContactsSyncHelper.hasContactsPermission(context)
+            Toast.makeText(
+                context,
+                if (contactsPermGranted) "Contacts permission granted!" else "Contacts permission denied.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("settings_google_contacts_card"),
+            colors = CardDefaults.cardColors(containerColor = BrandCharcoalCard),
+            shape = RoundedCornerShape(12.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, BrandCharcoalBorder)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Contacts,
+                            contentDescription = null,
+                            tint = PrimaryActionOrange,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Auto-Save Callers to Google Contacts",
+                                color = TextPrimaryDark,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Uses TLC prefixes (CL -, INV -, O -, CP -, BLD -, SM -, TNT -, OPS -) & deduplicates by 10-digit number",
+                                color = TextSecondaryDark,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = autoSaveContacts,
+                        onCheckedChange = { userSettingsManager.setAutoSaveGoogleContacts(it) },
+                        modifier = Modifier.testTag("settings_auto_save_contacts_switch")
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (contactsPermGranted) "Contacts Permission: Granted" else "Contacts Permission: Needed for Auto-Save",
+                        color = if (contactsPermGranted) StatusSuccessGreen else BrandGold,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (!contactsPermGranted) {
+                        OutlinedButton(
+                            onClick = {
+                                contactsPermLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.READ_CONTACTS,
+                                        Manifest.permission.WRITE_CONTACTS
+                                    )
+                                )
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier
+                                .heightIn(min = 38.dp)
+                                .testTag("settings_grant_contacts_perm_btn")
+                        ) {
+                            Text("Grant Contacts", color = TextPrimaryDark, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = BrandCharcoalBorder, thickness = 0.6.dp)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Reveal Confidential Owner/Tenant Phones",
+                            color = TextPrimaryDark,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Admins & Managers always view full numbers; Executives can toggle full visibility here or inline",
+                            color = TextSecondaryDark,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Switch(
+                        checked = revealConfidentialPhones,
+                        onCheckedChange = { userSettingsManager.setRevealConfidentialPhonesForExec(it) },
+                        modifier = Modifier.testTag("settings_reveal_phones_switch")
+                    )
+                }
+
+                HorizontalDivider(color = BrandCharcoalBorder, thickness = 0.6.dp)
+
+                // Batch 20: On-Demand Call Recording Folder (OpenDocumentTree + OEM Auto-Detect)
+                val callRecordingFolderUri by userSettingsManager.callRecordingFolderUri.collectAsState()
+                val callRecordingFolderLabel by userSettingsManager.callRecordingFolderLabel.collectAsState()
+                val callRecordingTreeLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.OpenDocumentTree()
+                ) { treeUri ->
+                    if (treeUri != null) {
+                        runCatching {
+                            context.contentResolver.takePersistableUriPermission(
+                                treeUri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
+                        }
+                        val prettyLabel = treeUri.lastPathSegment?.substringAfterLast(':') ?: treeUri.toString()
+                        userSettingsManager.setCallRecordingFolder(treeUri.toString(), prettyLabel)
+                        Toast.makeText(context, "Call recording folder linked: $prettyLabel", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("settings_call_recording_folder_section"),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GraphicEq,
+                                contentDescription = null,
+                                tint = PrimaryActionOrange,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Call Recording Folder (On-Demand Play & Summarize)",
+                                    color = TextPrimaryDark,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (callRecordingFolderLabel.isNotBlank())
+                                        "Active Folder: $callRecordingFolderLabel"
+                                    else
+                                        "Auto-detects Samsung (Recordings/Call), Xiaomi (MIUI/sound_recorder/call_rec), OnePlus/Oppo (Music/Recordings/Call Recordings)",
+                                    color = if (callRecordingFolderLabel.isNotBlank()) StatusSuccessGreen else TextSecondaryDark,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { callRecordingTreeLauncher.launch(null) },
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier
+                                .heightIn(min = 38.dp)
+                                .testTag("settings_select_recording_folder_btn")
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, tint = PrimaryActionOrange, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Select Recording Folder",
+                                color = TextPrimaryDark,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val detected = CallRecordingMatcher.autoDetectOemRecordingFolder(context)
+                                if (detected != null) {
+                                    userSettingsManager.setCallRecordingFolder(detected.first, detected.second)
+                                    Toast.makeText(context, "Detected: ${detected.second}", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val defaultSamsung = CallRecordingMatcher.OEM_DEFAULT_RELATIVE_PATHS.first()
+                                    userSettingsManager.setCallRecordingFolder(defaultSamsung.first, defaultSamsung.second)
+                                    Toast.makeText(context, "Set default OEM path: ${defaultSamsung.second}", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier
+                                .heightIn(min = 38.dp)
+                                .testTag("settings_autodetect_recording_folder_btn")
+                        ) {
+                            Icon(Icons.Default.AutoFixHigh, contentDescription = null, tint = BrandGold, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Auto-Detect OEM Folder",
+                                color = TextPrimaryDark,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+
+                        if (callRecordingFolderUri.isNotBlank()) {
+                            TextButton(
+                                onClick = { userSettingsManager.clearCallRecordingFolder() },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 38.dp)
+                                    .testTag("settings_clear_recording_folder_btn")
+                            ) {
+                                Text(
+                                    text = "Reset",
+                                    color = TextSecondaryDark,
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Quick-Jump Card: Alert Sounds & Vocal Alerts (Batch 40)
+        Card(
+            colors = CardDefaults.cardColors(containerColor = BrandCharcoalCard),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (activeSectionTab == 8) PrimaryActionOrange else BrandCharcoalBorder
+            ),
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { activeSectionTab = 8 }
+                .testTag("settings_quick_alert_sounds_card")
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.NotificationsActive,
+                        contentDescription = null,
+                        tint = PrimaryActionOrange,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Alert Sounds & Vocal Alerts",
+                            color = TextPrimaryDark,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "6 custom notification channels · Indian English TTS · Quiet Hours",
+                            color = TextSecondaryDark,
+                            fontSize = 10.5.sp
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = "Open Alert Sounds & Vocal Alerts",
+                    tint = PrimaryActionOrange,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(12.dp))
 
         // SECTION TABS SCROLLER
         val sectionTabs = listOf(
             "Companies", "User Profile", "Google Sheet", "Verification",
-            "Media Storage", "Backups", "System Info", "Approvals"
+            "Media Storage", "Backups", "System Info", "Approvals",
+            "Alert Sounds & Vocal Alerts"
         )
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -393,7 +723,7 @@ fun SettingsScreen(
                                 letterSpacing = 0.8.sp
                             )
                             Text(
-                                text = "Commercial & Residential Portfolio Settings",
+                                text = "Commercial & Residential Division Settings",
                                 color = TextPrimaryDark,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold
@@ -1383,17 +1713,36 @@ fun SettingsScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         val isDriveUrlConfigured = sheetsScriptUrl.trim().isNotBlank()
-                        DetailRow(
-                            label = "Storage Provider",
-                            value = "Google Drive (TLC1_Property_Media) + Local Cache"
+                        val storageRows = listOf(
+                            "Storage Provider" to "Google Drive (TLC1_Property_Media) + Local Cache",
+                            "Connection Status" to if (isDriveUrlConfigured) "Connected to Google Drive" else "Offline / URL Not Set",
+                            "Max Photos / Property" to "20 Photos (Auto-compressed)",
+                            "Video Walkthroughs" to "Supported (MP4 / Web Links)",
+                            "Storage Error Log" to "None (0 Errors)"
                         )
-                        DetailRow(
-                            label = "Connection Status",
-                            value = if (isDriveUrlConfigured) "Connected to Google Drive" else "Offline / URL Not Set"
-                        )
-                        DetailRow(label = "Max Photos / Property", value = "20 Photos (Auto-compressed)")
-                        DetailRow(label = "Video Walkthroughs", value = "Supported (MP4 / Web Links)")
-                        DetailRow(label = "Storage Error Log", value = "None (0 Errors)")
+                        storageRows.forEach { (label, value) ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "$label:",
+                                    color = TextSecondaryDark,
+                                    fontSize = 11.sp,
+                                    maxLines = 1
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = value,
+                                    color = TextPrimaryDark,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -1419,6 +1768,9 @@ fun SettingsScreen(
         // SECTION 6: BACKUP & RESTORE
         // =====================================================================
         if (activeSectionTab == 5) {
+            var isPushingAllToCloud by remember { mutableStateOf(false) }
+            var pushAllCloudSummary by remember { mutableStateOf("") }
+
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = BrandCharcoalCard),
@@ -1489,6 +1841,70 @@ fun SettingsScreen(
                             Text("Restore Backup", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Button(
+                        onClick = {
+                            if (!isPushingAllToCloud) {
+                                coroutineScope.launch {
+                                    isPushingAllToCloud = true
+                                    pushAllCloudSummary = "Uploading local photos to Google Drive & pushing unsynced properties, CRM leads, and call logs..."
+                                    try {
+                                        val summary = repository.pushAllUnsyncedLocalDataToCloud()
+                                        pushAllCloudSummary = summary
+                                        Toast.makeText(context, summary, Toast.LENGTH_LONG).show()
+                                    } catch (e: Exception) {
+                                        pushAllCloudSummary = "Cloud migration failed: ${e.localizedMessage ?: "Network error"}"
+                                    } finally {
+                                        isPushingAllToCloud = false
+                                    }
+                                }
+                            }
+                        },
+                        enabled = !isPushingAllToCloud,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFE96932),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("push_all_local_data_cloud_btn")
+                    ) {
+                        if (isPushingAllToCloud) {
+                            CircularProgressIndicator(
+                                color = Color.White,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Pushing Local Data & Photos...", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        } else {
+                            Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("☁️ Push All Local Data & Photos to Cloud", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+
+                    if (pushAllCloudSummary.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            color = BrandCharcoalSurface,
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, BrandGold.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = pushAllCloudSummary,
+                                color = TextPrimaryDark,
+                                fontSize = 11.5.sp,
+                                lineHeight = 16.sp,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1542,14 +1958,79 @@ fun SettingsScreen(
                             .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        DetailRow(label = "Application Version", value = "12.0.0 (Step 12 Administration)")
+                        DetailRow(label = "Application Version", value = "v${BuildConfig.VERSION_NAME} (Code ${BuildConfig.VERSION_CODE})")
                         DetailRow(label = "Database Status", value = "Active (Local JSON DB + Storage)")
                         DetailRow(label = "Master Sheet Connection", value = connectionStatus)
                         DetailRow(label = "Total Active Properties", value = "$totalProps Records")
-                        DetailRow(label = "Portfolios Supported", value = "Commercial & Residential")
+                        DetailRow(label = "Divisions Supported", value = "Commercial & Residential")
                         DetailRow(label = "Media Storage Status", value = "Google Drive (TLC1_Property_Media) + Local Cache")
                         DetailRow(label = "AI Property Search Status", value = "Gemini API Ready")
-                        DetailRow(label = "Google Maps Status", value = "Geo Intents & Lat/Lng Enabled")
+                        DetailRow(label = "Property Map Engine", value = "OpenStreetMap (osmdroid) + Geo Intents")
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    var isCheckingUpdates by remember { mutableStateOf(false) }
+                    var updateCheckNote by remember { mutableStateOf<String?>(null) }
+
+                    Button(
+                        onClick = {
+                            if (isCheckingUpdates) return@Button
+                            isCheckingUpdates = true
+                            updateCheckNote = null
+                            coroutineScope.launch {
+                                val res = AppUpdateManager.checkForAppUpdate(
+                                    sheetsScriptUrl.ifBlank { SheetsRepository.DEFAULT_MASTER_SHEET_URL }
+                                )
+                                isCheckingUpdates = false
+                                res.onSuccess { info ->
+                                    if (info != null && AppUpdateManager.isRemoteVersionNewer(info.version)) {
+                                        updateCheckNote = "New version v${info.version} found!"
+                                        repository.setAvailableAppUpdate(info)
+                                    } else {
+                                        val latestLabel = info?.version?.takeIf { it.isNotBlank() } ?: BuildConfig.VERSION_NAME
+                                        updateCheckNote = "You are on the latest version (v$latestLabel)."
+                                        Toast.makeText(context, "App is up to date (v${BuildConfig.VERSION_NAME})", Toast.LENGTH_SHORT).show()
+                                    }
+                                }.onFailure { err ->
+                                    updateCheckNote = err.localizedMessage ?: "Unable to check for updates."
+                                    Toast.makeText(context, updateCheckNote, Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        enabled = !isCheckingUpdates,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryActionOrange,
+                            contentColor = OnPrimaryActionColor
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("settings_check_updates_btn")
+                    ) {
+                        if (isCheckingUpdates) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = OnPrimaryActionColor
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Checking TLC_App_Updates...", fontWeight = FontWeight.Bold)
+                        } else {
+                            Icon(Icons.Default.SystemUpdate, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Check for Updates", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    if (!updateCheckNote.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = updateCheckNote.orEmpty(),
+                            color = TextSecondaryDark,
+                            fontSize = 11.sp
+                        )
                     }
                 }
             }
@@ -1608,6 +2089,13 @@ fun SettingsScreen(
                     OutlinedButton(onClick = { approvalRequests = ApprovalQueueStore.read(context) }, modifier = Modifier.fillMaxWidth()) { Text("Refresh Queue") }
                 }
             }
+        }
+
+        // =====================================================================
+        // SECTION 9: ALERT SOUNDS & VOCAL ALERTS (BATCH 40)
+        // =====================================================================
+        if (activeSectionTab == 8) {
+            com.example.ui.components.AlertSoundsSettingsSection(userSettingsManager = userSettingsManager)
         }
     }
 

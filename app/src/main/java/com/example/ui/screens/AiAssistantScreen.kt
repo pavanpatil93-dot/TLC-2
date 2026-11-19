@@ -505,7 +505,7 @@ fun NaturalSearchSection(
                     if (res.alternatives.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(14.dp))
                         Text(
-                            text = "Recommended Alternatives from Portfolio (${res.alternatives.size})",
+                            text = "Recommended Alternatives from Inventory (${res.alternatives.size})",
                             color = BrandGold,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold

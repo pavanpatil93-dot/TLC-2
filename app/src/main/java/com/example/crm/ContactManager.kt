@@ -1,12 +1,15 @@
 package com.example.crm
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.ContactsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -253,27 +256,126 @@ object ContactUtils {
 
     fun extractContactFromUri(context: Context, contactUri: Uri): Pair<String, String>? {
         return try {
-            val cursor = context.contentResolver.query(
+            // Case 1: Phone URI directly (e.g. ACTION_PICK Phone.CONTENT_URI)
+            val directCursor = runCatching {
+                context.contentResolver.query(
+                    contactUri,
+                    arrayOf(
+                        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                        ContactsContract.CommonDataKinds.Phone.NUMBER
+                    ),
+                    null,
+                    null,
+                    null
+                )
+            }.getOrNull()
+            directCursor?.use { c ->
+                val numIdx = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                if (numIdx >= 0 && c.moveToFirst()) {
+                    val nameIdx = c.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                    val name = if (nameIdx >= 0) c.getString(nameIdx).orEmpty() else ""
+                    val number = c.getString(numIdx).orEmpty()
+                    val normalized = normalizePhoneNumber(number)
+                    if (normalized.isNotBlank() || name.isNotBlank()) {
+                        return Pair(name.trim(), normalized)
+                    }
+                }
+            }
+
+            // Case 2: Contact Lookup URI (ActivityResultContracts.PickContact)
+            var contactId = ""
+            var contactName = ""
+            context.contentResolver.query(
                 contactUri,
                 arrayOf(
-                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
-                    ContactsContract.CommonDataKinds.Phone.NUMBER
+                    ContactsContract.Contacts._ID,
+                    ContactsContract.Contacts.DISPLAY_NAME
                 ),
                 null,
                 null,
                 null
-            )
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val nameIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                    val numIdx = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                    val name = if (nameIdx >= 0) it.getString(nameIdx).orEmpty() else ""
-                    val number = if (numIdx >= 0) it.getString(numIdx).orEmpty() else ""
-                    Pair(name.trim(), normalizePhoneNumber(number))
-                } else null
+            )?.use { c ->
+                if (c.moveToFirst()) {
+                    val idIdx = c.getColumnIndex(ContactsContract.Contacts._ID)
+                    val nameIdx = c.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME)
+                    if (idIdx >= 0) contactId = c.getString(idIdx).orEmpty()
+                    if (nameIdx >= 0) contactName = c.getString(nameIdx).orEmpty()
+                }
             }
-        } catch (e: Exception) {
+
+            var pickedNumber = ""
+            if (contactId.isNotBlank()) {
+                context.contentResolver.query(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                    arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
+                    "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
+                    arrayOf(contactId),
+                    null
+                )?.use { pCur ->
+                    while (pCur.moveToNext()) {
+                        val idx = pCur.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                        val candidate = if (idx >= 0) normalizePhoneNumber(pCur.getString(idx)) else ""
+                        if (candidate.length >= 10) {
+                            pickedNumber = candidate
+                            break
+                        } else if (pickedNumber.isBlank() && candidate.isNotBlank()) {
+                            pickedNumber = candidate
+                        }
+                    }
+                }
+            }
+
+            if (contactName.isNotBlank() || pickedNumber.isNotBlank()) {
+                Pair(contactName.trim(), pickedNumber)
+            } else {
+                null
+            }
+        } catch (_: Exception) {
             null
+        }
+    }
+}
+
+@Composable
+fun rememberPickContactCallback(
+    onContactPicked: (name: String, cleanPhone10: String) -> Unit
+): () -> Unit {
+    val context = LocalContext.current
+    val pickContactLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickContact()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val extracted = ContactUtils.extractContactFromUri(context, uri)
+            if (extracted != null) {
+                val (pickedName, cleanPhone) = extracted
+                if (pickedName.isNotBlank() || cleanPhone.isNotBlank()) {
+                    onContactPicked(pickedName, cleanPhone)
+                } else {
+                    Toast.makeText(context, "Selected contact has no phone number", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(context, "Unable to read selected contact number", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            pickContactLauncher.launch(null)
+        } else {
+            Toast.makeText(context, "Contacts permission required to pick a phone number", Toast.LENGTH_SHORT).show()
+        }
+    }
+    return {
+        val hasPerm = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_CONTACTS
+        ) == PackageManager.PERMISSION_GRANTED
+        if (hasPerm) {
+            pickContactLauncher.launch(null)
+        } else {
+            permissionLauncher.launch(Manifest.permission.READ_CONTACTS)
         }
     }
 }

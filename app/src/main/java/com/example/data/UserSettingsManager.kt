@@ -18,6 +18,7 @@ import com.example.ui.theme.TlcBusinessViewToken
 import com.example.ui.theme.TlcThemeController
 import com.example.ui.theme.TlcThemeMode
 import com.example.ui.theme.TlcThemePreferenceContract
+import com.example.notifications.VocalAlertMode
 
 class UserSettingsManager(private val context: Context?) {
 
@@ -74,6 +75,32 @@ class UserSettingsManager(private val context: Context?) {
 
     private val _verificationValidityDays = MutableStateFlow(prefs?.getInt("verification_validity_days", 60)?.takeIf { it in setOf(7, 15, 30, 60) } ?: 60)
     val verificationValidityDays: StateFlow<Int> = _verificationValidityDays.asStateFlow()
+
+    private val _autoSaveGoogleContacts = MutableStateFlow(prefs?.getBoolean("auto_save_google_contacts", true) ?: true)
+    val autoSaveGoogleContacts: StateFlow<Boolean> = _autoSaveGoogleContacts.asStateFlow()
+
+    private val _revealConfidentialPhonesForExec = MutableStateFlow(prefs?.getBoolean("reveal_confidential_phones", false) ?: false)
+    val revealConfidentialPhonesForExec: StateFlow<Boolean> = _revealConfidentialPhonesForExec.asStateFlow()
+
+    private val _vocalAlertMode = MutableStateFlow(
+        VocalAlertMode.fromString(prefs?.getString(KEY_VOCAL_ALERT_MODE, VocalAlertMode.BLUETOOTH_DRIVING_ONLY.name))
+    )
+    val vocalAlertMode: StateFlow<VocalAlertMode> = _vocalAlertMode.asStateFlow()
+
+    fun setVocalAlertMode(mode: VocalAlertMode) {
+        _vocalAlertMode.value = mode
+        prefs?.edit()?.putString(KEY_VOCAL_ALERT_MODE, mode.name)?.apply()
+    }
+
+    fun setAutoSaveGoogleContacts(enabled: Boolean) {
+        _autoSaveGoogleContacts.value = enabled
+        prefs?.edit()?.putBoolean("auto_save_google_contacts", enabled)?.apply()
+    }
+
+    fun setRevealConfidentialPhonesForExec(reveal: Boolean) {
+        _revealConfidentialPhonesForExec.value = reveal
+        prefs?.edit()?.putBoolean("reveal_confidential_phones", reveal)?.apply()
+    }
 
     fun auditIdentity(): String = userProfile.value.let { "${it.username.ifBlank { "Unregistered" }} | ${it.role.name}" }
 
@@ -222,15 +249,22 @@ class UserSettingsManager(private val context: Context?) {
             ?: "Commercial + Residential"
         val accountStatus = primary?.getString("user_account_status", null)
             ?: fallback?.getString("user_account_status", "Active") ?: "Active"
+        val roleEnum = UserRole.fromString(roleStr)
+        val canView = primary?.getBoolean("can_view_owner", roleEnum == UserRole.ADMIN || roleEnum == UserRole.COMMERCIAL_MANAGER || roleEnum == UserRole.RESIDENTIAL_MANAGER || roleEnum == UserRole.INVENTORY_MANAGER) ?: true
+        val canBulk = primary?.getBoolean("can_bulk_export", roleEnum == UserRole.ADMIN || roleEnum == UserRole.COMMERCIAL_MANAGER || roleEnum == UserRole.RESIDENTIAL_MANAGER || roleEnum == UserRole.INVENTORY_MANAGER) ?: true
+        val canDel = primary?.getBoolean("can_delete", roleEnum == UserRole.ADMIN || roleEnum == UserRole.COMMERCIAL_MANAGER || roleEnum == UserRole.RESIDENTIAL_MANAGER) ?: true
         return UserProfile(
             username = username,
             mobileNumber = mobile,
             email = email,
-            role = UserRole.fromString(roleStr),
+            role = roleEnum,
             profilePhotoUri = photoUri,
             employeeId = employeeId,
             division = division,
-            accountStatus = accountStatus
+            accountStatus = accountStatus,
+            canViewFullOwnerContacts = canView,
+            canBulkExport = canBulk,
+            canDeleteRecords = canDel
         )
     }
 
@@ -365,6 +399,9 @@ class UserSettingsManager(private val context: Context?) {
                 putString("user_role", cleanProfile.role.label)
                 putString("user_account_status", cleanProfile.accountStatus)
                 putString("active_brand", resolvedBrand.name)
+                putBoolean("can_view_owner", cleanProfile.canViewFullOwnerContacts)
+                putBoolean("can_bulk_export", cleanProfile.canBulkExport)
+                putBoolean("can_delete", cleanProfile.canDeleteRecords)
                 if (cleanProfile.profilePhotoUri != null) {
                     putString("user_photo_uri", cleanProfile.profilePhotoUri)
                 }
@@ -557,6 +594,68 @@ class UserSettingsManager(private val context: Context?) {
             uri.toString()
         }
     }
+
+    // ── Batch 20: Call Recording Folder (On-Demand Only — Never Scanned on Startup) ──
+    private val _callRecordingFolderUri = MutableStateFlow(
+        prefs?.getString("call_recording_folder_uri", "").orEmpty()
+    )
+    val callRecordingFolderUri: StateFlow<String> = _callRecordingFolderUri.asStateFlow()
+
+    private val _callRecordingFolderLabel = MutableStateFlow(
+        prefs?.getString("call_recording_folder_label", "Auto-detect OEM (Samsung / Xiaomi / OnePlus)").orEmpty()
+    )
+    val callRecordingFolderLabel: StateFlow<String> = _callRecordingFolderLabel.asStateFlow()
+
+    fun setCallRecordingFolder(uriOrPath: String, label: String) {
+        val cleanUri = uriOrPath.trim()
+        val cleanLabel = label.trim().ifBlank { cleanUri.ifBlank { "Auto-detect OEM (Samsung / Xiaomi / OnePlus)" } }
+        _callRecordingFolderUri.value = cleanUri
+        _callRecordingFolderLabel.value = cleanLabel
+        prefs?.edit()?.apply {
+            putString("call_recording_folder_uri", cleanUri)
+            putString("call_recording_folder_label", cleanLabel)
+            apply()
+        }
+    }
+
+    fun clearCallRecordingFolder() {
+        setCallRecordingFolder("", "Auto-detect OEM (Samsung / Xiaomi / OnePlus)")
+    }
+
+    companion object {
+        const val KEY_VOCAL_ALERT_MODE = "vocal_alert_mode"
+
+        fun readVocalAlertMode(context: Context): VocalAlertMode {
+            val prefs = context.applicationContext.getSharedPreferences("ascend_aurea_user_settings", Context.MODE_PRIVATE)
+            return VocalAlertMode.fromString(prefs.getString(KEY_VOCAL_ALERT_MODE, VocalAlertMode.BLUETOOTH_DRIVING_ONLY.name))
+        }
+
+        fun readCurrentUserIdentifiers(context: Context): Set<String> {
+            val prefs = context.applicationContext.getSharedPreferences("ascend_aurea_user_settings", Context.MODE_PRIVATE)
+            val legacy = context.applicationContext.getSharedPreferences("real_estate_user_settings", Context.MODE_PRIVATE)
+            val username = prefs.getString("user_username", null)
+                ?: legacy.getString("user_username", "").orEmpty()
+            val email = prefs.getString("user_email", null)
+                ?: legacy.getString("user_email", "").orEmpty()
+            val empId = prefs.getString("employee_id", null)
+                ?: legacy.getString("employee_id", "").orEmpty()
+            val ids = mutableSetOf<String>()
+            fun addCleaned(raw: String) {
+                val norm = raw.substringBefore("(").substringBefore("|").trim().lowercase()
+                if (norm.isNotBlank()) {
+                    ids.add(norm)
+                    val first = norm.split(Regex("\\s+")).firstOrNull().orEmpty()
+                    if (first.length >= 3) ids.add(first)
+                }
+            }
+            addCleaned(username)
+            addCleaned(email)
+            addCleaned(empId)
+            return ids
+        }
+    }
 }
+
+
 
 

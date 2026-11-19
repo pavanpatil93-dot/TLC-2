@@ -60,7 +60,10 @@ import com.example.data.UserSettingsManager
 import com.example.model.*
 import com.example.ui.components.*
 import com.example.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -68,6 +71,22 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+
+private data class CrmComputedState(
+    val projectionsById: Map<String, RequirementStageProjection> = emptyMap(),
+    val archivedWorkLeads: List<CrmLead> = emptyList(),
+    val awaitingReviewLeads: List<CrmLead> = emptyList(),
+    val activeWorkLeads: List<CrmLead> = emptyList(),
+    val stageCounts: Map<CrmPipelineStage, Int> = emptyMap(),
+    val activeClientLeads: List<CrmLead> = emptyList(),
+    val ownerWorkLeads: List<CrmLead> = emptyList(),
+    val overdueCount: Int = 0,
+    val dueTodayCount: Int = 0,
+    val upcomingCount: Int = 0,
+    val brokerCount: Int = 0,
+    val sortedLeads: List<CrmLead> = emptyList(),
+    val missingRequiredByLeadId: Map<String, List<String>> = emptyMap()
+)
 
 private val crmPipelineStages = CrmPipelineStage.entries.map { it.label }
 
@@ -241,7 +260,16 @@ fun CrmLead.toJson() = JSONObject().apply {
 
 fun readCrmLeads(context: Context): List<CrmLead> {
     val prefs = com.example.data.auditedCrmPreferences(context, "crm_development_v1", Context.MODE_PRIVATE)
-    val raw = prefs.getString("leads", "[]") ?: "[]"
+    val diskRaw = com.example.data.OfflineDiskCache.loadCrmLeadsJson(context)
+    val prefsRaw = prefs.getString("leads", "[]") ?: "[]"
+    val raw = if (!diskRaw.isNullOrBlank() && diskRaw.trim() != "[]") {
+        diskRaw
+    } else {
+        if (prefsRaw.trim() != "[]" && prefsRaw.isNotBlank()) {
+            com.example.data.OfflineDiskCache.saveCrmLeadsJson(context, prefsRaw)
+        }
+        prefsRaw
+    }
     return runCatching {
         val array = JSONArray(raw)
         (0 until array.length()).map { index ->
@@ -340,7 +368,9 @@ internal fun saveCrmLeads(context: Context, leads: List<CrmLead>) {
         }
     }
     val array = JSONArray()
-    val stored = JSONArray(context.getSharedPreferences("crm_development_v1", Context.MODE_PRIVATE).getString("leads", "[]"))
+    val storedRaw = com.example.data.OfflineDiskCache.loadCrmLeadsJson(context)
+        ?: context.getSharedPreferences("crm_development_v1", Context.MODE_PRIVATE).getString("leads", "[]")
+    val stored = runCatching { JSONArray(storedRaw ?: "[]") }.getOrDefault(JSONArray())
     audited.forEach { lead ->
         val old = (0 until stored.length()).map { stored.getJSONObject(it) }.firstOrNull { it.optString("id") == lead.id }
         val merged = old?.let { JSONObject(it.toString()) } ?: JSONObject()
@@ -353,8 +383,10 @@ internal fun saveCrmLeads(context: Context, leads: List<CrmLead>) {
         }
         array.put(merged)
     }
+    val jsonStr = array.toString()
+    com.example.data.OfflineDiskCache.saveCrmLeadsJson(context, jsonStr)
     com.example.data.auditedCrmPreferences(context, "crm_development_v1", Context.MODE_PRIVATE)
-        .edit().putString("leads", array.toString()).apply()
+        .edit().putString("leads", jsonStr).commit()
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -363,22 +395,55 @@ fun CrmFoundationScreen(
     inventory: List<PropertyItem> = emptyList(),
     onNavigateToCalls: (() -> Unit)? = null,
     onPushCrmLeadToSheet: (suspend (CrmLead) -> Result<Unit>)? = null,
-    externalRefreshTick: Int = 0
+    onDeleteCrmLeadFromSheet: (suspend (String) -> Result<Unit>)? = null,
+    externalRefreshTick: Int = 0,
+    initialPrefillLead: CrmLead? = null,
+    onConsumeInitialPrefillLead: () -> Unit = {},
+    initialSelectedLeadId: String? = null,
+    onConsumeInitialSelectedLeadId: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val currentProfile = remember { UserSettingsManager(context).userProfile.value }
-    var leads by remember { mutableStateOf(readCrmLeads(context)) }
+    var leads by remember { mutableStateOf<List<CrmLead>>(emptyList()) }
     var pipelineRefreshTick by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(externalRefreshTick) {
-        if (externalRefreshTick > 0) {
-            leads = readCrmLeads(context)
-            pipelineRefreshTick++
+    fun handlePermanentDeleteLead(targetLead: CrmLead) {
+        val remaining = leads.filterNot { it.id.equals(targetLead.id, ignoreCase = true) }
+        leads = remaining
+        saveCrmLeads(context, remaining)
+        pipelineRefreshTick++
+        Toast.makeText(context, "Deleted ${targetLead.displayClientTitle()} permanently", Toast.LENGTH_SHORT).show()
+        coroutineScope.launch(Dispatchers.IO) {
+            if (onDeleteCrmLeadFromSheet != null) {
+                onDeleteCrmLeadFromSheet(targetLead.id)
+            } else {
+                SheetsRepository(context.applicationContext, startForegroundSync = false)
+                    .deleteRecordPermanently(
+                        tabName = "CRM",
+                        keyHeader = "Lead ID",
+                        keyValue = targetLead.id
+                    )
+            }
         }
     }
 
+    LaunchedEffect(externalRefreshTick) {
+        leads = withContext(Dispatchers.IO) { readCrmLeads(context) }
+        pipelineRefreshTick++
+    }
+
     var search by rememberSaveable { mutableStateOf("") }
+    var debouncedSearch by rememberSaveable { mutableStateOf(search) }
+    LaunchedEffect(search) {
+        if (search.isBlank()) {
+            debouncedSearch = ""
+        } else {
+            delay(250)
+            debouncedSearch = search
+        }
+    }
+
     var activeLeadTab by rememberSaveable { mutableStateOf("All Leads") } // "All Leads", "Today's Leads", "Overdue", "Upcoming"
     var divisionFilter by rememberSaveable { mutableStateOf("All") } // "All", "Commercial", "Residential"
     var assignedScopeMode by rememberSaveable { mutableStateOf("Team Leads") } // "My Leads", "Team Leads", "Unassigned"
@@ -394,8 +459,28 @@ fun CrmFoundationScreen(
 
     var editing by remember { mutableStateOf<CrmLead?>(null) }
     var showEditor by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialPrefillLead) {
+        if (initialPrefillLead != null) {
+            editing = initialPrefillLead
+            showEditor = true
+            onConsumeInitialPrefillLead()
+        }
+    }
+
     var profileLead by remember { mutableStateOf<CrmLead?>(null) }
     var visitLead by remember { mutableStateOf<CrmLead?>(null) }
+
+    LaunchedEffect(initialSelectedLeadId, leads) {
+        val targetId = initialSelectedLeadId?.trim().orEmpty()
+        if (targetId.isNotBlank() && leads.isNotEmpty()) {
+            val found = leads.firstOrNull { it.id.equals(targetId, ignoreCase = true) }
+            if (found != null) {
+                profileLead = found
+                onConsumeInitialSelectedLeadId()
+            }
+        }
+    }
     var matchLead by remember { mutableStateOf<CrmLead?>(null) }
     var quickFollowUpLead by remember { mutableStateOf<CrmLead?>(null) }
     var stageChangeLead by remember { mutableStateOf<CrmLead?>(null) }
@@ -403,130 +488,153 @@ fun CrmFoundationScreen(
     var snackbarMessage by remember { mutableStateOf<String?>(null) }
 
     val listState = rememberLazyListState()
-    val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+    val today = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) }
 
-    val projectionsById = remember(leads, pipelineRefreshTick) {
-        leads.associate { it.id to CrmPipelineAndWorkloadEngine.getProjection(context, it) }
-    }
-
-    val archivedWorkLeads = remember(leads, projectionsById) {
-        leads.filter { lead ->
-            val state = projectionsById[lead.id]?.workState
-            state == CrmWorkState.ARCHIVED || state == CrmWorkState.AWAITING_REVIEW || state == CrmWorkState.HISTORICAL_INACTIVE
-        }
-    }
-
-    val awaitingReviewLeads = remember(leads, projectionsById) {
-        leads.filter { projectionsById[it.id]?.workState == CrmWorkState.AWAITING_REVIEW }
-    }
-
-    val activeWorkLeads = remember(leads, projectionsById, includeHistoricalRecords) {
-        leads.filter { lead ->
-            val proj = projectionsById[lead.id]
-            if (includeHistoricalRecords) {
-                proj?.workState != CrmWorkState.ARCHIVED
-            } else {
-                proj?.workState == CrmWorkState.ACTIVE
-            }
-        }
-    }
-
-    val stageCounts = remember(leads, pipelineRefreshTick, includeHistoricalRecords) {
-        CrmPipelineAndWorkloadEngine.computeStageCounts(context, leads, includeHistorical = includeHistoricalRecords)
-    }
-
-    val activeClientLeads = remember(activeWorkLeads) {
-        activeWorkLeads.filterNot { it.isOwnerLead() }
-    }
-    val ownerWorkLeads = remember(activeWorkLeads) {
-        activeWorkLeads.filter { it.isOwnerLead() }
-    }
-
-    val overdueCount = remember(activeClientLeads, today) {
-        activeClientLeads.count { it.nextFollowUp.isNotBlank() && !it.followUpCompleted && it.nextFollowUp < today }
-    }
-    val dueTodayCount = remember(activeClientLeads, today) {
-        activeClientLeads.count { it.nextFollowUp == today && !it.followUpCompleted }
-    }
-    val upcomingCount = remember(activeClientLeads, today) {
-        activeClientLeads.count { it.nextFollowUp > today && !it.followUpCompleted }
-    }
-    val brokerCount = remember(activeClientLeads) {
-        activeClientLeads.count { it.isBrokerLead() }
-    }
-    val ownerCount = ownerWorkLeads.size
-
-    val targetLeadPool = if (activeLeadTab == "Archive") archivedWorkLeads else activeWorkLeads
-
-    val filtered = remember(
-        targetLeadPool,
-        projectionsById,
+    var computedCrmState by remember { mutableStateOf(CrmComputedState()) }
+    LaunchedEffect(
+        leads,
+        pipelineRefreshTick,
+        includeHistoricalRecords,
         activeLeadTab,
         divisionFilter,
         assignedScopeMode,
         assignedEmployeeFilter,
         selectedStages,
-        search,
+        debouncedSearch,
+        sortBy,
         today
     ) {
-        targetLeadPool.filter { lead ->
-            val proj = projectionsById[lead.id]
-            val stage = proj?.stage ?: CrmPipelineStage.fromAnyString(lead.status)
-
-            val matchesTab = when (activeLeadTab) {
-                "Archive" -> true
-                "Owners" -> lead.isOwnerLead()
-                "Broker Reqs" -> !lead.isOwnerLead() && lead.isBrokerLead()
-                "Today's Leads" -> !lead.isOwnerLead() && lead.nextFollowUp == today && !lead.followUpCompleted
-                "Overdue" -> !lead.isOwnerLead() && lead.nextFollowUp.isNotBlank() && !lead.followUpCompleted && lead.nextFollowUp < today
-                "Upcoming" -> !lead.isOwnerLead() && lead.nextFollowUp > today && !lead.followUpCompleted
-                else -> !lead.isOwnerLead()
+        computedCrmState = withContext(Dispatchers.Default) {
+            val projectionsMap = leads.associate { it.id to CrmPipelineAndWorkloadEngine.getProjection(context, it) }
+            val archivedList = ArrayList<CrmLead>()
+            val awaitingList = ArrayList<CrmLead>()
+            val activeList = ArrayList<CrmLead>()
+            for (lead in leads) {
+                val state = projectionsMap[lead.id]?.workState
+                if (state == CrmWorkState.ARCHIVED || state == CrmWorkState.AWAITING_REVIEW || state == CrmWorkState.HISTORICAL_INACTIVE) {
+                    archivedList.add(lead)
+                }
+                if (state == CrmWorkState.AWAITING_REVIEW) {
+                    awaitingList.add(lead)
+                }
+                if (if (includeHistoricalRecords) state != CrmWorkState.ARCHIVED else state == CrmWorkState.ACTIVE) {
+                    activeList.add(lead)
+                }
             }
-            val matchesDivision = when (divisionFilter) {
-                "Commercial" -> lead.segment.equals("Commercial", true)
-                "Residential" -> lead.segment.equals("Residential", true)
-                else -> true
-            }
-            val matchesStage = selectedStages.isEmpty() || stage in selectedStages
-            val matchesScopeMode = when (assignedScopeMode) {
-                "My Leads" -> lead.assignedTo.equals(currentProfile.username, ignoreCase = true)
-                "Unassigned" -> lead.assignedTo.isBlank()
-                else -> true
-            }
-            val matchesSpecificAssignee = assignedEmployeeFilter.isBlank() ||
-                lead.assignedTo.equals(assignedEmployeeFilter, ignoreCase = true)
-            val matchesSearch = search.isBlank() || listOf(
-                lead.name,
-                lead.phone,
-                lead.companyName,
-                lead.location,
-                lead.requirement,
-                lead.assignedTo,
-                stage.label
-            ).any { value -> value.contains(search, ignoreCase = true) }
 
-            matchesTab && matchesDivision && matchesStage && matchesScopeMode && matchesSpecificAssignee && matchesSearch
-        }
-    }
-
-    val sortedLeads = remember(filtered, sortBy, today) {
-        when (sortBy) {
-            "Recent" -> filtered.sortedByDescending { it.updatedAt.ifBlank { it.id } }
-            "Name" -> filtered.sortedBy { it.name }
-            else -> filtered.sortedWith(
-                compareBy<CrmLead> {
-                    val urgency = computeFollowUpUrgency(it, today)
-                    when (urgency) {
-                        FollowUpUrgency.OVERDUE -> 0
-                        FollowUpUrgency.DUE_TODAY -> 1
-                        FollowUpUrgency.UPCOMING -> 2
-                        FollowUpUrgency.COMPLETED -> 3
-                        FollowUpUrgency.NONE -> 4
+            val stageCountsMap = CrmPipelineAndWorkloadEngine.computeStageCounts(
+                context,
+                leads,
+                includeHistorical = includeHistoricalRecords
+            )
+            val clientLeads = activeList.filterNot { it.isOwnerLead() }
+            val ownerLeads = activeList.filter { it.isOwnerLead() }
+            var overdue = 0
+            var dueToday = 0
+            var upcoming = 0
+            var brokers = 0
+            for (lead in clientLeads) {
+                if (lead.isBrokerLead()) brokers++
+                if (!lead.followUpCompleted && lead.nextFollowUp.isNotBlank()) {
+                    when {
+                        lead.nextFollowUp < today -> overdue++
+                        lead.nextFollowUp == today -> dueToday++
+                        else -> upcoming++
                     }
-                }.thenBy { it.nextFollowUp.ifBlank { "9999-12-31" } }
+                }
+            }
+
+            val targetPool = if (activeLeadTab == "Archive") archivedList else activeList
+            val q = debouncedSearch.trim()
+            val filteredList = targetPool.filter { lead ->
+                val proj = projectionsMap[lead.id]
+                val stage = proj?.stage ?: CrmPipelineStage.fromAnyString(lead.status)
+
+                val matchesTab = when (activeLeadTab) {
+                    "Archive" -> true
+                    "Owners" -> lead.isOwnerLead()
+                    "Broker Reqs" -> !lead.isOwnerLead() && lead.isBrokerLead()
+                    "Today's Leads" -> !lead.isOwnerLead() && lead.nextFollowUp == today && !lead.followUpCompleted
+                    "Overdue" -> !lead.isOwnerLead() && lead.nextFollowUp.isNotBlank() && !lead.followUpCompleted && lead.nextFollowUp < today
+                    "Upcoming" -> !lead.isOwnerLead() && lead.nextFollowUp > today && !lead.followUpCompleted
+                    else -> !lead.isOwnerLead()
+                }
+                val matchesDivision = when (divisionFilter) {
+                    "Commercial" -> lead.segment.equals("Commercial", true)
+                    "Residential" -> lead.segment.equals("Residential", true)
+                    else -> true
+                }
+                val matchesStage = selectedStages.isEmpty() || stage in selectedStages
+                val matchesScopeMode = when (assignedScopeMode) {
+                    "My Leads" -> lead.assignedTo.equals(currentProfile.username, ignoreCase = true)
+                    "Unassigned" -> lead.assignedTo.isBlank()
+                    else -> true
+                }
+                val matchesSpecificAssignee = assignedEmployeeFilter.isBlank() ||
+                    lead.assignedTo.equals(assignedEmployeeFilter, ignoreCase = true)
+                val matchesSearch = q.isBlank() || listOf(
+                    lead.name,
+                    lead.phone,
+                    lead.companyName,
+                    lead.location,
+                    lead.requirement,
+                    lead.assignedTo,
+                    stage.label
+                ).any { value -> value.contains(q, ignoreCase = true) }
+
+                matchesTab && matchesDivision && matchesStage && matchesScopeMode && matchesSpecificAssignee && matchesSearch
+            }
+
+            val sortedList = when (sortBy) {
+                "Recent" -> filteredList.sortedByDescending { it.updatedAt.ifBlank { it.id } }
+                "Name" -> filteredList.sortedBy { it.name }
+                else -> filteredList.sortedWith(
+                    compareBy<CrmLead> {
+                        when (computeFollowUpUrgency(it, today)) {
+                            FollowUpUrgency.OVERDUE -> 0
+                            FollowUpUrgency.DUE_TODAY -> 1
+                            FollowUpUrgency.UPCOMING -> 2
+                            FollowUpUrgency.COMPLETED -> 3
+                            FollowUpUrgency.NONE -> 4
+                        }
+                    }.thenBy { it.nextFollowUp.ifBlank { "9999-12-31" } }
+                )
+            }
+
+            val missingMap = sortedList.associate { lead ->
+                lead.id to CrmPipelineAndWorkloadEngine.minimumRequiredMissingFields(lead)
+            }
+
+            CrmComputedState(
+                projectionsById = projectionsMap,
+                archivedWorkLeads = archivedList,
+                awaitingReviewLeads = awaitingList,
+                activeWorkLeads = activeList,
+                stageCounts = stageCountsMap,
+                activeClientLeads = clientLeads,
+                ownerWorkLeads = ownerLeads,
+                overdueCount = overdue,
+                dueTodayCount = dueToday,
+                upcomingCount = upcoming,
+                brokerCount = brokers,
+                sortedLeads = sortedList,
+                missingRequiredByLeadId = missingMap
             )
         }
     }
+
+    val projectionsById = computedCrmState.projectionsById
+    val archivedWorkLeads = computedCrmState.archivedWorkLeads
+    val awaitingReviewLeads = computedCrmState.awaitingReviewLeads
+    val activeWorkLeads = computedCrmState.activeWorkLeads
+    val stageCounts = computedCrmState.stageCounts
+    val activeClientLeads = computedCrmState.activeClientLeads
+    val overdueCount = computedCrmState.overdueCount
+    val dueTodayCount = computedCrmState.dueTodayCount
+    val brokerCount = computedCrmState.brokerCount
+    val ownerCount = computedCrmState.ownerWorkLeads.size
+    val sortedLeads = computedCrmState.sortedLeads
+    val missingRequiredByLeadId = computedCrmState.missingRequiredByLeadId
 
     var crmSubTab by rememberSaveable { mutableIntStateOf(0) } // 0: Clients & Leads, 1: Deals & Calculator
     var calculatorTargetProperty by remember { mutableStateOf<PropertyItem?>(null) }
@@ -534,8 +642,10 @@ fun CrmFoundationScreen(
     if (showTaskCentreModal) {
         CrmTasksScreen(onBack = {
             showTaskCentreModal = false
-            leads = readCrmLeads(context)
-            pipelineRefreshTick++
+            coroutineScope.launch {
+                leads = withContext(Dispatchers.IO) { readCrmLeads(context) }
+                pipelineRefreshTick++
+            }
         })
         return
     }
@@ -779,9 +889,7 @@ fun CrmFoundationScreen(
                 items(sortedLeads, key = { it.id }) { lead ->
                     val proj = projectionsById[lead.id]
                     val isArchived = proj?.workState != CrmWorkState.ACTIVE
-                    val missingReq = remember(lead) {
-                        CrmPipelineAndWorkloadEngine.minimumRequiredMissingFields(lead)
-                    }
+                    val missingReq = missingRequiredByLeadId[lead.id] ?: emptyList()
                     Box(modifier = Modifier.padding(horizontal = 12.dp)) {
                         CrmClientCard(
                             lead = lead,
@@ -824,33 +932,44 @@ fun CrmFoundationScreen(
                             onSiteVisits = { visitLead = lead },
                             onHistory = { profileLead = lead },
                             onVerifyToggle = { goLive ->
-                                if (goLive) {
-                                    CrmPipelineAndWorkloadEngine.verifyAndActivateLead(context, lead)
-                                        .onSuccess {
-                                            leads = readCrmLeads(context)
-                                            val liveLead = leads.firstOrNull { it.id == lead.id }?.copy(verificationStatus = "Verified Live")
-                                                ?: lead.copy(verificationStatus = "Verified Live")
-                                            leads = leads.map { if (it.id == liveLead.id) liveLead else it }
-                                            saveCrmLeads(context, leads)
-                                            coroutineScope.launch { onPushCrmLeadToSheet?.invoke(liveLead) }
+                                coroutineScope.launch {
+                                    if (goLive) {
+                                        val res = withContext(Dispatchers.IO) {
+                                            CrmPipelineAndWorkloadEngine.verifyAndActivateLead(context, lead)
+                                                .map {
+                                                    val current = readCrmLeads(context)
+                                                    val liveLead = (current.firstOrNull { it.id == lead.id } ?: lead)
+                                                        .copy(verificationStatus = "Verified Live")
+                                                    val updatedList = current.map { if (it.id == liveLead.id) liveLead else it }
+                                                    saveCrmLeads(context, updatedList)
+                                                    liveLead to updatedList
+                                                }
+                                        }
+                                        res.onSuccess { (liveLead, updatedList) ->
+                                            leads = updatedList
                                             pipelineRefreshTick++
                                             snackbarMessage = "${liveLead.displayClientTitle()} verified and activated Live"
-                                        }
-                                        .onFailure { err ->
+                                            launch { onPushCrmLeadToSheet?.invoke(liveLead) }
+                                        }.onFailure { err ->
                                             snackbarMessage = err.message ?: "Complete 100% required details first"
                                             editing = lead
                                             showEditor = true
                                         }
-                                } else {
-                                    CrmPipelineAndWorkloadEngine.archiveLead(context, lead)
-                                    leads = readCrmLeads(context)
-                                    val archivedLead = leads.firstOrNull { it.id == lead.id }?.copy(verificationStatus = "Archived")
-                                        ?: lead.copy(verificationStatus = "Archived")
-                                    leads = leads.map { if (it.id == archivedLead.id) archivedLead else it }
-                                    saveCrmLeads(context, leads)
-                                    coroutineScope.launch { onPushCrmLeadToSheet?.invoke(archivedLead) }
-                                    pipelineRefreshTick++
-                                    snackbarMessage = "${archivedLead.displayClientTitle()} moved to Archive"
+                                    } else {
+                                        val (archivedLead, updatedList) = withContext(Dispatchers.IO) {
+                                            CrmPipelineAndWorkloadEngine.archiveLead(context, lead)
+                                            val current = readCrmLeads(context)
+                                            val target = (current.firstOrNull { it.id == lead.id } ?: lead)
+                                                .copy(verificationStatus = "Archived")
+                                            val list = current.map { if (it.id == target.id) target else it }
+                                            saveCrmLeads(context, list)
+                                            target to list
+                                        }
+                                        leads = updatedList
+                                        pipelineRefreshTick++
+                                        snackbarMessage = "${archivedLead.displayClientTitle()} moved to Archive"
+                                        launch { onPushCrmLeadToSheet?.invoke(archivedLead) }
+                                    }
                                 }
                             }
                         )
@@ -1054,12 +1173,16 @@ fun CrmFoundationScreen(
             lead = targetLead,
             onDismiss = { stageChangeLead = null },
             onSaved = { updatedLead ->
-                leads = readCrmLeads(context)
-                val synced = leads.firstOrNull { it.id == updatedLead.id } ?: updatedLead
-                coroutineScope.launch { onPushCrmLeadToSheet?.invoke(synced) }
-                pipelineRefreshTick++
+                leads = leads.map { if (it.id == updatedLead.id) updatedLead else it }
                 stageChangeLead = null
                 Toast.makeText(context, "Stage updated to ${updatedLead.status}", Toast.LENGTH_SHORT).show()
+                coroutineScope.launch {
+                    val refreshed = withContext(Dispatchers.IO) { readCrmLeads(context) }
+                    leads = refreshed
+                    val synced = refreshed.firstOrNull { it.id == updatedLead.id } ?: updatedLead
+                    pipelineRefreshTick++
+                    onPushCrmLeadToSheet?.invoke(synced)
+                }
             }
         )
     }
@@ -1070,12 +1193,16 @@ fun CrmFoundationScreen(
             lead = targetLead,
             onDismiss = { assignLead = null },
             onSaved = { updatedLead ->
-                leads = readCrmLeads(context)
-                val synced = leads.firstOrNull { it.id == updatedLead.id } ?: updatedLead
-                coroutineScope.launch { onPushCrmLeadToSheet?.invoke(synced) }
-                pipelineRefreshTick++
+                leads = leads.map { if (it.id == updatedLead.id) updatedLead else it }
                 assignLead = null
                 Toast.makeText(context, "Assigned to ${updatedLead.assignedTo}", Toast.LENGTH_SHORT).show()
+                coroutineScope.launch {
+                    val refreshed = withContext(Dispatchers.IO) { readCrmLeads(context) }
+                    leads = refreshed
+                    val synced = refreshed.firstOrNull { it.id == updatedLead.id } ?: updatedLead
+                    pipelineRefreshTick++
+                    onPushCrmLeadToSheet?.invoke(synced)
+                }
             }
         )
     }
@@ -1104,8 +1231,10 @@ fun CrmFoundationScreen(
         LeadratReviewQueueSheet(
             awaitingLeads = awaitingReviewLeads,
             onLeadReviewed = {
-                leads = readCrmLeads(context)
-                pipelineRefreshTick++
+                coroutineScope.launch {
+                    leads = withContext(Dispatchers.IO) { readCrmLeads(context) }
+                    pipelineRefreshTick++
+                }
             },
             onDismiss = { showLeadratReviewQueue = false }
         )
@@ -1138,16 +1267,25 @@ fun CrmFoundationScreen(
             clientName = selected.displayClientTitle(),
             inventory = inventory,
             onLeadUpdated = { updated ->
-                leads = readCrmLeads(context)
-                pipelineRefreshTick++
+                leads = leads.map { if (it.id == updated.id) updated else it }
                 coroutineScope.launch {
+                    leads = withContext(Dispatchers.IO) { readCrmLeads(context) }
+                    pipelineRefreshTick++
                     onPushCrmLeadToSheet?.invoke(updated)
                 }
             },
+            onDeleteLeadPermanently = { targetLead ->
+                profileLead = null
+                showEditor = false
+                editing = null
+                handlePermanentDeleteLead(targetLead)
+            },
             onClose = {
                 profileLead = null
-                leads = readCrmLeads(context)
-                pipelineRefreshTick++
+                coroutineScope.launch {
+                    leads = withContext(Dispatchers.IO) { readCrmLeads(context) }
+                    pipelineRefreshTick++
+                }
             }
         )
     }
@@ -1166,16 +1304,19 @@ fun CrmFoundationScreen(
                     followUpCompleted = completed
                 )
                 leads = leads.map { if (it.id == selected.id) updated else it }
-                saveCrmLeads(context, leads)
-                val persisted = readCrmLeads(context).firstOrNull { it.id == selected.id } ?: updated
-                val actType = if (completed) "Follow-up Completed" else "Follow-up Scheduled"
-                appendCrmActivity(context, selected.id, actType, "Action: $action. Notes: $notesVal", date, persisted.assignedTo)
-                coroutineScope.launch {
-                    onPushCrmLeadToSheet?.invoke(persisted)
-                }
-                pipelineRefreshTick++
                 quickFollowUpLead = null
                 Toast.makeText(context, "Follow-up saved successfully", Toast.LENGTH_SHORT).show()
+                coroutineScope.launch {
+                    val persisted = withContext(Dispatchers.IO) {
+                        saveCrmLeads(context, leads)
+                        val latest = readCrmLeads(context).firstOrNull { it.id == selected.id } ?: updated
+                        val actType = if (completed) "Follow-up Completed" else "Follow-up Scheduled"
+                        appendCrmActivity(context, selected.id, actType, "Action: $action. Notes: $notesVal", date, latest.assignedTo)
+                        latest
+                    }
+                    pipelineRefreshTick++
+                    onPushCrmLeadToSheet?.invoke(persisted)
+                }
             }
         )
     }
@@ -1183,6 +1324,12 @@ fun CrmFoundationScreen(
         AddEditLeadScreen(
             initial = editing,
             onDismiss = { showEditor = false },
+            onDeletePermanently = if (currentProfile.isAdminOrSuperAdmin) { targetLead ->
+                showEditor = false
+                editing = null
+                if (profileLead?.id == targetLead.id) profileLead = null
+                handlePermanentDeleteLead(targetLead)
+            } else null,
             onBatchSaveLeads = { batchLeads ->
                 if (batchLeads.isNotEmpty()) {
                     val existingIds = leads.map { it.id }.toSet()
@@ -1190,75 +1337,86 @@ fun CrmFoundationScreen(
                     val updatedList = toInsert + leads.map { old ->
                         batchLeads.firstOrNull { it.id == old.id } ?: old
                     }
-                    saveCrmLeads(context, updatedList)
-                    leads = readCrmLeads(context)
-                    batchLeads.forEach { item ->
-                        appendCrmActivity(
-                            context = context,
-                            leadId = item.id,
-                            type = "AI Paste Imported",
-                            notes = "Imported via AI Paste: ${item.requirement} (${item.location})",
-                            nextFollowUp = item.nextFollowUp,
-                            performedBy = item.assignedTo
-                        )
-                        if (CrmPipelineAndWorkloadEngine.isReadyForLiveVerification(item)) {
-                            CrmPipelineAndWorkloadEngine.verifyAndActivateLead(context, item)
-                        }
-                        coroutineScope.launch {
-                            onPushCrmLeadToSheet?.invoke(item)
-                        }
-                    }
-                    leads = readCrmLeads(context)
-                    pipelineRefreshTick++
+                    leads = updatedList
                     showEditor = false
                     Toast.makeText(context, "Saved ${batchLeads.size} lead(s) to CRM", Toast.LENGTH_SHORT).show()
+                    coroutineScope.launch {
+                        val reloaded = withContext(Dispatchers.IO) {
+                            saveCrmLeads(context, updatedList)
+                            batchLeads.forEach { item ->
+                                appendCrmActivity(
+                                    context = context,
+                                    leadId = item.id,
+                                    type = "AI Paste Imported",
+                                    notes = "Imported via AI Paste: ${item.requirement} (${item.location})",
+                                    nextFollowUp = item.nextFollowUp,
+                                    performedBy = item.assignedTo
+                                )
+                                if (CrmPipelineAndWorkloadEngine.isReadyForLiveVerification(item)) {
+                                    CrmPipelineAndWorkloadEngine.verifyAndActivateLead(context, item)
+                                }
+                            }
+                            readCrmLeads(context)
+                        }
+                        leads = reloaded
+                        pipelineRefreshTick++
+                        batchLeads.forEach { item ->
+                            launch { onPushCrmLeadToSheet?.invoke(item) }
+                        }
+                    }
                 }
             },
             onSave = { lead, verifyLive ->
                 val existsAlready = leads.any { it.id == lead.id }
-                leads = if (!existsAlready) listOf(lead) + leads
+                val updatedList = if (!existsAlready) listOf(lead) + leads
                 else leads.map { if (it.id == lead.id) lead else it }
-                saveCrmLeads(context, leads)
-                val persistedLead = readCrmLeads(context).firstOrNull { it.id == lead.id } ?: lead
-                val actType = if (editing == null) "Lead Created" else "Requirement Updated"
-                appendCrmActivity(
-                    context = context,
-                    leadId = persistedLead.id,
-                    type = actType,
-                    notes = "Lead updated / created for ${persistedLead.displayClientTitle()} (${persistedLead.segment})",
-                    nextFollowUp = persistedLead.nextFollowUp,
-                    performedBy = persistedLead.assignedTo
-                )
-                if (verifyLive) {
-                    CrmPipelineAndWorkloadEngine.verifyAndActivateLead(context, persistedLead)
-                        .onSuccess {
-                            leads = readCrmLeads(context)
-                            val liveLead = leads.firstOrNull { it.id == persistedLead.id } ?: persistedLead
-                            val syncedLead = liveLead.copy(verificationStatus = "Verified Live")
-                            leads = leads.map { if (it.id == syncedLead.id) syncedLead else it }
-                            saveCrmLeads(context, leads)
-                            coroutineScope.launch {
-                                onPushCrmLeadToSheet?.invoke(syncedLead)
-                            }
+                leads = updatedList
+                val isNewLead = editing == null
+                coroutineScope.launch {
+                    val persistedLead = withContext(Dispatchers.IO) {
+                        saveCrmLeads(context, updatedList)
+                        val found = readCrmLeads(context).firstOrNull { it.id == lead.id } ?: lead
+                        val actType = if (isNewLead) "Lead Created" else "Requirement Updated"
+                        appendCrmActivity(
+                            context = context,
+                            leadId = found.id,
+                            type = actType,
+                            notes = "Lead updated / created for ${found.displayClientTitle()} (${found.segment})",
+                            nextFollowUp = found.nextFollowUp,
+                            performedBy = found.assignedTo
+                        )
+                        found
+                    }
+                    if (verifyLive) {
+                        val verifyResult = withContext(Dispatchers.IO) {
+                            CrmPipelineAndWorkloadEngine.verifyAndActivateLead(context, persistedLead)
+                                .map {
+                                    val latest = readCrmLeads(context)
+                                    val liveLead = latest.firstOrNull { it.id == persistedLead.id } ?: persistedLead
+                                    val syncedLead = liveLead.copy(verificationStatus = "Verified Live")
+                                    val savedList = latest.map { if (it.id == syncedLead.id) syncedLead else it }
+                                    saveCrmLeads(context, savedList)
+                                    syncedLead to savedList
+                                }
+                        }
+                        verifyResult.onSuccess { (syncedLead, savedList) ->
+                            leads = savedList
                             pipelineRefreshTick++
                             showEditor = false
                             Toast.makeText(context, "${syncedLead.displayClientTitle()} verified & synced Live", Toast.LENGTH_SHORT).show()
-                        }
-                        .onFailure { err ->
-                            coroutineScope.launch {
-                                onPushCrmLeadToSheet?.invoke(persistedLead)
-                            }
+                            launch { onPushCrmLeadToSheet?.invoke(syncedLead) }
+                        }.onFailure { err ->
                             pipelineRefreshTick++
                             showEditor = false
                             snackbarMessage = err.message ?: "Saved to Archive — complete 100% required fields to go Live"
+                            launch { onPushCrmLeadToSheet?.invoke(persistedLead) }
                         }
-                } else {
-                    coroutineScope.launch {
-                        onPushCrmLeadToSheet?.invoke(persistedLead)
+                    } else {
+                        pipelineRefreshTick++
+                        showEditor = false
+                        Toast.makeText(context, "Draft saved & synced", Toast.LENGTH_SHORT).show()
+                        launch { onPushCrmLeadToSheet?.invoke(persistedLead) }
                     }
-                    pipelineRefreshTick++
-                    showEditor = false
-                    Toast.makeText(context, "Draft saved & synced", Toast.LENGTH_SHORT).show()
                 }
             }
         )
@@ -1895,6 +2053,7 @@ internal fun CrmAssignmentBottomSheet(
     onSaved: (CrmLead) -> Unit
 ) {
     val context = LocalContext.current
+    val assignScope = rememberCoroutineScope()
     val teamEmployees = remember(context) {
         SheetsRepository.getSyncedActiveEmployeeNames(context) + listOf("Unassigned")
     }
@@ -2051,28 +2210,32 @@ internal fun CrmAssignmentBottomSheet(
                             return@Button
                         }
                         val resolvedAssignee = if (target.equals("Unassigned", ignoreCase = true)) "" else target
-                        val allLeads = readCrmLeads(context)
                         val updatedLead = lead.copy(assignedTo = resolvedAssignee)
-                        val nextLeads = if (allLeads.any { it.id == lead.id }) {
-                            allLeads.map { if (it.id == lead.id) updatedLead else it }
-                        } else {
-                            listOf(updatedLead) + allLeads
-                        }
-                        saveCrmLeads(context, nextLeads)
-                        relatedOpenTasks.forEach { task ->
-                            if (task.id in selectedTaskIds) {
-                                runCatching { CrmTaskRepository.upsert(context, task.copy(assignedTo = resolvedAssignee)) }
+                        assignScope.launch {
+                            withContext(Dispatchers.IO) {
+                                val allLeads = readCrmLeads(context)
+                                val nextLeads = if (allLeads.any { it.id == lead.id }) {
+                                    allLeads.map { if (it.id == lead.id) updatedLead else it }
+                                } else {
+                                    listOf(updatedLead) + allLeads
+                                }
+                                saveCrmLeads(context, nextLeads)
+                                relatedOpenTasks.forEach { task ->
+                                    if (task.id in selectedTaskIds) {
+                                        runCatching { CrmTaskRepository.upsert(context, task.copy(assignedTo = resolvedAssignee)) }
+                                    }
+                                }
+                                appendCrmActivity(
+                                    context = context,
+                                    leadId = lead.id,
+                                    type = "Lead Assigned",
+                                    notes = "Assigned to ${resolvedAssignee.ifBlank { "Unassigned" }}${if (noteText.isNotBlank()) ": ${noteText.trim()}" else ""}",
+                                    nextFollowUp = updatedLead.nextFollowUp,
+                                    performedBy = resolvedAssignee.ifBlank { UserSettingsManager(context).userProfile.value.username }
+                                )
                             }
+                            onSaved(updatedLead)
                         }
-                        appendCrmActivity(
-                            context = context,
-                            leadId = lead.id,
-                            type = "Lead Assigned",
-                            notes = "Assigned to ${resolvedAssignee.ifBlank { "Unassigned" }}${if (noteText.isNotBlank()) ": ${noteText.trim()}" else ""}",
-                            nextFollowUp = updatedLead.nextFollowUp,
-                            performedBy = resolvedAssignee.ifBlank { UserSettingsManager(context).userProfile.value.username }
-                        )
-                        onSaved(updatedLead)
                     },
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -2664,6 +2827,7 @@ private fun QuickFollowUpBottomSheet(
 internal fun AddEditLeadScreen(
     initial: CrmLead?,
     onDismiss: () -> Unit,
+    onDeletePermanently: ((CrmLead) -> Unit)? = null,
     onBatchSaveLeads: ((List<CrmLead>) -> Unit)? = null,
     onSave: (CrmLead, Boolean) -> Unit
 ) {
@@ -2671,6 +2835,8 @@ internal fun AddEditLeadScreen(
     val coroutineScope = rememberCoroutineScope()
     val settings = remember { UserSettingsManager(context) }
     val profile = settings.userProfile.collectAsState().value
+    val canPermanentDelete = initial != null && profile.isAdminOrSuperAdmin && onDeletePermanently != null
+    var showPermanentDeleteDialog by remember { mutableStateOf(false) }
     val defaultEmployee = profile.username.ifBlank { "Pawan Patil" }
     val isoFmt = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
 
@@ -3897,6 +4063,31 @@ internal fun AddEditLeadScreen(
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    if (canPermanentDelete) {
+                        OutlinedButton(
+                            onClick = { showPermanentDeleteDialog = true },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, StatusDangerRed),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = ErrorRedSubtle,
+                                contentColor = StatusDangerRed
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .testTag("edit_lead_delete_permanently_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteForever,
+                                contentDescription = null,
+                                tint = StatusDangerRed,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Delete Permanently", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
 
                 // Pinned Bottom Action Bar (Outer Column already enforces statusBars + navigationBars + imePadding)
@@ -3957,6 +4148,55 @@ internal fun AddEditLeadScreen(
                 }
             }
         }
+    }
+
+    if (showPermanentDeleteDialog && initial != null && onDeletePermanently != null) {
+        val leadLabel = listOf(initial.displayClientTitle(), initial.id)
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString(" / ")
+        AlertDialog(
+            onDismissRequest = { showPermanentDeleteDialog = false },
+            containerColor = SurfaceWhite,
+            title = {
+                Text(
+                    "Delete Permanently",
+                    color = StatusDangerRed,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    "Permanently delete $leadLabel from this device and the Master Google Sheet? This cannot be undone.",
+                    color = TextPrimary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showPermanentDeleteDialog = false
+                        onDeletePermanently(initial)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = StatusDangerRed,
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("edit_lead_confirm_permanent_delete_btn")
+                ) {
+                    Text("Delete Permanently", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showPermanentDeleteDialog = false },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text("Cancel", color = TextPrimary)
+                }
+            }
+        )
     }
 
     if (showQuickAddPropertyDialog) {
@@ -4229,7 +4469,13 @@ private fun AiPasteLeadsSplitterSheet(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(parsedDrafts.size) { idx ->
+                    items(
+                        count = parsedDrafts.size,
+                        key = { idx ->
+                            val draft = parsedDrafts[idx]
+                            "${idx}_${draft.mobile}_${draft.clientName.hashCode()}"
+                        }
+                    ) { idx ->
                         val item = parsedDrafts[idx]
                         val isChecked = idx in selectedIndices
                         Surface(
@@ -4470,8 +4716,15 @@ internal fun upsertCrmLeadFromPostCall(
     val resolvedId = lead.id.ifBlank {
         "CRM-${(existing.size + 1).toString().padStart(6, '0')}"
     }
+    val normalizedStatus = if (lead.status.isBlank() || lead.status.equals("New", ignoreCase = true)) {
+        "New Lead"
+    } else {
+        lead.status
+    }
     val resolvedLead = lead.copy(
         id = resolvedId,
+        status = normalizedStatus,
+        verificationStatus = "Verified Live",
         createdDate = lead.createdDate.ifBlank { today },
         createdBy = lead.createdBy.ifBlank { performer.ifBlank { "TLC-1 Team" } },
         assignedTo = lead.assignedTo.ifBlank { performer.ifBlank { "TLC-1 Team" } }
@@ -4491,15 +4744,7 @@ internal fun upsertCrmLeadFromPostCall(
         nextFollowUp = persisted.nextFollowUp,
         performedBy = performer.ifBlank { persisted.assignedTo.ifBlank { "TLC-1 Team" } }
     )
-    if (CrmPipelineAndWorkloadEngine.isReadyForLiveVerification(persisted)) {
-        CrmPipelineAndWorkloadEngine.verifyAndActivateLead(context, persisted)
-            .onSuccess { liveLead ->
-                val marked = liveLead.copy(verificationStatus = "Verified Live")
-                val refreshed = readCrmLeads(context).map { if (it.id == marked.id) marked else it }
-                saveCrmLeads(context, refreshed)
-            }
-    }
-    return readCrmLeads(context).firstOrNull { it.id == resolvedId } ?: persisted
+    return CrmPipelineAndWorkloadEngine.activateCallCapturedLead(context, persisted)
 }
 
 @Composable

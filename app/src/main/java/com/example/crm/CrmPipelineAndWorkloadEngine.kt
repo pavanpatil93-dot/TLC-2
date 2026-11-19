@@ -1210,6 +1210,56 @@ object CrmPipelineAndWorkloadEngine {
         }
     }
 
+    /**
+     * Batch 21: Routes leads saved from Call Intelligence straight to Live / Active CRM
+     * with Verified Live status, even if secondary optional fields are filled gradually.
+     */
+    fun activateCallCapturedLead(
+        context: Context,
+        lead: CrmLead
+    ): CrmLead = synchronized(lock) {
+        val actorName = UserSettingsManager(context).userProfile.value.username.ifBlank { "TLC-1 Team" }
+        val currentProj = getProjection(context, lead)
+        val nowMs = System.currentTimeMillis()
+        val normalizedStatus = if (lead.status.isBlank() || lead.status.equals("New", ignoreCase = true)) {
+            "New Lead"
+        } else {
+            lead.status
+        }
+        val cleanedNotes = lead.notes
+            .replace("Verification: Needs Verification", "Verification: Verified Live", ignoreCase = true)
+            .trim()
+        val liveLead = lead.copy(
+            status = normalizedStatus,
+            verificationStatus = "Verified Live",
+            notes = cleanedNotes
+        )
+        val division = CrmBusinessDivision.fromString(liveLead.segment)
+        val updatedProj = currentProj.copy(
+            businessDivision = if (division == CrmBusinessDivision.UNCLASSIFIED) CrmBusinessDivision.COMMERCIAL else division,
+            assignedEmployeeId = liveLead.assignedTo.trim(),
+            stage = CrmPipelineStage.fromAnyString(normalizedStatus),
+            legacyStageText = normalizedStatus,
+            workState = CrmWorkState.ACTIVE,
+            reviewDecision = LeadratReviewDecision.ACTIVATE,
+            reviewedBy = actorName,
+            reviewedAt = nowMs,
+            recordVersion = currentProj.recordVersion + 1,
+            updatedAt = nowMs,
+            updatedBy = actorName
+        )
+        val prefs = context.getSharedPreferences(PIPELINE_PREFS, Context.MODE_PRIVATE)
+        prefs.edit().putString("proj_${liveLead.id}", updatedProj.toJson().toString()).commit()
+        val allLeads = readCrmLeads(context)
+        val nextLeads = if (allLeads.any { it.id == liveLead.id }) {
+            allLeads.map { if (it.id == liveLead.id) liveLead else it }
+        } else {
+            listOf(liveLead) + allLeads
+        }
+        saveCrmLeads(context, nextLeads)
+        liveLead
+    }
+
     fun archiveLead(context: Context, lead: CrmLead): Result<CrmLead> = synchronized(lock) {
         runCatching {
             val actorName = UserSettingsManager(context).userProfile.value.username.ifBlank { "Authorized Reviewer" }

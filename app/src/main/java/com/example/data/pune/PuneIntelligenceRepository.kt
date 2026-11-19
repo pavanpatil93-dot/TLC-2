@@ -217,6 +217,8 @@ class PuneIntelligenceRepository private constructor(context: Context) {
 
     suspend fun getAllCommercialProjects(): List<CommercialProjectEntity> = dao.getAllCommercialProjects()
 
+    suspend fun getAllResidentialProjects(): List<ResidentialProjectEntity> = dao.getAllResidentialProjects()
+
     suspend fun getCommercialProjectsByLocation(locationId: String): List<CommercialProjectEntity> =
         dao.getCommercialProjectsByLocation(locationId)
 

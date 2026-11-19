@@ -4,7 +4,9 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,10 +50,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import com.example.data.pune.PuneIntelligenceRepository
+import com.example.inventory.InventoryQuality
+import com.example.inventory.PropertyPrecomputedCache
 import com.example.model.*
 import com.example.ui.components.*
 import com.example.ui.shortlist.ShortlistPinnedBottomBar
 import com.example.ui.theme.*
+
+private data class ExploreComputedState(
+    val verifiedCount: Int = 0,
+    val pendingCount: Int = 0,
+    val archiveCount: Int = 0,
+    val activeTotalCount: Int = 0,
+    val unclassifiedCount: Int = 0,
+    val filteredProperties: List<PropertyItem> = emptyList(),
+    val approximateMatchPropertyIds: Set<String> = emptySet(),
+    val linkedUnitCounts: Map<String, Int> = emptyMap()
+)
 
 enum class VerificationFilterTab(val label: String) {
     ALL("All Active"),
@@ -255,12 +270,20 @@ fun ExploreScreen(
     initialSearchQuery: String = "",
     onConsumeInitialSearchQuery: (() -> Unit)? = null,
     onVerifyProperty: ((String, AvailabilityStatus, String, String) -> Unit)? = null,
-    onToggleVerifyLive: ((PropertyItem, Boolean) -> Unit)? = null
+    onToggleVerifyLive: ((PropertyItem, Boolean) -> Unit)? = null,
+    onInlineUpdateProperty: ((PropertyItem, Boolean) -> Unit)? = null,
+    onUploadPhoto: (suspend (String, String, String, ByteArray) -> Result<String>)? = null
 ) {
-    var upcomingOnly by rememberSaveable { mutableStateOf(false) }
-    var searchQuery by rememberSaveable { mutableStateOf(initialSearchQuery) }
+    var upcomingOnly by rememberSaveable { mutableStateOf(initialSearchQuery == "RENEWAL_RADAR_90D") }
+    var searchQuery by rememberSaveable {
+        mutableStateOf(if (initialSearchQuery == "RENEWAL_RADAR_90D") "" else initialSearchQuery)
+    }
     LaunchedEffect(initialSearchQuery) {
-        if (initialSearchQuery.isNotBlank()) {
+        if (initialSearchQuery == "RENEWAL_RADAR_90D") {
+            upcomingOnly = true
+            searchQuery = ""
+            onConsumeInitialSearchQuery?.invoke()
+        } else if (initialSearchQuery.isNotBlank()) {
             searchQuery = initialSearchQuery
             onConsumeInitialSearchQuery?.invoke()
         }
@@ -299,35 +322,6 @@ fun ExploreScreen(
             }
         }
     }
-
-    // Division base pool (respects contextual category selection or FilterState brand)
-    val effectiveBrandFilter = filterState.brand ?: selectedBrand
-    val divisionProperties = remember(properties, effectiveBrandFilter, showUnclassifiedOnly) {
-        if (showUnclassifiedOnly) {
-            properties.filter { it.isUnclassified() }
-        } else {
-            when (effectiveBrandFilter) {
-                Brand.COMMERCIAL -> properties.filter { it.isCommercial() }
-                Brand.RESIDENTIAL -> properties.filter { it.isResidential() }
-                null -> properties
-            }
-        }
-    }
-
-    // Verification tab counts for current division
-    val verifiedCount = remember(divisionProperties) {
-        divisionProperties.count { it.verificationStatus == VerificationStatus.VERIFIED && it.archiveStatus != ArchiveStatus.ARCHIVED }
-    }
-    val pendingCount = remember(divisionProperties) {
-        divisionProperties.count { it.verificationStatus == VerificationStatus.PENDING && it.archiveStatus != ArchiveStatus.ARCHIVED }
-    }
-    val archiveCount = remember(divisionProperties) {
-        divisionProperties.count { it.archiveStatus == ArchiveStatus.ARCHIVED }
-    }
-    val activeTotalCount = remember(divisionProperties) {
-        divisionProperties.count { it.archiveStatus != ArchiveStatus.ARCHIVED }
-    }
-    val unclassifiedCount = remember(properties) { properties.count { it.isUnclassified() } }
 
     // Active filter badge count
     val activeFilterCount = remember(
@@ -369,273 +363,328 @@ fun ExploreScreen(
 
     val context = LocalContext.current
     val puneRepo = remember { PuneIntelligenceRepository.getInstance(context) }
+    var debouncedSearchQuery by rememberSaveable { mutableStateOf(searchQuery) }
     var resolvedSearchTokens by remember { mutableStateOf<List<String>>(emptyList()) }
 
     LaunchedEffect(searchQuery) {
-        kotlinx.coroutines.delay(250)
-        val q = searchQuery.trim().lowercase()
-        if (q.isNotBlank()) {
-            val res = puneRepo.resolveSearchQuery(q)
-            resolvedSearchTokens = (listOf(q) + res.searchTerms).distinct()
-        } else {
+        if (searchQuery.isBlank()) {
+            debouncedSearchQuery = ""
             resolvedSearchTokens = emptyList()
+        } else {
+            delay(250)
+            val q = searchQuery.trim().lowercase()
+            val res = withContext(Dispatchers.Default) { puneRepo.resolveSearchQuery(q) }
+            debouncedSearchQuery = searchQuery
+            resolvedSearchTokens = (listOf(q) + res.searchTerms).distinct()
         }
     }
 
-    // Filter properties based on verification tab, category option, search query, and multi-filter state
-    val (filteredProperties, approximateMatchPropertyIds) = remember(
-        divisionProperties,
+    val effectiveBrandFilter = filterState.brand ?: selectedBrand
+    var computedState by remember { mutableStateOf(ExploreComputedState()) }
+
+    LaunchedEffect(
+        properties,
+        effectiveBrandFilter,
+        showUnclassifiedOnly,
         selectedVerificationTab,
         selectedCategoryOption,
-        searchQuery,
+        debouncedSearchQuery,
         resolvedSearchTokens,
         filterState,
         upcomingOnly,
         sortBy,
-        showUnclassifiedOnly,
         instantQuickFilter
     ) {
-        var list = divisionProperties
-
-        if (!showUnclassifiedOnly) {
-            list = when (selectedVerificationTab) {
-                VerificationFilterTab.ALL -> list.filter { it.archiveStatus != ArchiveStatus.ARCHIVED }
-                VerificationFilterTab.VERIFIED -> list.filter { it.verificationStatus == VerificationStatus.VERIFIED && it.archiveStatus != ArchiveStatus.ARCHIVED }
-                VerificationFilterTab.PENDING -> list.filter { it.verificationStatus == VerificationStatus.PENDING && it.archiveStatus != ArchiveStatus.ARCHIVED }
-                VerificationFilterTab.ARCHIVE -> list.filter { it.archiveStatus == ArchiveStatus.ARCHIVED }
+        val next = withContext(Dispatchers.Default) {
+            val directUnits = ArrayList<PropertyItem>(properties.size)
+            val linkedCountsMap = HashMap<String, Int>(properties.size)
+            for (prop in properties) {
+                val pre = PropertyPrecomputedCache.get(prop)
+                if (!pre.isBuilderStock) {
+                    directUnits.add(prop)
+                }
+                val unitKey = prop.sameUnitGroupId.takeIf { it.isNotBlank() }
+                    ?: prop.physicalUnitKey.takeIf { it.isNotBlank() }
+                    ?: prop.id
+                linkedCountsMap[unitKey] = (linkedCountsMap[unitKey] ?: 0) + 1
             }
 
-            if (selectedCategoryOption != null) {
-                list = list.filter { categoryMatches(it, selectedCategoryOption!!) }
-            }
-        }
-
-        if (!instantQuickFilter.isNullOrBlank()) {
-            val qf = instantQuickFilter!!.lowercase()
-            list = list.filter {
-                when (qf) {
-                    "ready office" -> it.tab == InventoryTab.OFF_LEASE || it.tab == InventoryTab.OFF_OUT || it.propertyType.contains("office", ignoreCase = true)
-                    "pre-leased" -> it.tab == InventoryTab.PRE_LEASED || (it.roiPercent != null && it.roiPercent > 0.0)
-                    "luxury 3bhk+" -> (it.bhk != null && (it.bhk.contains("3") || it.bhk.contains("4") || it.bhk.contains("5"))) || it.priceOrRent >= 20000000.0
-                    else -> it.location.lowercase().contains(qf) || it.projectName.lowercase().contains(qf)
+            val divisionList = if (showUnclassifiedOnly) {
+                directUnits.filter { it.isUnclassified() }
+            } else {
+                when (effectiveBrandFilter) {
+                    Brand.COMMERCIAL -> directUnits.filter { it.isCommercial() }
+                    Brand.RESIDENTIAL -> directUnits.filter { it.isResidential() }
+                    null -> directUnits
                 }
             }
-        }
 
-        if (searchQuery.isNotBlank()) {
-            val tokens = if (resolvedSearchTokens.isNotEmpty()) resolvedSearchTokens else listOf(searchQuery.trim().lowercase())
+            var vCount = 0
+            var pCount = 0
+            var aCount = 0
+            for (prop in divisionList) {
+                val pre = PropertyPrecomputedCache.get(prop)
+                if (pre.isStrictlyLive) vCount++
+                else if (prop.archiveStatus != ArchiveStatus.ARCHIVED) pCount++
+                if (prop.archiveStatus == ArchiveStatus.ARCHIVED) aCount++
+            }
+            val unclassCount = directUnits.count { it.isUnclassified() }
 
-            list = list.filter { prop ->
-                val projectLower = prop.projectName.lowercase()
-                val locLower = prop.location.lowercase()
-                val codeLower = prop.propertyCode.lowercase()
-                val unitLower = prop.unitNumber.lowercase()
-                val typeLower = prop.propertyType.lowercase()
-                val bhkLower = prop.bhk?.lowercase().orEmpty()
-                val furnishLower = prop.furnishing.label.lowercase()
-                val ownerLower = prop.ownerName?.lowercase().orEmpty()
-                val remarksLower = prop.remarks?.lowercase().orEmpty()
+            var list: List<PropertyItem> = divisionList
 
-                tokens.any { token: String ->
-                    projectLower.contains(token) ||
-                        locLower.contains(token) ||
-                        codeLower.contains(token) ||
-                        unitLower.contains(token) ||
-                        typeLower.contains(token) ||
-                        bhkLower.contains(token) ||
-                        furnishLower.contains(token) ||
-                        ownerLower.contains(token) ||
-                        remarksLower.contains(token)
+            if (!showUnclassifiedOnly) {
+                list = when (selectedVerificationTab) {
+                    VerificationFilterTab.ALL, VerificationFilterTab.VERIFIED ->
+                        list.filter { PropertyPrecomputedCache.get(it).isStrictlyLive }
+                    VerificationFilterTab.PENDING ->
+                        list.filter { it.archiveStatus != ArchiveStatus.ARCHIVED && !PropertyPrecomputedCache.get(it).isStrictlyLive }
+                    VerificationFilterTab.ARCHIVE ->
+                        list.filter { it.archiveStatus == ArchiveStatus.ARCHIVED }
+                }
+
+                if (selectedCategoryOption != null) {
+                    list = list.filter { categoryMatches(it, selectedCategoryOption!!) }
                 }
             }
-        }
 
-        if (upcomingOnly) list = list.filter { com.example.inventory.InventoryQuality.upcoming(it) }
-
-        if (filterState.tab != null) {
-            list = list.filter { it.tab == filterState.tab }
-        }
-        if (filterState.status != null) {
-            list = list.filter { it.status == filterState.status }
-        }
-        if (filterState.furnishing != null) {
-            list = list.filter { it.furnishing == filterState.furnishing }
-        }
-        if (filterState.verifiedOnly) {
-            list = list.filter { it.verificationStatus == VerificationStatus.VERIFIED }
-        }
-        if (filterState.transactionType != "All") {
-            list = list.filter { prop ->
-                val stdTx = StandardTransactionType.fromString(prop.transactionType, prop.tab)
-                when (filterState.transactionType) {
-                    "Sale" -> stdTx == StandardTransactionType.SALE
-                    "Lease" -> stdTx == StandardTransactionType.LEASE
-                    "Pre-Leased" -> stdTx == StandardTransactionType.PRE_LEASED_SALE || prop.tab == InventoryTab.PRE_LEASED
-                    else -> true
+            if (!instantQuickFilter.isNullOrBlank()) {
+                val qf = instantQuickFilter!!.lowercase()
+                list = list.filter {
+                    when (qf) {
+                        "ready office" -> it.tab == InventoryTab.OFF_LEASE || it.tab == InventoryTab.OFF_OUT || it.propertyType.contains("office", ignoreCase = true)
+                        "pre-leased" -> it.tab == InventoryTab.PRE_LEASED || (it.roiPercent != null && it.roiPercent > 0.0)
+                        "luxury 3bhk+" -> (it.bhk != null && (it.bhk.contains("3") || it.bhk.contains("4") || it.bhk.contains("5"))) || it.priceOrRent >= 20000000.0
+                        else -> it.location.lowercase().contains(qf) || it.projectName.lowercase().contains(qf)
+                    }
                 }
             }
-        }
-        if (!filterState.propertyTypeFilter.isNullOrBlank()) {
-            val typeQuery = filterState.propertyTypeFilter!!.lowercase()
-            list = list.filter { prop ->
-                prop.propertyType.lowercase().contains(typeQuery) ||
-                    StandardPropertyType.fromString(prop.propertyType).label.lowercase().contains(typeQuery) ||
-                    prop.tab.title.lowercase().contains(typeQuery)
-            }
-        }
-        if (!filterState.bhkFilter.isNullOrBlank()) {
-            val bhkTarget = filterState.bhkFilter!!.lowercase()
-            list = list.filter { prop ->
-                prop.configuration.lowercase().contains(bhkTarget) ||
-                    prop.propertyType.lowercase().contains(bhkTarget)
-            }
-        }
-        if (filterState.onlyMainRoad) {
-            list = list.filter { it.mainRoadFacing }
-        }
-        if (filterState.minWorkstations > 0) {
-            list = list.filter { (it.workstations ?: 0) >= filterState.minWorkstations }
-        }
-        if (filterState.minCabins > 0) {
-            list = list.filter { (it.cabins ?: 0) >= filterState.minCabins }
-        }
-        if (filterState.minFrontageFeet > 0.0) {
-            list = list.filter { (it.frontageFeet ?: 0.0) >= filterState.minFrontageFeet }
-        }
-        if (filterState.locationFilter.isNotBlank()) {
-            val locQuery = filterState.locationFilter.trim().lowercase()
-            list = list.filter { prop ->
-                prop.location.lowercase().contains(locQuery) ||
-                    prop.fullAddress.lowercase().contains(locQuery)
-            }
-        }
-        if (filterState.projectFilter.isNotBlank()) {
-            val projQuery = filterState.projectFilter.trim().lowercase()
-            list = list.filter { prop ->
-                prop.projectName.lowercase().contains(projQuery) ||
-                    prop.projectId.lowercase().contains(projQuery)
-            }
-        }
-        if (!filterState.possessionFilter.isNullOrBlank()) {
-            val possQuery = filterState.possessionFilter!!.lowercase()
-            list = list.filter { prop ->
-                when (possQuery) {
-                    "immediate", "ready", "ready to move" -> prop.possession.contains("immediate", ignoreCase = true) ||
-                        prop.possession.contains("ready", ignoreCase = true) ||
-                        prop.status == AvailabilityStatus.AVAILABLE
-                    "under construction" -> prop.tab == InventoryTab.UND_CONST ||
-                        prop.possession.contains("under", ignoreCase = true)
-                    else -> prop.possession.lowercase().contains(possQuery)
-                }
-            }
-        }
-        if (!filterState.parkingFilter.isNullOrBlank()) {
-            val parkQuery = filterState.parkingFilter!!.lowercase()
-            list = list.filter { prop ->
-                val parkText = prop.parking.lowercase()
-                val parkCount = prop.parkingCount ?: parkText.filter { it.isDigit() }.toIntOrNull() ?: 0
-                when {
-                    parkQuery.contains("2+") -> parkCount >= 2
-                    parkQuery.contains("covered") || parkQuery.contains("reserved") ->
-                        parkText.contains("cover") || parkText.contains("reserv") || parkCount >= 1
-                    else -> (parkText.isNotBlank() && !parkText.equals("none", ignoreCase = true) && !parkText.equals("no", ignoreCase = true)) || parkCount >= 1
-                }
-            }
-        }
 
-        // Range Matching with Approximate Match Tolerance (Area + Price)
-        val hasAreaRange = filterState.minCarpet > 0.0 || filterState.maxCarpet < Double.MAX_VALUE
-        val hasPriceRange = filterState.minPrice > 0.0 || filterState.maxPrice < Double.MAX_VALUE
-        val approxIds = mutableSetOf<String>()
-
-        if (hasAreaRange || hasPriceRange) {
-            val exactMatched = mutableListOf<PropertyItem>()
-            val approxMatched = mutableListOf<PropertyItem>()
-
-            for (prop in list) {
-                val areaVal = if (filterState.areaBasis == AreaRateBasis.BUILT_UP && prop.builtUpArea > 0.0) {
-                    prop.builtUpArea
+            if (debouncedSearchQuery.isNotBlank()) {
+                val tokens = if (resolvedSearchTokens.isNotEmpty()) {
+                    resolvedSearchTokens
                 } else {
-                    prop.carpetAreaSqFt
+                    listOf(debouncedSearchQuery.trim().lowercase())
                 }
-                val areaTier = if (hasAreaRange) {
-                    com.example.inventory.InventoryQuality.evaluateRangeMatch(
-                        value = areaVal,
-                        minTarget = filterState.minCarpet,
-                        maxTarget = filterState.maxCarpet,
-                        tolerance = filterState.tolerance,
-                        respectHardCeiling = false
-                    )
-                } else {
-                    com.example.inventory.RangeMatchTier.EXACT_MATCH
-                }
-
-                if (areaTier == com.example.inventory.RangeMatchTier.NO_MATCH) continue
-
-                val effectivePrice = when {
-                    prop.tab.isRental && (prop.rent ?: 0.0) > 0.0 -> prop.rent ?: 0.0
-                    !prop.tab.isRental && (prop.priceSale ?: 0.0) > 0.0 -> prop.priceSale ?: 0.0
-                    else -> prop.priceOrRent
-                }
-                val priceTier = if (hasPriceRange) {
-                    com.example.inventory.InventoryQuality.evaluateRangeMatch(
-                        value = effectivePrice,
-                        minTarget = filterState.minPrice,
-                        maxTarget = filterState.maxPrice,
-                        tolerance = filterState.tolerance,
-                        respectHardCeiling = filterState.respectHardBudgetCeiling
-                    )
-                } else {
-                    com.example.inventory.RangeMatchTier.EXACT_MATCH
-                }
-
-                if (priceTier == com.example.inventory.RangeMatchTier.NO_MATCH) continue
-
-                if (areaTier == com.example.inventory.RangeMatchTier.EXACT_MATCH &&
-                    priceTier == com.example.inventory.RangeMatchTier.EXACT_MATCH
-                ) {
-                    exactMatched.add(prop)
-                } else {
-                    approxIds.add(prop.id)
-                    approxMatched.add(prop)
+                list = list.filter { prop ->
+                    val blob = PropertyPrecomputedCache.get(prop).searchBlobLower
+                    tokens.any { token -> blob.contains(token) }
                 }
             }
 
-            // Rank Exact matches ahead of Approximate matches
-            list = exactMatched + approxMatched
+            if (upcomingOnly) {
+                list = list.filter { RenewalRadar90dHelper.matchesRenewalRadar90d(it) }
+            }
+
+            if (filterState.tab != null) {
+                list = list.filter { it.tab == filterState.tab }
+            }
+            if (filterState.status != null) {
+                list = list.filter { it.status == filterState.status }
+            }
+            if (filterState.furnishing != null) {
+                list = list.filter { it.furnishing == filterState.furnishing }
+            }
+            if (filterState.verifiedOnly) {
+                list = list.filter { it.verificationStatus == VerificationStatus.VERIFIED }
+            }
+            if (filterState.transactionType != "All") {
+                list = list.filter { prop ->
+                    val stdTx = PropertyPrecomputedCache.get(prop).stdTx
+                    when (filterState.transactionType) {
+                        "Sale" -> stdTx == StandardTransactionType.SALE
+                        "Lease" -> stdTx == StandardTransactionType.LEASE
+                        "Pre-Leased" -> stdTx == StandardTransactionType.PRE_LEASED_SALE || prop.tab == InventoryTab.PRE_LEASED
+                        else -> true
+                    }
+                }
+            }
+            if (!filterState.propertyTypeFilter.isNullOrBlank()) {
+                val typeQuery = filterState.propertyTypeFilter!!.lowercase()
+                list = list.filter { prop ->
+                    prop.propertyType.lowercase().contains(typeQuery) ||
+                        StandardPropertyType.fromString(prop.propertyType).label.lowercase().contains(typeQuery) ||
+                        prop.tab.title.lowercase().contains(typeQuery)
+                }
+            }
+            if (!filterState.bhkFilter.isNullOrBlank()) {
+                val bhkTarget = filterState.bhkFilter!!.lowercase()
+                list = list.filter { prop ->
+                    prop.configuration.lowercase().contains(bhkTarget) ||
+                        prop.propertyType.lowercase().contains(bhkTarget)
+                }
+            }
+            if (filterState.onlyMainRoad) {
+                list = list.filter { it.mainRoadFacing }
+            }
+            if (filterState.minWorkstations > 0) {
+                list = list.filter { (it.workstations ?: 0) >= filterState.minWorkstations }
+            }
+            if (filterState.minCabins > 0) {
+                list = list.filter { (it.cabins ?: 0) >= filterState.minCabins }
+            }
+            if (filterState.minFrontageFeet > 0.0) {
+                list = list.filter { (it.frontageFeet ?: 0.0) >= filterState.minFrontageFeet }
+            }
+            if (filterState.locationFilter.isNotBlank()) {
+                val locQuery = filterState.locationFilter.trim().lowercase()
+                list = list.filter { prop ->
+                    prop.location.lowercase().contains(locQuery) ||
+                        prop.fullAddress.lowercase().contains(locQuery)
+                }
+            }
+            if (filterState.projectFilter.isNotBlank()) {
+                val projQuery = filterState.projectFilter.trim().lowercase()
+                list = list.filter { prop ->
+                    prop.projectName.lowercase().contains(projQuery) ||
+                        prop.projectId.lowercase().contains(projQuery)
+                }
+            }
+            if (!filterState.possessionFilter.isNullOrBlank()) {
+                val possQuery = filterState.possessionFilter!!.lowercase()
+                list = list.filter { prop ->
+                    when (possQuery) {
+                        "immediate", "ready", "ready to move" -> prop.possession.contains("immediate", ignoreCase = true) ||
+                            prop.possession.contains("ready", ignoreCase = true) ||
+                            prop.status == AvailabilityStatus.AVAILABLE
+                        "under construction" -> prop.tab == InventoryTab.UND_CONST ||
+                            prop.possession.contains("under", ignoreCase = true)
+                        else -> prop.possession.lowercase().contains(possQuery)
+                    }
+                }
+            }
+            if (!filterState.parkingFilter.isNullOrBlank()) {
+                val parkQuery = filterState.parkingFilter!!.lowercase()
+                list = list.filter { prop ->
+                    val parkText = prop.parking.lowercase()
+                    val parkCount = prop.parkingCount ?: parkText.filter { it.isDigit() }.toIntOrNull() ?: 0
+                    when {
+                        parkQuery.contains("2+") -> parkCount >= 2
+                        parkQuery.contains("covered") || parkQuery.contains("reserved") ->
+                            parkText.contains("cover") || parkText.contains("reserv") || parkCount >= 1
+                        else -> (parkText.isNotBlank() && !parkText.equals("none", ignoreCase = true) && !parkText.equals("no", ignoreCase = true)) || parkCount >= 1
+                    }
+                }
+            }
+
+            // Range Matching with Approximate Match Tolerance (Area + Price)
+            val hasAreaRange = filterState.minCarpet > 0.0 || filterState.maxCarpet < Double.MAX_VALUE
+            val hasPriceRange = filterState.minPrice > 0.0 || filterState.maxPrice < Double.MAX_VALUE
+            val approxIds = HashSet<String>()
+
+            if (hasAreaRange || hasPriceRange) {
+                val exactMatched = mutableListOf<PropertyItem>()
+                val approxMatched = mutableListOf<PropertyItem>()
+
+                for (prop in list) {
+                    val areaVal = if (filterState.areaBasis == AreaRateBasis.BUILT_UP && prop.builtUpArea > 0.0) {
+                        prop.builtUpArea
+                    } else {
+                        prop.carpetAreaSqFt
+                    }
+                    val areaTier = if (hasAreaRange) {
+                        InventoryQuality.evaluateRangeMatch(
+                            value = areaVal,
+                            minTarget = filterState.minCarpet,
+                            maxTarget = filterState.maxCarpet,
+                            tolerance = filterState.tolerance,
+                            respectHardCeiling = false
+                        )
+                    } else {
+                        com.example.inventory.RangeMatchTier.EXACT_MATCH
+                    }
+
+                    if (areaTier == com.example.inventory.RangeMatchTier.NO_MATCH) continue
+
+                    val effectivePrice = when {
+                        prop.tab.isRental && (prop.rent ?: 0.0) > 0.0 -> prop.rent ?: 0.0
+                        !prop.tab.isRental && (prop.priceSale ?: 0.0) > 0.0 -> prop.priceSale ?: 0.0
+                        else -> prop.priceOrRent
+                    }
+                    val priceTier = if (hasPriceRange) {
+                        InventoryQuality.evaluateRangeMatch(
+                            value = effectivePrice,
+                            minTarget = filterState.minPrice,
+                            maxTarget = filterState.maxPrice,
+                            tolerance = filterState.tolerance,
+                            respectHardCeiling = filterState.respectHardBudgetCeiling
+                        )
+                    } else {
+                        com.example.inventory.RangeMatchTier.EXACT_MATCH
+                    }
+
+                    if (priceTier == com.example.inventory.RangeMatchTier.NO_MATCH) continue
+
+                    if (areaTier == com.example.inventory.RangeMatchTier.EXACT_MATCH &&
+                        priceTier == com.example.inventory.RangeMatchTier.EXACT_MATCH
+                    ) {
+                        exactMatched.add(prop)
+                    } else {
+                        approxIds.add(prop.id)
+                        approxMatched.add(prop)
+                    }
+                }
+
+                list = exactMatched + approxMatched
+            }
+
+            val sortedList = if (upcomingOnly && sortBy == "Default") {
+                list.sortedBy { RenewalRadar90dHelper.daysUntilRenewalOrLockInEnd(it) ?: 999L }
+            } else {
+                when (sortBy) {
+                    "PriceAsc", "Price: Low to High" -> {
+                        val lease = list.filter { it.isLeaseTab() }.sortedBy { PropertyPrecomputedCache.get(it).primaryAmount }
+                        val sale = list.filter { !it.isLeaseTab() }.sortedBy { PropertyPrecomputedCache.get(it).primaryAmount }
+                        lease + sale
+                    }
+                    "PriceDesc", "Price: High to Low" -> {
+                        val lease = list.filter { it.isLeaseTab() }.sortedByDescending { PropertyPrecomputedCache.get(it).primaryAmount }
+                        val sale = list.filter { !it.isLeaseTab() }.sortedByDescending { PropertyPrecomputedCache.get(it).primaryAmount }
+                        sale + lease
+                    }
+                    "AreaDesc", "Area: Large to Small" -> list.sortedByDescending { it.carpetAreaSqFt }
+                    "Area: Small to Large" -> list.sortedBy { it.carpetAreaSqFt }
+                    "CodeAsc" -> list.sortedBy { it.propertyCode }
+                    "Recently Updated" -> list.sortedByDescending { it.lastVerificationDate }
+                    "Recently Verified" -> list.sortedByDescending { it.lastVerifiedDateClean }
+                    else -> list
+                }
+            }
+
+            ExploreComputedState(
+                verifiedCount = vCount,
+                pendingCount = pCount,
+                archiveCount = aCount,
+                activeTotalCount = vCount,
+                unclassifiedCount = unclassCount,
+                filteredProperties = sortedList,
+                approximateMatchPropertyIds = approxIds,
+                linkedUnitCounts = linkedCountsMap
+            )
         }
-
-        // Sorting with Transaction-Safe Price Sorting
-        val sortedList = when (sortBy) {
-            "Price: Low to High" -> {
-                val lease = list.filter { it.isLeaseTab() }.sortedBy { CalculationUtils.primaryAmountForProperty(it) }
-                val sale = list.filter { !it.isLeaseTab() }.sortedBy { CalculationUtils.primaryAmountForProperty(it) }
-                lease + sale
-            }
-            "Price: High to Low" -> {
-                val lease = list.filter { it.isLeaseTab() }.sortedByDescending { CalculationUtils.primaryAmountForProperty(it) }
-                val sale = list.filter { !it.isLeaseTab() }.sortedByDescending { CalculationUtils.primaryAmountForProperty(it) }
-                sale + lease
-            }
-            "Area: Small to Large" -> list.sortedBy { it.carpetAreaSqFt }
-            "Area: Large to Small" -> list.sortedByDescending { it.carpetAreaSqFt }
-            "Recently Updated" -> list.sortedByDescending { it.lastVerificationDate }
-            "Recently Verified" -> list.sortedByDescending { it.lastVerifiedDateClean }
-            else -> list
-        }
-        sortedList to approxIds.toSet()
+        computedState = next
     }
+
+    val verifiedCount = computedState.verifiedCount
+    val pendingCount = computedState.pendingCount
+    val archiveCount = computedState.archiveCount
+    val activeTotalCount = computedState.activeTotalCount
+    val unclassifiedCount = computedState.unclassifiedCount
+    val filteredProperties = computedState.filteredProperties
+    val approximateMatchPropertyIds = computedState.approximateMatchPropertyIds
+    val linkedUnitCounts = computedState.linkedUnitCounts
 
     // Animated inventory list state for entrance and exit animations via AnimatedVisibility API
     var displayedProperties by remember { mutableStateOf(filteredProperties) }
     var visiblePropertyIds by remember { mutableStateOf(filteredProperties.map { it.id }.toSet()) }
 
     LaunchedEffect(filteredProperties) {
-        val targetIds = filteredProperties.map { it.id }.toSet()
+        val targetIds = withContext(Dispatchers.Default) {
+            filteredProperties.mapTo(HashSet(filteredProperties.size)) { it.id }
+        }
         val exitingIds = visiblePropertyIds - targetIds
-        if (exitingIds.isNotEmpty()) {
+        if (exitingIds.isNotEmpty() && visiblePropertyIds.isNotEmpty() && exitingIds.size <= 30) {
             visiblePropertyIds = targetIds
-            delay(220)
+            delay(200)
             displayedProperties = filteredProperties
         } else {
             displayedProperties = filteredProperties
@@ -898,15 +947,25 @@ fun ExploreScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        item {
+                        item(key = "chip_renewal_radar") {
                             CategoryChip(
-                                label = "Upcoming 90d",
+                                label = "🔔 Renewal Radar (90d)",
                                 isSelected = upcomingOnly,
-                                onClick = { upcomingOnly = !upcomingOnly }
+                                onClick = { upcomingOnly = !upcomingOnly },
+                                modifier = Modifier.testTag("renewal_radar_90d_chip")
                             )
                         }
 
-                        items(subCategories) { option ->
+                        items(
+                            items = subCategories,
+                            key = { opt ->
+                                when (opt) {
+                                    is CategoryFilterOption.TabCategory -> "tab_${opt.tab.name}"
+                                    is CategoryFilterOption.TypeCategory -> "type_${opt.typeName}"
+                                    else -> opt.toString()
+                                }
+                            }
+                        ) { option ->
                             val isSelected = selectedCategoryOption == option && !showUnclassifiedOnly
                             val label = when (option) {
                                 is CategoryFilterOption.TabCategory -> getCategoryDisplayName(option.tab)
@@ -926,7 +985,7 @@ fun ExploreScreen(
                         }
 
                         if (unclassifiedCount > 0) {
-                            item {
+                            item(key = "chip_unclassified") {
                                 CategoryChip(
                                     label = "Unclassified ($unclassifiedCount)",
                                     isSelected = showUnclassifiedOnly,
@@ -1343,13 +1402,6 @@ fun ExploreScreen(
                 }
             }
         } else if (isGridView) {
-            val linkedUnitCounts = remember(properties) {
-                properties.groupBy { prop ->
-                    prop.sameUnitGroupId.takeIf { it.isNotBlank() }
-                        ?: prop.physicalUnitKey.takeIf { it.isNotBlank() }
-                        ?: prop.id
-                }.mapValues { it.value.size }
-            }
             LazyVerticalGrid(
                 state = gridState,
                 columns = GridCells.Adaptive(minSize = 156.dp),
@@ -1408,19 +1460,14 @@ fun ExploreScreen(
                                     onVerifyProperty?.invoke(property.id, property.status, "Quick Switch", "")
                                 }
                             },
-                            linkedUnitCount = linkedUnitCounts[unitKey] ?: 1
+                            linkedUnitCount = linkedUnitCounts[unitKey] ?: 1,
+                            onInlineUpdateProperty = onInlineUpdateProperty,
+                            onUploadPhoto = onUploadPhoto
                         )
                     }
                 }
             }
         } else {
-            val linkedUnitCounts = remember(properties) {
-                properties.groupBy { prop ->
-                    prop.sameUnitGroupId.takeIf { it.isNotBlank() }
-                        ?: prop.physicalUnitKey.takeIf { it.isNotBlank() }
-                        ?: prop.id
-                }.mapValues { it.value.size }
-            }
             LazyColumn(
                 state = listState,
                 contentPadding = PaddingValues(12.dp),
@@ -1476,7 +1523,9 @@ fun ExploreScreen(
                                     onVerifyProperty?.invoke(property.id, property.status, "Quick Switch", "")
                                 }
                             },
-                            linkedUnitCount = linkedUnitCounts[unitKey] ?: 1
+                            linkedUnitCount = linkedUnitCounts[unitKey] ?: 1,
+                            onInlineUpdateProperty = onInlineUpdateProperty,
+                            onUploadPhoto = onUploadPhoto
                         )
                     }
                 }
@@ -1626,10 +1675,11 @@ fun VerificationTabChip(
 fun CategoryChip(
     label: String,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(if (isSelected) BrandGold else BrandCharcoalSurface)
             .border(
@@ -1650,6 +1700,94 @@ fun CategoryChip(
     }
 }
 
+object RenewalRadar90dHelper {
+    private val dateFormats = listOf(
+        "yyyy-MM-dd",
+        "dd/MM/yyyy",
+        "dd-MM-yyyy",
+        "d MMM yyyy",
+        "dd MMM yyyy",
+        "MMM yyyy"
+    )
+
+    fun daysUntilRenewalOrLockInEnd(p: PropertyItem): Long? {
+        val candidateDates = listOfNotNull(
+            p.leaseExpiryDate.takeIf { it.isNotBlank() },
+            p.upcomingVacancyDate.takeIf { it.isNotBlank() },
+            p.unmappedColumns["Lease End Date"]?.takeIf { it.isNotBlank() },
+            p.unmappedColumns["leaseEndDate"]?.takeIf { it.isNotBlank() },
+            p.unmappedColumns["Lock-in End Date"]?.takeIf { it.isNotBlank() },
+            p.unmappedColumns["lockInEndDate"]?.takeIf { it.isNotBlank() },
+            p.unmappedColumns["Lock-In Expiry"]?.takeIf { it.isNotBlank() }
+        )
+
+        val todayEpochDay = java.time.LocalDate.now().toEpochDay()
+        val parsedDays = mutableListOf<Long>()
+
+        for (raw in candidateDates) {
+            parseEpochDay(raw)?.let { targetDay ->
+                parsedDays.add(targetDay - todayEpochDay)
+            }
+        }
+
+        // Also check if leaseStartDate in unmappedColumns + lockInMonths or leaseTenureYears falls within window
+        val rawLeaseStart = p.unmappedColumns["Lease Start Date"]
+            ?: p.unmappedColumns["leaseStartDate"]
+            ?: ""
+        if (parsedDays.isEmpty() && rawLeaseStart.isNotBlank()) {
+            parseEpochDay(rawLeaseStart)?.let { startEpochDay ->
+                val startLocal = java.time.LocalDate.ofEpochDay(startEpochDay)
+                val lockYearsDouble = p.lockInPeriodYears?.toString()?.toDoubleOrNull() ?: 0.0
+                val lockMonths = p.lockInMonths ?: (lockYearsDouble * 12.0).toInt().takeIf { it > 0 }
+                if (lockMonths != null && lockMonths > 0) {
+                    val lockEndDays = startLocal.plusMonths(lockMonths.toLong()).toEpochDay() - todayEpochDay
+                    parsedDays.add(lockEndDays)
+                }
+                val tenureYearsDouble = p.leaseTenureYears?.toString()?.toDoubleOrNull() ?: 0.0
+                if (tenureYearsDouble > 0.0) {
+                    val leaseEndDays = startLocal.plusMonths((tenureYearsDouble * 12.0).toLong()).toEpochDay() - todayEpochDay
+                    parsedDays.add(leaseEndDays)
+                }
+            }
+        }
+
+        val inWindow = parsedDays.filter { it in -30L..90L }
+        if (inWindow.isNotEmpty()) {
+            return inWindow.minOrNull()
+        }
+        if (com.example.inventory.InventoryQuality.upcoming(p)) {
+            return parsedDays.minOrNull() ?: 45L
+        }
+        return null
+    }
+
+    fun matchesRenewalRadar90d(p: PropertyItem): Boolean {
+        return daysUntilRenewalOrLockInEnd(p) != null
+    }
+
+    private fun parseEpochDay(raw: String): Long? {
+        val cleaned = raw.trim()
+        if (cleaned.isBlank()) return null
+        try {
+            return java.time.LocalDate.parse(cleaned).toEpochDay()
+        } catch (_: Exception) {
+        }
+        for (pattern in dateFormats) {
+            try {
+                val sdf = java.text.SimpleDateFormat(pattern, java.util.Locale.US).apply {
+                    isLenient = true
+                }
+                val d = sdf.parse(cleaned)
+                if (d != null) {
+                    return d.time / 86_400_000L
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return null
+    }
+}
+
 /**
  * Polished entrance and exit transition container for inventory property cards using Jetpack Compose's AnimatedVisibility API.
  * Provides smooth staggered entrance (fade-in, slide-up, expand) and exit (fade-out, slide-up, shrink).
@@ -1661,11 +1799,7 @@ fun AnimatedPropertyCardContainer(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    var itemMounted by remember(property.id) { mutableStateOf(false) }
-    LaunchedEffect(property.id) {
-        itemMounted = true
-    }
-    val isVisible = itemMounted && visible
+    val isVisible = visible
 
     AnimatedVisibility(
         visible = isVisible,

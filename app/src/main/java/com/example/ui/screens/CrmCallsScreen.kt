@@ -48,11 +48,47 @@ import com.example.R
 import com.example.crm.*
 import com.example.data.projects.DirectoryProject
 import com.example.model.*
-import com.example.ui.components.CompactDropdownField
+import com.example.ui.components.PocTypeChipSelector
 import com.example.ui.components.SearchableDropdownField
 import com.example.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
+
+private data class CrmCallsComputedState(
+    val unlinkedCount: Int = 0,
+    val skippedCount: Int = 0,
+    val internalCount: Int = 0,
+    val todayCallsCount: Int = 0,
+    val convertedCount: Int = 0,
+    val missedCount: Int = 0,
+    val incomingCount: Int = 0,
+    val outgoingCount: Int = 0,
+    val filteredCalls: List<CrmCallRecord> = emptyList(),
+    val followUpByCallId: Map<String, Pair<FollowUpState, String?>> = emptyMap()
+)
+
+@Composable
+private fun CompactDropdownField(
+    label: String,
+    selectedValue: String,
+    options: List<String>,
+    onValueSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    allowCustom: Boolean = false
+) {
+    TlcSurfaceDropdownField(
+        label = label,
+        selectedValue = selectedValue,
+        options = options,
+        onValueSelected = onValueSelected,
+        modifier = modifier,
+        allowCustom = allowCustom
+    )
+}
 
 enum class OpportunityCategory {
     CLIENT, OWNER_DEVELOPER, BROKER_PARTNER
@@ -67,13 +103,24 @@ fun CrmCallsScreen(
     onNewCallReview: (() -> Unit)? = null,
     onOpenSavedReviews: (() -> Unit)? = null,
     onOpenPostCallSheet: ((CrmCallRecord) -> Unit)? = null,
+    onOpenPostCallQueue: ((List<CrmCallRecord>, Int) -> Unit)? = null,
     externalRefreshTick: Int = 0
 ) {
     val context = LocalContext.current
-    var calls by remember { mutableStateOf(CrmCallManager.readCalls(context)) }
+    val coroutineScope = rememberCoroutineScope()
+    val settingsManager = remember(context) { UserSettingsManager(context) }
+    val userProfile by settingsManager.userProfile.collectAsState()
+    val revealMaskedPhones by settingsManager.revealConfidentialPhonesForExec.collectAsState()
+    val canViewUnmaskedConfidential = com.example.model.PhoneMaskingUtils.canViewUnmaskedConfidentialPhone(
+        userProfile = userProfile,
+        revealToggleOn = revealMaskedPhones
+    )
+    var calls by remember { mutableStateOf<List<CrmCallRecord>>(emptyList()) }
     LaunchedEffect(externalRefreshTick) {
-        if (externalRefreshTick > 0) {
-            calls = CrmCallManager.readCalls(context)
+        calls = withContext(Dispatchers.IO) {
+            CrmCallManager.retagInternalTeamCalls(context)
+            TeamHandoverStore.reconcileWithCallLogs(context)
+            CrmCallManager.readCalls(context)
         }
     }
     var selectedFilter by remember { mutableStateOf("All") }
@@ -88,16 +135,27 @@ fun CrmCallsScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            val deviceCalls = CrmCallManager.safeReadDeviceCallLogs(context)
-            if (deviceCalls.isNotEmpty()) {
-                val existingIds = calls.map { it.id }.toSet()
-                val newOnes = deviceCalls.filterNot { it.id in existingIds }
-                calls = newOnes + calls
-                CrmCallManager.saveCalls(context, calls)
-                pendingReview = newOnes.firstOrNull()
-                Toast.makeText(context, "Imported ${newOnes.size} calls. Review each business call before classifying.", Toast.LENGTH_LONG).show()
-            } else {
-                Toast.makeText(context, CrmCallManager.lastDeviceReadError ?: "No recent calls found in call log", Toast.LENGTH_SHORT).show()
+            coroutineScope.launch {
+                val (deviceCalls, updatedCalls, firstNew) = withContext(Dispatchers.IO) {
+                    val fetched = CrmCallManager.safeReadDeviceCallLogs(context)
+                    if (fetched.isNotEmpty()) {
+                        val existingIds = calls.map { it.id }.toSet()
+                        val newOnes = fetched.filterNot { it.id in existingIds }
+                        val merged = newOnes + calls
+                        CrmCallManager.saveCalls(context, merged)
+                        Triple(fetched, merged, newOnes.firstOrNull())
+                    } else {
+                        Triple(emptyList(), calls, null)
+                    }
+                }
+                if (deviceCalls.isNotEmpty()) {
+                    val addedCount = updatedCalls.size - calls.size
+                    calls = updatedCalls
+                    pendingReview = firstNew
+                    Toast.makeText(context, "Imported $addedCount calls. Review each business call before classifying.", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, CrmCallManager.lastDeviceReadError ?: "No recent calls found in call log", Toast.LENGTH_SHORT).show()
+                }
             }
         } else {
             Toast.makeText(
@@ -108,7 +166,19 @@ fun CrmCallsScreen(
         }
     }
 
-    val unlinkedCount = remember(calls) { calls.count { !it.isLinked } }
+    val unlinkedCount: Int
+    val todayCallsCount: Int
+    val convertedCount: Int
+    var debouncedSearchQuery by remember { mutableStateOf(searchQuery) }
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isBlank()) {
+            debouncedSearchQuery = ""
+        } else {
+            delay(250)
+            debouncedSearchQuery = searchQuery
+        }
+    }
+
     val today = remember {
         val cal = Calendar.getInstance()
         cal.set(Calendar.HOUR_OF_DAY, 0)
@@ -116,27 +186,81 @@ fun CrmCallsScreen(
         cal.set(Calendar.SECOND, 0)
         cal.timeInMillis
     }
-    val todayCallsCount = remember(calls) { calls.count { it.timestamp >= today } }
-    val convertedCount = remember(calls) { calls.count { it.isLinked } }
 
-    val filteredCalls = remember(calls, selectedFilter, searchQuery) {
-        calls.filter { call ->
-            val matchesFilter = when (selectedFilter) {
-                "Unlinked" -> !call.isLinked
-                "Incoming" -> call.callType == CallType.INCOMING
-                "Outgoing" -> call.callType == CallType.OUTGOING
-                "Missed" -> call.callType == CallType.MISSED
-                "Converted" -> call.isLinked
-                else -> true
+    var callsComputed by remember { mutableStateOf(CrmCallsComputedState()) }
+    var skippedRefreshTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(calls, selectedFilter, debouncedSearchQuery, externalRefreshTick, skippedRefreshTick) {
+        callsComputed = withContext(Dispatchers.Default) {
+            var unlinked = 0
+            var skipped = 0
+            var internal = 0
+            var todayCount = 0
+            var converted = 0
+            var missed = 0
+            var incoming = 0
+            var outgoing = 0
+            val q = debouncedSearchQuery.trim()
+            val filtered = ArrayList<CrmCallRecord>(calls.size)
+            val followUpMap = HashMap<String, Pair<FollowUpState, String?>>(calls.size)
+
+            for (call in calls) {
+                val isInternal = CrmCallManager.isInternalTeamCall(context, call)
+                val isSkipped = CrmCallManager.isCallSkipped(context, call)
+                when {
+                    isInternal -> internal++
+                    isSkipped && !call.isLinked -> skipped++
+                    !call.isLinked -> unlinked++
+                    else -> converted++
+                }
+                if (call.timestamp >= today) todayCount++
+                when (call.callType) {
+                    CallType.MISSED -> missed++
+                    CallType.INCOMING -> incoming++
+                    CallType.OUTGOING -> outgoing++
+                }
+                val matchesFilter = when (selectedFilter) {
+                    "Unlinked" -> !call.isLinked && !isSkipped && !isInternal
+                    "Skipped" -> isSkipped && !call.isLinked && !isInternal
+                    "Internal" -> isInternal
+                    "Incoming" -> call.callType == CallType.INCOMING
+                    "Outgoing" -> call.callType == CallType.OUTGOING
+                    "Missed" -> call.callType == CallType.MISSED
+                    "Converted" -> call.isLinked
+                    else -> true
+                }
+                val matchesSearch = q.isBlank() ||
+                    call.callerName.contains(q, ignoreCase = true) ||
+                    call.phoneNumber.contains(q, ignoreCase = true) ||
+                    call.notes.contains(q, ignoreCase = true) ||
+                    call.linkedOpportunityTitle.orEmpty().contains(q, ignoreCase = true)
+
+                if (matchesFilter && matchesSearch) {
+                    filtered.add(call)
+                    val fDate = CallFollowUpStore.get(context, call.id)
+                    followUpMap[call.id] = CallFollowUpStore.state(fDate) to fDate
+                }
             }
-            val matchesSearch = searchQuery.isBlank() ||
-                call.callerName.contains(searchQuery, ignoreCase = true) ||
-                call.phoneNumber.contains(searchQuery, ignoreCase = true) ||
-                call.notes.contains(searchQuery, ignoreCase = true)
 
-            matchesFilter && matchesSearch
+            CrmCallsComputedState(
+                unlinkedCount = unlinked,
+                skippedCount = skipped,
+                internalCount = internal,
+                todayCallsCount = todayCount,
+                convertedCount = converted,
+                missedCount = missed,
+                incomingCount = incoming,
+                outgoingCount = outgoing,
+                filteredCalls = filtered,
+                followUpByCallId = followUpMap
+            )
         }
     }
+
+    unlinkedCount = callsComputed.unlinkedCount
+    todayCallsCount = callsComputed.todayCallsCount
+    convertedCount = callsComputed.convertedCount
+    val filteredCalls = callsComputed.filteredCalls
+    val followUpByCallId = callsComputed.followUpByCallId
 
     Column(
         modifier = Modifier
@@ -213,13 +337,19 @@ fun CrmCallsScreen(
                         Manifest.permission.READ_CALL_LOG
                     ) == PackageManager.PERMISSION_GRANTED
                     if (hasPerm) {
-                        val deviceCalls = CrmCallManager.safeReadDeviceCallLogs(context)
-                        val existingIds = calls.map { it.id }.toSet()
-                        val newOnes = deviceCalls.filterNot { it.id in existingIds }
-                        calls = newOnes + calls
-                        CrmCallManager.saveCalls(context, calls)
-                        pendingReview = newOnes.firstOrNull()
-                        Toast.makeText(context, CrmCallManager.lastDeviceReadError ?: "Imported ${newOnes.size} calls. Review business calls before classifying.", Toast.LENGTH_LONG).show()
+                        coroutineScope.launch {
+                            val (newOnesCount, mergedCalls, firstNew) = withContext(Dispatchers.IO) {
+                                val deviceCalls = CrmCallManager.safeReadDeviceCallLogs(context)
+                                val existingIds = calls.map { it.id }.toSet()
+                                val newOnes = deviceCalls.filterNot { it.id in existingIds }
+                                val updated = newOnes + calls
+                                CrmCallManager.saveCalls(context, updated)
+                                Triple(newOnes.size, updated, newOnes.firstOrNull())
+                            }
+                            calls = mergedCalls
+                            pendingReview = firstNew
+                            Toast.makeText(context, CrmCallManager.lastDeviceReadError ?: "Imported $newOnesCount calls. Review business calls before classifying.", Toast.LENGTH_LONG).show()
+                        }
                     } else {
                         permissionLauncher.launch(Manifest.permission.READ_CALL_LOG)
                     }
@@ -235,9 +365,24 @@ fun CrmCallsScreen(
                 Text("Import", fontSize = 12.sp)
             }
 
-            if (onNewCallReview != null) {
+            if (onNewCallReview != null || onOpenPostCallQueue != null || onOpenPostCallSheet != null) {
                 OutlinedButton(
-                    onClick = onNewCallReview,
+                    onClick = {
+                        val unlinkedQueue = calls.filter {
+                            !it.isLinked &&
+                                !CrmCallManager.isCallSkipped(context, it) &&
+                                !CrmCallManager.isInternalTeamCall(context, it)
+                        }
+                        when {
+                            onOpenPostCallQueue != null && unlinkedQueue.isNotEmpty() -> {
+                                onOpenPostCallQueue(unlinkedQueue, 0)
+                            }
+                            onOpenPostCallSheet != null && unlinkedQueue.isNotEmpty() -> {
+                                onOpenPostCallSheet(unlinkedQueue.first())
+                            }
+                            onNewCallReview != null -> onNewCallReview()
+                        }
+                    },
                     shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                     modifier = Modifier
@@ -270,8 +415,11 @@ fun CrmCallsScreen(
                     onClick = {
                         val demo = CrmCallManager.getDemoCalls()
                         val existingIds = calls.map { it.id }.toSet()
-                        calls = demo.filterNot { it.id in existingIds } + calls
-                        CrmCallManager.saveCalls(context, calls)
+                        val updated = demo.filterNot { it.id in existingIds } + calls
+                        calls = updated
+                        coroutineScope.launch(Dispatchers.IO) {
+                            CrmCallManager.saveCalls(context, updated)
+                        }
                     },
                     modifier = Modifier.heightIn(min = 48.dp)
                 ) {
@@ -280,8 +428,11 @@ fun CrmCallsScreen(
             } else {
                 TextButton(
                     onClick = {
-                        calls = calls.filterNot { it.id.startsWith("demo_call_") }
-                        CrmCallManager.saveCalls(context, calls)
+                        val updated = calls.filterNot { it.id.startsWith("demo_call_") }
+                        calls = updated
+                        coroutineScope.launch(Dispatchers.IO) {
+                            CrmCallManager.saveCalls(context, updated)
+                        }
                     },
                     modifier = Modifier.heightIn(min = 48.dp)
                 ) {
@@ -392,7 +543,7 @@ fun CrmCallsScreen(
 
         Spacer(Modifier.height(6.dp))
 
-        // Filter Chips
+        // Filter Chips (Batch 20: includes Skipped chip so skipped calls stay out of Unlinked)
         androidx.compose.foundation.lazy.LazyRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth()
@@ -400,16 +551,19 @@ fun CrmCallsScreen(
             val filterOptions = listOf(
                 "All" to "${calls.size}",
                 "Unlinked" to "$unlinkedCount",
-                "Missed" to "${calls.count { it.callType == CallType.MISSED }}",
-                "Incoming" to "${calls.count { it.callType == CallType.INCOMING }}",
-                "Outgoing" to "${calls.count { it.callType == CallType.OUTGOING }}",
-                "Converted" to "$convertedCount"
+                "Missed" to "${callsComputed.missedCount}",
+                "Incoming" to "${callsComputed.incomingCount}",
+                "Outgoing" to "${callsComputed.outgoingCount}",
+                "Converted" to "$convertedCount",
+                "Internal" to "${callsComputed.internalCount}",
+                "Skipped" to "${callsComputed.skippedCount}"
             )
-            items(filterOptions) { (label, count) ->
+            items(filterOptions, key = { it.first }) { (label, count) ->
                 FilterChip(
                     selected = selectedFilter == label,
                     onClick = { selectedFilter = label },
-                    label = { Text("$label ($count)", fontSize = 11.sp) }
+                    label = { Text("$label ($count)", fontSize = 11.sp) },
+                    modifier = Modifier.testTag("calls_filter_${label.lowercase()}")
                 )
             }
         }
@@ -425,20 +579,33 @@ fun CrmCallsScreen(
                 .testTag("calls_lazy_list")
         ) {
             items(filteredCalls, key = { it.id }) { call ->
+                val followUpEntry = followUpByCallId[call.id]
                 CallRecordCard(
                     call = call,
                     onCreateOpportunity = {
-                        if (onOpenPostCallSheet != null) {
+                        val unlinkedQueue = calls.filter { !it.isLinked && !CrmCallManager.isCallSkipped(context, it) }
+                        if (!call.isLinked && onOpenPostCallQueue != null && unlinkedQueue.isNotEmpty()) {
+                            val idx = unlinkedQueue.indexOfFirst { it.id == call.id }.coerceAtLeast(0)
+                            onOpenPostCallQueue(unlinkedQueue, idx)
+                        } else if (onOpenPostCallSheet != null) {
                             onOpenPostCallSheet(call)
                         } else {
                             callForOpportunity = call
                         }
-                    }
+                    },
+                    onCallUpdated = { updatedCall ->
+                        calls = calls.map { if (it.id == updatedCall.id) updatedCall else it }
+                        skippedRefreshTick++
+                    },
+                    loggedInEmployeeName = userProfile.username.ifBlank { "TLC Team" },
+                    followUpState = followUpEntry?.first ?: FollowUpState.NONE,
+                    followUpDate = followUpEntry?.second,
+                    canViewUnmaskedConfidential = canViewUnmaskedConfidential
                 )
             }
 
             if (filteredCalls.isEmpty()) {
-                item {
+                item(key = "calls_empty_state") {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -475,14 +642,7 @@ fun CrmCallsScreen(
             UserSettingsManager(context).userProfile.value.username.ifBlank { "TLC-1 Team" }
         }
         val phoneKey = remember(call.phoneNumber) { CrmCallManager.last10Digits(call.phoneNumber) }
-        val matchedLead = remember(call.id) {
-            readCrmLeads(context).firstOrNull { lead ->
-                (phoneKey.length >= 7 && (
-                    CrmCallManager.last10Digits(lead.phone) == phoneKey ||
-                        CrmCallManager.last10Digits(lead.alternatePhone) == phoneKey
-                    )) || (!call.linkedOpportunityId.isNullOrBlank() && lead.id == call.linkedOpportunityId)
-            }
-        }
+        var matchedLead by remember(call.id) { mutableStateOf<CrmLead?>(null) }
         val callerRoles = remember {
             listOf("Client", "CP / Broker", "Owner", "Developer", "Team", "Personal", "Other")
         }
@@ -501,14 +661,30 @@ fun CrmCallsScreen(
         var discussionNotes by remember(call.id) { mutableStateOf("") }
         var followUpDate by remember(call.id) { mutableStateOf("") }
         var followUpTime by remember(call.id) { mutableStateOf("") }
-        var linkToCrmLead by remember(call.id) { mutableStateOf(matchedLead != null) }
+        var linkToCrmLead by remember(call.id) { mutableStateOf(false) }
         var leadNameInput by remember(call.id) {
             mutableStateOf(
-                matchedLead?.displayClientTitle()
-                    ?: call.callerName.takeIf {
-                        it.isNotBlank() && !it.equals("Unknown", true) && !it.equals("Unknown Caller", true)
-                    }.orEmpty()
+                call.callerName.takeIf {
+                    it.isNotBlank() && !it.equals("Unknown", true) && !it.equals("Unknown Caller", true)
+                }.orEmpty()
             )
+        }
+        LaunchedEffect(call.id) {
+            val found = withContext(Dispatchers.IO) {
+                readCrmLeads(context).firstOrNull { lead ->
+                    (phoneKey.length >= 7 && (
+                        CrmCallManager.last10Digits(lead.phone) == phoneKey ||
+                            CrmCallManager.last10Digits(lead.alternatePhone) == phoneKey
+                        )) || (!call.linkedOpportunityId.isNullOrBlank() && lead.id == call.linkedOpportunityId)
+                }
+            }
+            matchedLead = found
+            if (found != null) {
+                linkToCrmLead = true
+                if (leadNameInput.isBlank()) {
+                    leadNameInput = found.displayClientTitle()
+                }
+            }
         }
 
         val voiceLauncher = rememberLauncherForActivityResult(
@@ -818,11 +994,9 @@ fun CrmCallsScreen(
                                     colors = CheckboxDefaults.colors(checkedColor = PrimaryActionOrange, checkmarkColor = OnPrimaryActionColor)
                                 )
                                 Text(
-                                    text = if (matchedLead != null) {
-                                        "Link to existing CRM Lead: ${matchedLead.displayClientTitle()} (${matchedLead.id})"
-                                    } else {
-                                        "+ Create / Link CRM Lead"
-                                    },
+                                    text = matchedLead?.let { foundLead ->
+                                        "Link to existing CRM Lead: ${foundLead.displayClientTitle()} (${foundLead.id})"
+                                    } ?: "+ Create / Link CRM Lead",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = TextPrimary,
@@ -863,80 +1037,92 @@ fun CrmCallsScreen(
                     Button(
                         onClick = {
                             if (isPersonalSelected) {
-                                IgnoredNumbersManager.markPersonalIgnored(context, call.phoneNumber)
-                                val noteLine = buildString {
-                                    append("Personal (Ignored)")
-                                    if (discussionNotes.isNotBlank()) append(" — ").append(discussionNotes.trim())
+                                coroutineScope.launch {
+                                    val updatedList = withContext(Dispatchers.IO) {
+                                        IgnoredNumbersManager.markPersonalIgnored(context, call.phoneNumber)
+                                        val noteLine = buildString {
+                                            append("Personal (Ignored)")
+                                            if (discussionNotes.isNotBlank()) append(" — ").append(discussionNotes.trim())
+                                        }
+                                        CrmCallManager.addOrUpdateCall(context, call.copy(notes = noteLine))
+                                        CrmCallManager.readCalls(context)
+                                    }
+                                    calls = updatedList
+                                    pendingReview = null
+                                    Toast.makeText(context, "Marked Personal & muted from call pop-ups", Toast.LENGTH_SHORT).show()
                                 }
-                                CrmCallManager.addOrUpdateCall(context, call.copy(notes = noteLine))
-                                calls = CrmCallManager.readCalls(context)
-                                pendingReview = null
-                                Toast.makeText(context, "Marked Personal & muted from call pop-ups", Toast.LENGTH_SHORT).show()
                             } else {
                                 val todayIso = isoOffsetDays(0)
-                                val resolvedLead: CrmLead? = if (linkToCrmLead) {
-                                    val baseLead = matchedLead?.copy(
-                                        lastContactDate = todayIso,
-                                        lastContactMode = "Call",
-                                        lastContactOutcome = actionOutcome,
-                                        nextFollowUp = followUpDate.ifBlank { matchedLead.nextFollowUp },
-                                        nextFollowUpTime = followUpTime.ifBlank { matchedLead.nextFollowUpTime },
-                                        followUpTime = followUpTime.ifBlank { matchedLead.followUpTime },
-                                        notes = if (discussionNotes.isNotBlank()) {
-                                            "${discussionNotes.trim()}\n${matchedLead.notes}".trim()
+                                val currentMatched = matchedLead
+                                coroutineScope.launch {
+                                    val updatedList = withContext(Dispatchers.IO) {
+                                        val resolvedLead: CrmLead? = if (linkToCrmLead) {
+                                            val baseLead = currentMatched?.copy(
+                                                lastContactDate = todayIso,
+                                                lastContactMode = "Call",
+                                                lastContactOutcome = actionOutcome,
+                                                nextFollowUp = followUpDate.ifBlank { currentMatched.nextFollowUp },
+                                                nextFollowUpTime = followUpTime.ifBlank { currentMatched.nextFollowUpTime },
+                                                followUpTime = followUpTime.ifBlank { currentMatched.followUpTime },
+                                                notes = if (discussionNotes.isNotBlank()) {
+                                                    "${discussionNotes.trim()}\n${currentMatched.notes}".trim()
+                                                } else {
+                                                    currentMatched.notes
+                                                }
+                                            ) ?: CrmLead(
+                                                id = "",
+                                                name = leadNameInput.trim().ifBlank { call.callerName.ifBlank { "Client ${call.phoneNumber}" } },
+                                                phone = ContactUtils.normalizePhoneNumber(call.phoneNumber),
+                                                segment = "Commercial",
+                                                requirement = discussionNotes.trim().ifBlank { "$callerRole Call Follow-up" },
+                                                location = "Pune",
+                                                budget = "Negotiable",
+                                                status = if (followUpDate.isNotBlank()) "Follow-up Scheduled" else "New Lead",
+                                                verificationStatus = "Verified Live",
+                                                nextFollowUp = followUpDate,
+                                                nextFollowUpTime = followUpTime,
+                                                followUpTime = followUpTime,
+                                                notes = discussionNotes.trim(),
+                                                assignedTo = loggedInEmployee,
+                                                clientType = if (callerRole.contains("Broker", true)) "Broker / CP" else "Direct Client",
+                                                leadSource = if (callerRole.contains("Broker", true)) "Channel Partner / Broker" else "Inbound Call",
+                                                lastContactDate = todayIso,
+                                                lastContactMode = "Call",
+                                                lastContactOutcome = actionOutcome
+                                            )
+                                            upsertCrmLeadFromPostCall(
+                                                context = context,
+                                                lead = baseLead,
+                                                activityType = "Call Reviewed • $callerRole",
+                                                activityNotes = discussionNotes.trim().ifBlank { actionOutcome },
+                                                performer = loggedInEmployee
+                                            )
                                         } else {
-                                            matchedLead.notes
+                                            null
                                         }
-                                    ) ?: CrmLead(
-                                        id = "",
-                                        name = leadNameInput.trim().ifBlank { call.callerName.ifBlank { "Client ${call.phoneNumber}" } },
-                                        phone = ContactUtils.normalizePhoneNumber(call.phoneNumber),
-                                        segment = "Commercial",
-                                        requirement = discussionNotes.trim().ifBlank { "$callerRole Call Follow-up" },
-                                        location = "Pune",
-                                        budget = "Negotiable",
-                                        status = if (followUpDate.isNotBlank()) "Follow-up Scheduled" else "New",
-                                        nextFollowUp = followUpDate,
-                                        nextFollowUpTime = followUpTime,
-                                        followUpTime = followUpTime,
-                                        notes = discussionNotes.trim(),
-                                        assignedTo = loggedInEmployee,
-                                        clientType = if (callerRole.contains("Broker", true)) "Broker / CP" else "Direct Client",
-                                        leadSource = if (callerRole.contains("Broker", true)) "Channel Partner / Broker" else "Inbound Call",
-                                        lastContactDate = todayIso,
-                                        lastContactMode = "Call",
-                                        lastContactOutcome = actionOutcome
-                                    )
-                                    upsertCrmLeadFromPostCall(
-                                        context = context,
-                                        lead = baseLead,
-                                        activityType = "Call Reviewed • $callerRole",
-                                        activityNotes = discussionNotes.trim().ifBlank { actionOutcome },
-                                        performer = loggedInEmployee
-                                    )
-                                } else {
-                                    null
+                                        CrmCallManager.saveReviewedCallAndSchedule(
+                                            context = context,
+                                            call = call,
+                                            callerRole = callerRole,
+                                            actionOutcome = actionOutcome,
+                                            discussionNotes = discussionNotes,
+                                            followUpDate = followUpDate,
+                                            followUpTime = followUpTime,
+                                            assignedEmployee = loggedInEmployee,
+                                            linkedLeadId = resolvedLead?.id,
+                                            linkedLeadName = resolvedLead?.displayClientTitle()
+                                        )
+                                        CrmCallManager.readCalls(context)
+                                    }
+                                    calls = updatedList
+                                    pendingReview = null
+                                    val toastMsg = if (followUpDate.isNotBlank()) {
+                                        "Call saved & follow-up scheduled"
+                                    } else {
+                                        "Call reviewed & saved"
+                                    }
+                                    Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
                                 }
-                                CrmCallManager.saveReviewedCallAndSchedule(
-                                    context = context,
-                                    call = call,
-                                    callerRole = callerRole,
-                                    actionOutcome = actionOutcome,
-                                    discussionNotes = discussionNotes,
-                                    followUpDate = followUpDate,
-                                    followUpTime = followUpTime,
-                                    assignedEmployee = loggedInEmployee,
-                                    linkedLeadId = resolvedLead?.id,
-                                    linkedLeadName = resolvedLead?.displayClientTitle()
-                                )
-                                calls = CrmCallManager.readCalls(context)
-                                pendingReview = null
-                                val toastMsg = if (followUpDate.isNotBlank()) {
-                                    "Call saved & follow-up scheduled"
-                                } else {
-                                    "Call reviewed & saved"
-                                }
-                                Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
                             }
                         },
                         colors = ButtonDefaults.buttonColors(
@@ -960,16 +1146,19 @@ fun CrmCallsScreen(
         QuickCallIntakeDialog(
             onDismiss = { showQuickIntakeDialog = false },
             onSaveCall = { newCall ->
-                calls = listOf(newCall) + calls
-                CrmCallManager.saveCalls(context, calls)
-                CrmCallManager.logActivity(
-                    context = context,
-                    entityId = newCall.id,
-                    type = "Call Logged",
-                    summary = "${newCall.callType.label} Call logged with ${newCall.callerName}",
-                    details = "Phone: ${newCall.phoneNumber} • ${newCall.notes}"
-                )
+                val updated = listOf(newCall) + calls
+                calls = updated
                 showQuickIntakeDialog = false
+                coroutineScope.launch(Dispatchers.IO) {
+                    CrmCallManager.saveCalls(context, updated)
+                    CrmCallManager.logActivity(
+                        context = context,
+                        entityId = newCall.id,
+                        type = "Call Logged",
+                        summary = "${newCall.callType.label} Call logged with ${newCall.callerName}",
+                        details = "Phone: ${newCall.phoneNumber} • ${newCall.notes}"
+                    )
+                }
             }
         )
     }
@@ -980,9 +1169,12 @@ fun CrmCallsScreen(
             allProperties = inventory,
             onDismiss = { callForOpportunity = null },
             onOpportunityCreated = { _, oppTitle, _ ->
-                calls = CrmCallManager.readCalls(context)
-                callForOpportunity = null
-                Toast.makeText(context, "Opportunity saved and call linked: $oppTitle", Toast.LENGTH_SHORT).show()
+                coroutineScope.launch {
+                    val refreshed = withContext(Dispatchers.IO) { CrmCallManager.readCalls(context) }
+                    calls = refreshed
+                    callForOpportunity = null
+                    Toast.makeText(context, "Opportunity saved and call linked: $oppTitle", Toast.LENGTH_SHORT).show()
+                }
             },
             onAddPropertyToInventory = onAddPropertyToInventory
         )
@@ -1034,17 +1226,44 @@ private fun CompactCallStatPill(
 @Composable
 private fun CallRecordCard(
     call: CrmCallRecord,
-    onCreateOpportunity: () -> Unit
+    onCreateOpportunity: () -> Unit,
+    onCallUpdated: (CrmCallRecord) -> Unit = {},
+    loggedInEmployeeName: String = "TLC Team",
+    followUpState: FollowUpState = FollowUpState.NONE,
+    followUpDate: String? = null,
+    canViewUnmaskedConfidential: Boolean = true
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    var showRecordingPanel by remember(call.id) { mutableStateOf(false) }
+    val isSkipped = remember(call.id, call.isLinked, call.notes) {
+        CrmCallManager.isCallSkipped(context, call)
+    }
     val (typeIcon, typeColor) = when (call.callType) {
         CallType.INCOMING -> Icons.Default.CallReceived to Color(0xFF10B981)
         CallType.OUTGOING -> Icons.Default.CallMade to Color(0xFF3B82F6)
         CallType.MISSED -> Icons.Default.CallMissed to Color(0xFFEF4444)
     }
+    val isConfidentialRole = call.linkedOpportunityType?.contains("Owner", true) == true ||
+        call.linkedOpportunityType?.contains("Tenant", true) == true
+    val displayPhone = com.example.model.PhoneMaskingUtils.formatPhoneForRole(
+        rawPhone = call.phoneNumber,
+        canViewFull = !isConfidentialRole || canViewUnmaskedConfidential
+    )
+    val hasWaLogged = call.waLogged || call.notes.contains("Connected on WhatsApp", ignoreCase = true)
+    val isInternalTeam = remember(call.id, call.phoneNumber, call.linkedOpportunityType) {
+        CrmCallManager.isInternalTeamCall(context, call)
+    }
+    val handoverOverdue2h = remember(call.id, call.handoverStatus, call.handedOverAt) {
+        call.handoverStatus.equals("Pending Callback", ignoreCase = true) &&
+            call.handedOverAt > 0L &&
+            (System.currentTimeMillis() - call.handedOverAt) > (2L * 60L * 60L * 1000L)
+    }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("call_record_card_${call.id}"),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = BrandCharcoalSurface),
         border = androidx.compose.foundation.BorderStroke(0.8.dp, BrandCharcoalBorder)
@@ -1055,7 +1274,7 @@ private fun CallRecordCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Box(
                         modifier = Modifier
                             .size(32.dp)
@@ -1078,27 +1297,89 @@ private fun CallRecordCard(
                             text = call.callerName.ifBlank { "Unknown Caller" },
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
-                            color = TextPrimaryDark
+                            color = TextPrimaryDark,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "${ContactUtils.formatDisplayPhone(call.phoneNumber)} • ${CrmCallManager.formatTimestamp(call.timestamp)}",
+                            text = "$displayPhone • ${CrmCallManager.formatTimestamp(call.timestamp)}",
                             fontSize = 11.sp,
-                            color = TextSecondaryDark
+                            color = TextSecondaryDark,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = typeColor.copy(alpha = 0.1f)
-                ) {
-                    Text(
-                        text = if (call.durationSeconds > 0) CrmCallManager.formatDuration(call.durationSeconds) else call.callType.label,
-                        color = typeColor,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (isInternalTeam) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFF0EA5E9).copy(alpha = 0.16f),
+                            modifier = Modifier.testTag("call_record_internal_badge_${call.id}")
+                        ) {
+                            Text(
+                                text = "Internal Team",
+                                color = Color(0xFF0284C7),
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    if (call.handoverStatus.isNotBlank()) {
+                        val calledBack = call.handoverStatus.equals("Called Back", ignoreCase = true)
+                        val hoBg = when {
+                            calledBack -> Color(0xFF10B981).copy(alpha = 0.16f)
+                            handoverOverdue2h -> Color(0xFFEF4444).copy(alpha = 0.16f)
+                            else -> Color(0xFFF59E0B).copy(alpha = 0.16f)
+                        }
+                        val hoFg = when {
+                            calledBack -> Color(0xFF059669)
+                            handoverOverdue2h -> Color(0xFFDC2626)
+                            else -> Color(0xFFD97706)
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = hoBg,
+                            modifier = Modifier.testTag("call_record_handover_badge_${call.id}")
+                        ) {
+                            Text(
+                                text = if (calledBack) "Called Back" else if (handoverOverdue2h) "Callback >2h" else "Pending Callback",
+                                color = hoFg,
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    if (hasWaLogged) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFF1E7E45).copy(alpha = 0.14f),
+                            modifier = Modifier.testTag("call_record_wa_badge_${call.id}")
+                        ) {
+                            Text(
+                                text = "WA",
+                                color = Color(0xFF1E7E45),
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = typeColor.copy(alpha = 0.1f)
+                    ) {
+                        Text(
+                            text = if (call.durationSeconds > 0) CrmCallManager.formatDuration(call.durationSeconds) else call.callType.label,
+                            color = typeColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
                 }
             }
 
@@ -1114,9 +1395,8 @@ private fun CallRecordCard(
 
             Spacer(Modifier.height(8.dp))
 
-            val followUp = CallFollowUpStore.get(context, call.id)
-            val followUpState = CallFollowUpStore.state(followUp)
-            if (followUpState != FollowUpState.NONE) {
+            val followUp = followUpDate
+            if (followUpState != FollowUpState.NONE && !followUp.isNullOrBlank()) {
                 val badgeColor = when (followUpState) {
                     FollowUpState.OVERDUE -> Color(0xFFDC2626)
                     FollowUpState.DUE -> Color(0xFFD97706)
@@ -1138,45 +1418,85 @@ private fun CallRecordCard(
                 Spacer(Modifier.height(6.dp))
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (call.isLinked) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Linked",
-                            tint = Color(0xFF10B981),
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = "${call.linkedOpportunityType}: ${call.linkedOpportunityTitle.orEmpty()}",
-                            fontSize = 11.sp,
-                            color = Color(0xFF047857),
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                } else {
+            // Linked entity / internal / unlinked status on its own dedicated full-width line
+            if (isInternalTeam) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Badge,
+                        contentDescription = "Internal Team",
+                        tint = Color(0xFF0284C7),
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        text = call.linkedOpportunityTitle?.takeIf { it.isNotBlank() }?.let { "Internal Team: $it" }
+                            ?: "Internal Team • ${call.callerName.ifBlank { "Colleague" }}",
+                        fontSize = 11.5.sp,
+                        color = Color(0xFF0284C7),
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            } else if (call.isLinked) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = "Linked",
+                        tint = Color(0xFF10B981),
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        text = "${call.linkedOpportunityType}: ${call.linkedOpportunityTitle.orEmpty()}",
+                        fontSize = 11.5.sp,
+                        color = Color(0xFF047857),
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Surface(
                         shape = RoundedCornerShape(4.dp),
                         color = Color(0xFFFFFBEB),
-                        border = androidx.compose.foundation.BorderStroke(0.6.dp, Color(0xFFFDE68A))
+                        border = BorderStroke(0.6.dp, Color(0xFFFDE68A))
                     ) {
                         Text(
                             text = "Unlinked Enquiry",
                             color = Color(0xFFB45309),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
                 }
+            }
 
+            Spacer(Modifier.height(8.dp))
+
+            // Clean bottom action row: Call + WhatsApp on left, single-line pill action on right
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
@@ -1210,32 +1530,120 @@ private fun CallRecordCard(
                         )
                     }
 
-                    if (!call.isLinked) {
-                        Button(
-                            onClick = onCreateOpportunity,
-                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryActionOrange, contentColor = OnPrimaryActionColor),
+                    // Batch 20: 1-tap WA Callback on Missed Call Cards
+                    if (call.callType == CallType.MISSED) {
+                        Surface(
+                            onClick = {
+                                val updated = CrmCallManager.triggerMissedCallWaCallback(
+                                    context = context,
+                                    call = call,
+                                    assignedAgent = loggedInEmployeeName,
+                                    openBrowserOrApp = true
+                                )
+                                onCallUpdated(updated)
+                            },
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            color = Color(0xFF1E7E45),
                             modifier = Modifier
-                                .heightIn(min = 48.dp)
-                                .testTag("call_record_create_opp_${call.id}")
+                                .heightIn(min = 36.dp)
+                                .testTag("call_card_wa_callback_${call.id}")
                         ) {
-                            Text("Smart Log", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    } else {
-                        OutlinedButton(
-                            onClick = onCreateOpportunity,
-                            border = BorderStroke(1.dp, BorderGrey),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                            modifier = Modifier
-                                .heightIn(min = 48.dp)
-                                .testTag("call_record_create_opp_${call.id}")
-                        ) {
-                            Text("Log Note", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_whatsapp_logo),
+                                    contentDescription = null,
+                                    tint = Color.Unspecified,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "WA Callback",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
+
+                    // Batch 20: On-Demand Call Recording Play & Summarize Toggle
+                    IconButton(
+                        onClick = { showRecordingPanel = !showRecordingPanel },
+                        modifier = Modifier
+                            .size(44.dp)
+                            .testTag("call_card_recording_toggle_${call.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.GraphicEq,
+                            contentDescription = "Play or Summarize Call Recording",
+                            tint = if (showRecordingPanel) PrimaryActionOrange else TextSecondaryDark,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
+
+                if (!call.isLinked) {
+                    Button(
+                        onClick = onCreateOpportunity,
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryActionOrange, contentColor = OnPrimaryActionColor),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 108.dp, minHeight = 48.dp)
+                            .testTag("call_record_create_opp_${call.id}")
+                    ) {
+                        Text(
+                            text = if (isSkipped) "Review" else "Smart Log",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = onCreateOpportunity,
+                        border = BorderStroke(1.dp, BorderGrey),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 104.dp, minHeight = 48.dp)
+                            .testTag("call_record_create_opp_${call.id}")
+                    ) {
+                        Text(
+                            text = if (call.notes.isNotBlank()) "Edit Note" else "Log Note",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+            }
+
+            // Strictly On-Demand Call Recording Bar (loaded only when user expands/taps recording icon)
+            if (showRecordingPanel) {
+                Spacer(Modifier.height(8.dp))
+                CallRecordingOnDemandSection(
+                    call = call,
+                    currentNotes = call.notes,
+                    onSummaryGenerated = { summary ->
+                        val mergedNotes = if (call.notes.isBlank()) summary else "${call.notes}\n$summary"
+                        val updated = call.copy(notes = mergedNotes)
+                        coroutineScope.launch {
+                            withContext(Dispatchers.IO) {
+                                CrmCallManager.addOrUpdateCall(context, updated)
+                            }
+                            onCallUpdated(updated)
+                        }
+                    },
+                    testTagPrefix = "call_card_recording_${call.id}"
+                )
             }
         }
     }
@@ -1422,7 +1830,7 @@ private fun NewOpportunityDialog(
                                 )
                             }
                             item {
-                                Text("Portfolio Segment", style = MaterialTheme.typography.labelMedium)
+                                Text("Division", style = MaterialTheme.typography.labelMedium)
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     listOf("Commercial", "Residential").forEach { seg ->
                                         FilterChip(
@@ -1698,7 +2106,10 @@ private fun ActivityHistoryDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val activities = remember { CrmCallManager.readActivityLogs(context) }
+    var activities by remember { mutableStateOf<List<CrmActivityLog>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        activities = withContext(Dispatchers.IO) { CrmCallManager.readActivityLogs(context) }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1748,1311 +2159,6 @@ private fun ActivityHistoryDialog(
             TextButton(onClick = onDismiss) { Text("Close") }
         }
     )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PostCallSmartSheet(
-    call: CrmCallRecord,
-    leads: List<CrmLead>,
-    inventory: List<PropertyItem>,
-    directoryProjects: List<DirectoryProject> = emptyList(),
-    underConstProjects: List<UnderConstProject> = emptyList(),
-    employeeName: String,
-    employeeMobile: String,
-    onDismissLater: (CrmCallRecord) -> Unit,
-    onMarkPersonalIgnore: (CrmCallRecord) -> Unit,
-    onSaveLeadAndSync: (lead: CrmLead, activityType: String, activityNotes: String) -> Unit,
-    onShareMatchingProps: (CrmLead) -> Unit,
-    onScheduleSiteVisit: (CrmLead) -> Unit,
-    onUpdateOwnerPropertyStatus: (property: PropertyItem, newStatus: AvailabilityStatus, callNote: String, updatedPriceOrRent: Double?) -> Boolean,
-    onLinkOwnerExistingProperty: (property: PropertyItem, call: CrmCallRecord, ownerNameInput: String) -> Boolean,
-    onAddNewProperty: (PropertyItem) -> Boolean,
-    onOpenFullAddProperty: (ownerPhone: String) -> Unit,
-    onCallResolved: (CrmCallRecord) -> Unit
-) {
-    val context = LocalContext.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val match = remember(call, leads, inventory, directoryProjects, underConstProjects) {
-        CrmCallManager.matchCallToDatabase(
-            context = context,
-            call = call,
-            leads = leads,
-            inventory = inventory,
-            directoryProjects = directoryProjects,
-            underConstProjects = underConstProjects
-        )
-    }
-
-    val safeEmployeeName = employeeName.trim().ifBlank { "TLC-1 Team" }
-    val safeEmployeeMobile = employeeMobile.trim().ifBlank { "9766880099" }
-    val cleanDisplayPhone = remember(call.phoneNumber) {
-        ContactUtils.formatDisplayPhone(call.phoneNumber).ifBlank { call.phoneNumber }
-    }
-
-    var notes by remember(call.id) { mutableStateOf("") }
-
-    // Voice-to-Note Mic launcher
-    val voiceLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val spoken = result.data
-                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-                ?.firstOrNull()
-                ?.trim()
-            if (!spoken.isNullOrBlank()) {
-                notes = if (notes.isBlank()) spoken else "$notes\n$spoken"
-            }
-        }
-    }
-    val launchVoiceToNote: () -> Unit = {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak call summary...")
-        }
-        runCatching { voiceLauncher.launch(intent) }.onFailure {
-            Toast.makeText(context, "Voice dictation unavailable on this device. Please type note.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // 1-Tap follow-up helper states
-    val todayDateStr = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) }
-    fun computeFollowUpPreset(offsetDays: Int, timeStr: String): Pair<String, String> {
-        val cal = Calendar.getInstance()
-        cal.add(Calendar.DAY_OF_YEAR, offsetDays)
-        return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time) to timeStr
-    }
-    fun computeTodayPlus3Hours(): Pair<String, String> {
-        val cal = Calendar.getInstance()
-        cal.add(Calendar.HOUR_OF_DAY, 3)
-        return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time) to
-            SimpleDateFormat("hh:mm a", Locale.US).format(cal.time)
-    }
-    fun computeWeekendPreset(): Pair<String, String> {
-        val cal = Calendar.getInstance()
-        val dow = cal.get(Calendar.DAY_OF_WEEK)
-        val daysUntilSaturday = ((Calendar.SATURDAY - dow + 7) % 7).let { if (it == 0) 7 else it }
-        cal.add(Calendar.DAY_OF_YEAR, daysUntilSaturday)
-        return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time) to "11:00 AM"
-    }
-
-    val openDatePicker: ((String) -> Unit) -> Unit = { onPicked ->
-        val cal = Calendar.getInstance()
-        DatePickerDialog(
-            context,
-            { _, year, month, dayOfMonth ->
-                val picked = String.format(Locale.US, "%04d-%02d-%02d", year, month + 1, dayOfMonth)
-                onPicked(picked)
-            },
-            cal.get(Calendar.YEAR),
-            cal.get(Calendar.MONTH),
-            cal.get(Calendar.DAY_OF_MONTH)
-        ).show()
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = { onDismissLater(call) },
-        sheetState = sheetState,
-        containerColor = BackgroundSoft,
-        contentColor = TextPrimary,
-        modifier = Modifier.testTag("post_call_smart_sheet")
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            // ================= HEADER =================
-            val (badgeIcon, badgeColor) = when (call.callType) {
-                CallType.INCOMING -> Icons.Default.CallReceived to SuccessGreen
-                CallType.OUTGOING -> Icons.Default.CallMade to Color(0xFF1565C0)
-                CallType.MISSED -> Icons.Default.CallMissed to ErrorRed
-            }
-
-            Surface(
-                color = SurfaceWhite,
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, BorderGrey),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(CircleShape)
-                                    .background(badgeColor.copy(alpha = 0.14f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(badgeIcon, contentDescription = call.callType.label, tint = badgeColor, modifier = Modifier.size(20.dp))
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = match.displayTitle,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = "$cleanDisplayPhone • ${call.callType.label} • ${CrmCallManager.formatDuration(call.durationSeconds)}",
-                                    fontSize = 11.5.sp,
-                                    color = SecondaryText,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-
-                        Surface(
-                            color = SelectedSurfaceContainer,
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(0.8.dp, PrimaryActionOrange)
-                        ) {
-                            Text(
-                                text = match.role.label,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryActionOrange,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = match.subtitle,
-                        fontSize = 12.sp,
-                        color = SecondaryText,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedButton(
-                            onClick = { onDismissLater(call) },
-                            border = BorderStroke(1.dp, BorderGrey),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .heightIn(min = 48.dp)
-                                .testTag("post_call_later_btn")
-                        ) {
-                            Text("Later", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                        }
-                        OutlinedButton(
-                            onClick = { onMarkPersonalIgnore(call) },
-                            border = BorderStroke(1.dp, BorderGrey),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .weight(1f)
-                                .heightIn(min = 48.dp)
-                                .testTag("post_call_personal_ignore_btn")
-                        ) {
-                            Icon(Icons.Default.NotificationsOff, contentDescription = null, tint = SecondaryText, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "Personal — Don't Ask Again",
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = SecondaryText,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-            }
-
-            // ================= MISSED CALL 1-TAP WHATSAPP RESCUE =================
-            if (call.callType == CallType.MISSED || call.durationSeconds == 0) {
-                Button(
-                    onClick = {
-                        val rescueMsg = "Hi, sorry I missed your call. This is $safeEmployeeName from The Leasing Company ($safeEmployeeMobile). How can I assist you?"
-                        CrmCallManager.openWhatsAppChat(context, call.phoneNumber, rescueMsg)
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF1E7E45),
-                        contentColor = Color.White
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .testTag("post_call_missed_wa_rescue_btn")
-                ) {
-                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Send \"Sorry I Missed Your Call\" on WhatsApp",
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            // ================= VOICE-TO-NOTE CALL SUMMARY INPUT =================
-            OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text("Call Discussion / Quick Note", fontSize = 12.sp) },
-                placeholder = { Text("Tap mic or type summary...", fontSize = 12.sp) },
-                trailingIcon = {
-                    IconButton(
-                        onClick = launchVoiceToNote,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .testTag("post_call_voice_note_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Mic,
-                            contentDescription = "Voice to Note",
-                            tint = PrimaryActionOrange
-                        )
-                    }
-                },
-                minLines = 2,
-                maxLines = 4,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryActionOrange,
-                    unfocusedBorderColor = BorderGrey,
-                    focusedContainerColor = SurfaceWhite,
-                    unfocusedContainerColor = SurfaceWhite
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("post_call_notes_input")
-            )
-
-            // ================= ROLE-SPECIFIC BODY =================
-            when (match.role) {
-                PostCallRole.CLIENT_LEAD -> {
-                    val lead = match.matchedLead!!
-                    val outcomeOptions = remember {
-                        listOf(
-                            "Spoken — Interested",
-                            "Send Options on WhatsApp",
-                            "Site Visit Confirmed",
-                            "Call Back Later",
-                            "RNR / Busy"
-                        )
-                    }
-                    var selectedOutcome by remember(call.id) { mutableStateOf(outcomeOptions.first()) }
-                    var nextDate by remember(call.id) { mutableStateOf(computeFollowUpPreset(1, "11:00 AM").first) }
-                    var nextTime by remember(call.id) { mutableStateOf("11:00 AM") }
-                    var selectedPreset by remember(call.id) { mutableStateOf("Tomorrow 11 AM") }
-
-                    Surface(
-                        color = SurfaceWhite,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, BorderGrey),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(
-                                text = "Client Requirement • ${lead.segment.ifBlank { "Commercial" }}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryActionOrange
-                            )
-                            Text(
-                                text = "${lead.displayClientTitle()} • Stage: ${lead.status.ifBlank { "New" }}\n${lead.requirement.ifBlank { "Requirement on file" }}",
-                                fontSize = 12.5.sp,
-                                color = TextPrimary
-                            )
-
-                            CompactDropdownField(
-                                label = "Call Outcome",
-                                selectedValue = selectedOutcome,
-                                options = outcomeOptions,
-                                onValueSelected = { selectedOutcome = it },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            Text("Next Follow-up", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = SecondaryText)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                listOf("Today +3h", "Tomorrow 11 AM", "This Weekend", "Pick Date").forEach { preset ->
-                                    val isSel = selectedPreset == preset
-                                    FilterChip(
-                                        selected = isSel,
-                                        onClick = {
-                                            selectedPreset = preset
-                                            when (preset) {
-                                                "Today +3h" -> {
-                                                    val (d, t) = computeTodayPlus3Hours()
-                                                    nextDate = d; nextTime = t
-                                                }
-                                                "Tomorrow 11 AM" -> {
-                                                    val (d, t) = computeFollowUpPreset(1, "11:00 AM")
-                                                    nextDate = d; nextTime = t
-                                                }
-                                                "This Weekend" -> {
-                                                    val (d, t) = computeWeekendPreset()
-                                                    nextDate = d; nextTime = t
-                                                }
-                                                "Pick Date" -> {
-                                                    openDatePicker { picked ->
-                                                        nextDate = picked
-                                                        nextTime = "11:00 AM"
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        label = {
-                                            Text(
-                                                text = if (preset == "Pick Date" && isSel) nextDate else preset,
-                                                fontSize = 11.sp
-                                            )
-                                        },
-                                        modifier = Modifier.heightIn(min = 48.dp)
-                                    )
-                                }
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = { onShareMatchingProps(lead) },
-                                    border = BorderStroke(1.dp, BorderGrey),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .testTag("post_call_share_matches_btn")
-                                ) {
-                                    Text("Share Options", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary, maxLines = 1)
-                                }
-                                OutlinedButton(
-                                    onClick = { onScheduleSiteVisit(lead) },
-                                    border = BorderStroke(1.dp, BorderGrey),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .testTag("post_call_schedule_visit_btn")
-                                ) {
-                                    Text("Schedule Visit", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary, maxLines = 1)
-                                }
-                            }
-
-                            Button(
-                                onClick = {
-                                    val combinedNotes = buildString {
-                                        append("Outcome: ").append(selectedOutcome)
-                                        if (notes.isNotBlank()) append(" — ").append(notes.trim())
-                                    }
-                                    val newStage = when (selectedOutcome) {
-                                        "Site Visit Confirmed" -> "Site Visit Scheduled"
-                                        else -> lead.status.ifBlank { "Contacted" }
-                                    }
-                                    val updatedLead = lead.copy(
-                                        status = newStage,
-                                        nextFollowUp = nextDate,
-                                        nextFollowUpTime = nextTime,
-                                        followUpTime = nextTime,
-                                        followUpCompleted = false,
-                                        lastContactDate = todayDateStr,
-                                        lastContactMode = "Call",
-                                        lastContactOutcome = selectedOutcome,
-                                        notes = if (notes.isNotBlank()) "${notes.trim()}\n${lead.notes}".trim() else lead.notes
-                                    )
-                                    onSaveLeadAndSync(updatedLead, "Call: $selectedOutcome", combinedNotes)
-                                    val savedCall = call.copy(
-                                        callerName = lead.displayClientTitle(),
-                                        notes = combinedNotes,
-                                        isLinked = true,
-                                        linkedOpportunityType = "Client",
-                                        linkedOpportunityTitle = lead.displayClientTitle(),
-                                        linkedOpportunityId = lead.id
-                                    )
-                                    CrmCallManager.addOrUpdateCall(context, savedCall)
-                                    CrmCallManager.logActivity(
-                                        context = context,
-                                        entityId = lead.id,
-                                        type = "Client Call • $selectedOutcome",
-                                        summary = "${lead.displayClientTitle()} ($cleanDisplayPhone)",
-                                        details = "$combinedNotes • Next follow-up: $nextDate $nextTime",
-                                        author = safeEmployeeName
-                                    )
-                                    onCallResolved(savedCall)
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryActionOrange, contentColor = OnPrimaryActionColor),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                                    .testTag("post_call_save_client_btn")
-                            ) {
-                                Text("Save Client Call Log", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
-                        }
-                    }
-                }
-
-                PostCallRole.PROPERTY_OWNER -> {
-                    val matchedProps = match.matchedProperties
-                    var selectedPropIdx by remember(call.id) { mutableIntStateOf(0) }
-                    val targetProp = matchedProps.getOrNull(selectedPropIdx) ?: matchedProps.first()
-                    var showPriceEditor by remember(call.id) { mutableStateOf(false) }
-                    var updatedPriceText by remember(call.id, targetProp.id) {
-                        val currentVal = targetProp.rent ?: targetProp.priceSale ?: targetProp.priceOrRent
-                        mutableStateOf(if (currentVal > 0.0) currentVal.toLong().toString() else "")
-                    }
-
-                    Surface(
-                        color = SurfaceWhite,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, BorderGrey),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(
-                                text = "Linked Property Owner",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryActionOrange
-                            )
-                            if (matchedProps.size > 1) {
-                                val propLabels = matchedProps.map { "${it.propertyCode} • ${it.projectName} ${it.unitNumber}".trim() }
-                                CompactDropdownField(
-                                    label = "Select Property",
-                                    selectedValue = propLabels.getOrElse(selectedPropIdx) { propLabels.first() },
-                                    options = propLabels,
-                                    onValueSelected = { picked ->
-                                        val idx = propLabels.indexOf(picked)
-                                        if (idx >= 0) selectedPropIdx = idx
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            } else {
-                                Text(
-                                    text = "${targetProp.propertyCode} • ${targetProp.projectName} ${targetProp.unitNumber}".trim(),
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
-                                )
-                            }
-
-                            if (showPriceEditor) {
-                                OutlinedTextField(
-                                    value = updatedPriceText,
-                                    onValueChange = { updatedPriceText = it.filter { ch -> ch.isDigit() || ch == '.' } },
-                                    label = { Text("Updated Monthly Rent / Sale Price (₹)", fontSize = 11.5.sp) },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-
-                            fun commitOwnerAction(newStatus: AvailabilityStatus, actionLabel: String) {
-                                val priceOverride = if (showPriceEditor) updatedPriceText.toDoubleOrNull() else null
-                                val noteText = buildString {
-                                    append(actionLabel)
-                                    if (notes.isNotBlank()) append(" — ").append(notes.trim())
-                                }
-                                onUpdateOwnerPropertyStatus(targetProp, newStatus, noteText, priceOverride)
-                                val savedCall = call.copy(
-                                    callerName = targetProp.ownerName?.takeIf { it.isNotBlank() } ?: match.displayTitle,
-                                    notes = noteText,
-                                    isLinked = true,
-                                    linkedOpportunityType = "Owner",
-                                    linkedOpportunityTitle = "${targetProp.propertyCode} • ${targetProp.projectName}",
-                                    linkedOpportunityId = targetProp.id
-                                )
-                                CrmCallManager.addOrUpdateCall(context, savedCall)
-                                CrmCallManager.logActivity(
-                                    context = context,
-                                    entityId = targetProp.id,
-                                    type = "Owner Call • $actionLabel",
-                                    summary = "${targetProp.propertyCode} • ${targetProp.projectName}",
-                                    details = noteText,
-                                    author = safeEmployeeName
-                                )
-                                onCallResolved(savedCall)
-                            }
-
-                            Button(
-                                onClick = { commitOwnerAction(AvailabilityStatus.AVAILABLE, "Confirmed Available (60-Day Timer Reset)") },
-                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryActionOrange, contentColor = OnPrimaryActionColor),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                                    .testTag("post_call_owner_available_btn")
-                            ) {
-                                Text("Confirm Available (Reset 60-Day Timer)", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = { commitOwnerAction(AvailabilityStatus.ON_HOLD, "Marked On Hold") },
-                                    border = BorderStroke(1.dp, BorderGrey),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .testTag("post_call_owner_hold_btn")
-                                ) {
-                                    Text("On Hold", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = WarningAmber)
-                                }
-                                val soldOrLeasedStatus = if (targetProp.transactionType.contains("Sale", true)) AvailabilityStatus.SOLD else AvailabilityStatus.LEASED
-                                val soldOrLeasedLabel = if (soldOrLeasedStatus == AvailabilityStatus.SOLD) "Sold" else "Leased"
-                                OutlinedButton(
-                                    onClick = { commitOwnerAction(soldOrLeasedStatus, "Marked $soldOrLeasedLabel") },
-                                    border = BorderStroke(1.dp, BorderGrey),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .testTag("post_call_owner_closed_btn")
-                                ) {
-                                    Text("Leased / Sold", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ErrorRed)
-                                }
-                            }
-
-                            OutlinedButton(
-                                onClick = { showPriceEditor = !showPriceEditor },
-                                border = BorderStroke(1.dp, BorderGrey),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                            ) {
-                                Text(
-                                    text = if (showPriceEditor) "Hide Rent / Price Update" else "Update Rent / Price",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = TextPrimary
-                                )
-                            }
-                        }
-                    }
-                }
-
-                PostCallRole.BROKER -> {
-                    val broker = match.matchedBroker
-                    var brokerMode by remember(call.id) { mutableStateOf("NOTE") } // NOTE, CLIENT_REQ, PROPERTY_LISTING
-                    var reqDivision by remember(call.id) { mutableStateOf("Commercial") }
-                    var reqLocation by remember(call.id) { mutableStateOf("Kharadi") }
-                    var reqText by remember(call.id) { mutableStateOf("") }
-                    var reqBudget by remember(call.id) { mutableStateOf("") }
-                    var propProject by remember(call.id) { mutableStateOf("") }
-                    var propLocation by remember(call.id) { mutableStateOf("Kharadi") }
-                    var propUnit by remember(call.id) { mutableStateOf("") }
-                    var propArea by remember(call.id) { mutableStateOf("") }
-                    var propPrice by remember(call.id) { mutableStateOf("") }
-
-                    Surface(
-                        color = SurfaceWhite,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, BorderGrey),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = "Channel Partner / Broker Co-Broking",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryActionOrange
-                            )
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                FilterChip(
-                                    selected = brokerMode == "CLIENT_REQ",
-                                    onClick = { brokerMode = if (brokerMode == "CLIENT_REQ") "NOTE" else "CLIENT_REQ" },
-                                    label = { Text("+ Broker Client Req", fontSize = 11.sp) },
-                                    modifier = Modifier.heightIn(min = 48.dp)
-                                )
-                                FilterChip(
-                                    selected = brokerMode == "PROPERTY_LISTING",
-                                    onClick = { brokerMode = if (brokerMode == "PROPERTY_LISTING") "NOTE" else "PROPERTY_LISTING" },
-                                    label = { Text("+ Broker Listing", fontSize = 11.sp) },
-                                    modifier = Modifier.heightIn(min = 48.dp)
-                                )
-                            }
-
-                            when (brokerMode) {
-                                "CLIENT_REQ" -> {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        CompactDropdownField(
-                                            label = "Division",
-                                            selectedValue = reqDivision,
-                                            options = listOf("Commercial", "Residential"),
-                                            onValueSelected = { reqDivision = it },
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        SearchableDropdownField(
-                                            label = "Location",
-                                            selectedValue = reqLocation,
-                                            options = TlcStandardOptions.puneLocations,
-                                            onValueSelected = { reqLocation = it },
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
-                                    OutlinedTextField(
-                                        value = reqText,
-                                        onValueChange = { reqText = it },
-                                        label = { Text("Client Requirement via Broker *") },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    OutlinedTextField(
-                                        value = reqBudget,
-                                        onValueChange = { reqBudget = it },
-                                        label = { Text("Budget (₹)") },
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                                "PROPERTY_LISTING" -> {
-                                    OutlinedTextField(
-                                        value = propProject,
-                                        onValueChange = { propProject = it },
-                                        label = { Text("Project / Building Name *") },
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        SearchableDropdownField(
-                                            label = "Location",
-                                            selectedValue = propLocation,
-                                            options = TlcStandardOptions.puneLocations,
-                                            onValueSelected = { propLocation = it },
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        OutlinedTextField(
-                                            value = propUnit,
-                                            onValueChange = { propUnit = it },
-                                            label = { Text("Unit No") },
-                                            singleLine = true,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        OutlinedTextField(
-                                            value = propArea,
-                                            onValueChange = { propArea = it.filter { c -> c.isDigit() || c == '.' } },
-                                            label = { Text("Carpet Sq.Ft") },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                            singleLine = true,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        OutlinedTextField(
-                                            value = propPrice,
-                                            onValueChange = { propPrice = it.filter { c -> c.isDigit() || c == '.' } },
-                                            label = { Text("Rent / Price (₹)") },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                            singleLine = true,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
-                                }
-                            }
-
-                            Button(
-                                onClick = {
-                                    val brokerTitle = broker?.name?.takeIf { it.isNotBlank() } ?: match.displayTitle
-                                    val noteSummary = notes.trim().ifBlank { "Co-broking discussion with $brokerTitle" }
-                                    CrmCallManager.saveBrokerContact(context, call.phoneNumber, brokerTitle, broker?.firm.orEmpty(), noteSummary)
-                                    if (brokerMode == "CLIENT_REQ" && reqText.isNotBlank()) {
-                                        val tomorrow = computeFollowUpPreset(1, "11:00 AM").first
-                                        val newLead = CrmLead(
-                                            id = "",
-                                            name = "Client via $brokerTitle",
-                                            phone = ContactUtils.normalizePhoneNumber(call.phoneNumber),
-                                            segment = reqDivision,
-                                            requirement = reqText.trim(),
-                                            location = reqLocation,
-                                            budget = reqBudget.trim(),
-                                            status = "New",
-                                            nextFollowUp = tomorrow,
-                                            nextFollowUpTime = "11:00 AM",
-                                            notes = "Via Broker $brokerTitle ($cleanDisplayPhone). $noteSummary",
-                                            assignedTo = safeEmployeeName,
-                                            leadSource = "Channel Partner / Broker"
-                                        )
-                                        onSaveLeadAndSync(newLead, "Broker Client Req", noteSummary)
-                                    } else if (brokerMode == "PROPERTY_LISTING" && propProject.isNotBlank()) {
-                                        val priceVal = propPrice.toDoubleOrNull() ?: 0.0
-                                        val newProp = PropertyItem(
-                                            id = "prop_brk_${System.currentTimeMillis()}",
-                                            propertyCode = "OL-BRK-${(System.currentTimeMillis() % 1000)}",
-                                            projectName = propProject.trim(),
-                                            location = propLocation,
-                                            unitNumber = propUnit.trim(),
-                                            tab = InventoryTab.OFF_LEASE,
-                                            portfolio = "Commercial",
-                                            transactionType = "Lease",
-                                            carpetAreaSqFt = propArea.toDoubleOrNull() ?: 0.0,
-                                            priceOrRent = priceVal,
-                                            rent = if (priceVal > 0) priceVal else null,
-                                            brokerName = brokerTitle,
-                                            brokerContact = ContactUtils.normalizePhoneNumber(call.phoneNumber),
-                                            sourceInfo = "Channel Partner / Broker",
-                                            remarks = noteSummary,
-                                            status = AvailabilityStatus.AVAILABLE,
-                                            updatedBy = safeEmployeeName
-                                        )
-                                        onAddNewProperty(newProp)
-                                    }
-                                    val savedCall = call.copy(
-                                        callerName = brokerTitle,
-                                        notes = noteSummary,
-                                        isLinked = true,
-                                        linkedOpportunityType = "Broker",
-                                        linkedOpportunityTitle = brokerTitle
-                                    )
-                                    CrmCallManager.addOrUpdateCall(context, savedCall)
-                                    CrmCallManager.logActivity(
-                                        context = context,
-                                        entityId = savedCall.id,
-                                        type = "Broker Co-Broking Call",
-                                        summary = "$brokerTitle ($cleanDisplayPhone)",
-                                        details = noteSummary,
-                                        author = safeEmployeeName
-                                    )
-                                    onCallResolved(savedCall)
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryActionOrange, contentColor = OnPrimaryActionColor),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                                    .testTag("post_call_save_broker_btn")
-                            ) {
-                                Text(
-                                    text = when (brokerMode) {
-                                        "CLIENT_REQ" -> "Save Broker Client Requirement"
-                                        "PROPERTY_LISTING" -> "Save Broker Property Listing"
-                                        else -> "Save Co-Broking Note"
-                                    },
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.5.sp
-                                )
-                            }
-                        }
-                    }
-                }
-
-                PostCallRole.DEVELOPER_POC -> {
-                    val projName = match.matchedDirectoryProject?.name
-                        ?: match.matchedUnderConstProject?.projectName
-                        ?: match.matchedDeveloperPoc?.projectName.orEmpty()
-                    val projId = match.matchedDirectoryProject?.id
-                        ?: match.matchedUnderConstProject?.projectCode
-                        ?: match.matchedDeveloperPoc?.projectId.orEmpty()
-
-                    Surface(
-                        color = SurfaceWhite,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, BorderGrey),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = "Developer Sales POC • $projId",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryActionOrange
-                            )
-                            Text(
-                                text = "${match.displayTitle} • $projName",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = TextPrimary
-                            )
-
-                            fun logDeveloperAction(actionTitle: String) {
-                                val summaryText = if (notes.isNotBlank()) "$actionTitle — ${notes.trim()}" else "$actionTitle ($projName)"
-                                val savedCall = call.copy(
-                                    callerName = match.displayTitle,
-                                    notes = summaryText,
-                                    isLinked = true,
-                                    linkedOpportunityType = "Developer POC",
-                                    linkedOpportunityTitle = "$projId • $projName",
-                                    linkedOpportunityId = projId
-                                )
-                                CrmCallManager.addOrUpdateCall(context, savedCall)
-                                CrmCallManager.logActivity(
-                                    context = context,
-                                    entityId = projId.ifBlank { savedCall.id },
-                                    type = actionTitle,
-                                    summary = "${match.displayTitle} ($projName)",
-                                    details = summaryText,
-                                    author = safeEmployeeName
-                                )
-                                onCallResolved(savedCall)
-                            }
-
-                            Button(
-                                onClick = { logDeveloperAction("Builder Meeting Logged") },
-                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryActionOrange, contentColor = OnPrimaryActionColor),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                            ) {
-                                Text("Log Builder Meeting", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(
-                                    onClick = { logDeveloperAction("Client Site Visit Tagged") },
-                                    border = BorderStroke(1.dp, BorderGrey),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                ) {
-                                    Text("Tag Client Visit", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                }
-                                OutlinedButton(
-                                    onClick = { logDeveloperAction("Developer Follow-up Scheduled") },
-                                    border = BorderStroke(1.dp, BorderGrey),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                ) {
-                                    Text("Schedule Follow-up", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                PostCallRole.FRESH_UNKNOWN -> {
-                    // Fresh Number Quick Classification (5 buttons + expandable mini-forms)
-                    var freshSelection by remember(call.id) { mutableStateOf<PostCallRole?>(null) }
-
-                    // Client Lead mini-form state
-                    var freshName by remember(call.id) {
-                        mutableStateOf(
-                            call.callerName.takeIf { !it.equals("Unknown", true) && !it.equals("Unknown Caller", true) }.orEmpty()
-                        )
-                    }
-                    var freshDivision by remember(call.id) { mutableStateOf("Commercial") }
-                    var freshReqType by remember(call.id) { mutableStateOf("Lease") }
-                    var freshLocation by remember(call.id) { mutableStateOf("Kharadi") }
-                    var freshBudget by remember(call.id) { mutableStateOf("") }
-                    var freshFollowUp by remember(call.id) { mutableStateOf(computeFollowUpPreset(1, "11:00 AM").first) }
-
-                    // Property Owner linking state
-                    val allUnitOptions = remember(inventory) {
-                        inventory.take(150).map { prop ->
-                            val unit = prop.unitNumber.takeIf { it.isNotBlank() }?.let { " $it" }.orEmpty()
-                            "${prop.propertyCode} • ${prop.projectName}$unit (${prop.location})"
-                        }
-                    }
-                    var selectedUnitLabel by remember(call.id) { mutableStateOf("") }
-                    var ownerNameInput by remember(call.id) { mutableStateOf(freshName) }
-
-                    // Broker state
-                    var brokerNameInput by remember(call.id) { mutableStateOf(freshName) }
-                    var brokerFirmInput by remember(call.id) { mutableStateOf("") }
-
-                    // Developer POC state
-                    val projectOptions = remember(directoryProjects, underConstProjects) {
-                        val dirOpts = directoryProjects.map { "${it.id} • ${it.name}" }
-                        val ucOpts = underConstProjects.map { "${it.projectCode} • ${it.projectName}" }
-                        (dirOpts + ucOpts).distinct()
-                    }
-                    var selectedProjectOption by remember(call.id) { mutableStateOf(projectOptions.firstOrNull().orEmpty()) }
-                    var devPocName by remember(call.id) { mutableStateOf(freshName) }
-
-                    Surface(
-                        color = SurfaceWhite,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, BorderGrey),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                OutlinedButton(
-                                    onClick = { freshSelection = PostCallRole.CLIENT_LEAD },
-                                    border = BorderStroke(1.dp, if (freshSelection == PostCallRole.CLIENT_LEAD) PrimaryActionOrange else BorderGrey),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (freshSelection == PostCallRole.CLIENT_LEAD) SelectedSurfaceContainer else SurfaceWhite
-                                    ),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .testTag("post_call_fresh_client_btn")
-                                ) {
-                                    Text("Client Lead", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = TextPrimary, maxLines = 1)
-                                }
-                                OutlinedButton(
-                                    onClick = { freshSelection = PostCallRole.PROPERTY_OWNER },
-                                    border = BorderStroke(1.dp, if (freshSelection == PostCallRole.PROPERTY_OWNER) PrimaryActionOrange else BorderGrey),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (freshSelection == PostCallRole.PROPERTY_OWNER) SelectedSurfaceContainer else SurfaceWhite
-                                    ),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .testTag("post_call_fresh_owner_btn")
-                                ) {
-                                    Text("Property Owner", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = TextPrimary, maxLines = 1)
-                                }
-                            }
-
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                OutlinedButton(
-                                    onClick = { freshSelection = PostCallRole.BROKER },
-                                    border = BorderStroke(1.dp, if (freshSelection == PostCallRole.BROKER) PrimaryActionOrange else BorderGrey),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (freshSelection == PostCallRole.BROKER) SelectedSurfaceContainer else SurfaceWhite
-                                    ),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .testTag("post_call_fresh_broker_btn")
-                                ) {
-                                    Text("Broker / CP", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = TextPrimary, maxLines = 1)
-                                }
-                                OutlinedButton(
-                                    onClick = { freshSelection = PostCallRole.DEVELOPER_POC },
-                                    border = BorderStroke(1.dp, if (freshSelection == PostCallRole.DEVELOPER_POC) PrimaryActionOrange else BorderGrey),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (freshSelection == PostCallRole.DEVELOPER_POC) SelectedSurfaceContainer else SurfaceWhite
-                                    ),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp)
-                                        .testTag("post_call_fresh_dev_btn")
-                                ) {
-                                    Text("Developer POC", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = TextPrimary, maxLines = 1)
-                                }
-                            }
-
-                            // Expandable Mini-Forms for selected fresh role
-                            when (freshSelection) {
-                                PostCallRole.CLIENT_LEAD -> {
-                                    HorizontalDivider(color = BorderGrey)
-                                    OutlinedTextField(
-                                        value = freshName,
-                                        onValueChange = { freshName = it },
-                                        label = { Text("Client Name *") },
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        CompactDropdownField(
-                                            label = "Division",
-                                            selectedValue = freshDivision,
-                                            options = listOf("Commercial", "Residential"),
-                                            onValueSelected = { freshDivision = it },
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        CompactDropdownField(
-                                            label = "Type",
-                                            selectedValue = freshReqType,
-                                            options = listOf("Lease", "Buy", "Pre-Leased"),
-                                            onValueSelected = { freshReqType = it },
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        SearchableDropdownField(
-                                            label = "Location",
-                                            selectedValue = freshLocation,
-                                            options = TlcStandardOptions.puneLocations,
-                                            onValueSelected = { freshLocation = it },
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            OutlinedTextField(
-                                                value = freshBudget,
-                                                onValueChange = { freshBudget = it },
-                                                label = { Text("Budget (₹)") },
-                                                singleLine = true,
-                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
-                                            val preview = CalculationUtils.formatCrmBudgetPreview(freshBudget, isMonthly = freshReqType == "Lease")
-                                            if (preview.isNotBlank()) {
-                                                Text(preview, fontSize = 10.sp, color = PrimaryActionOrange, fontWeight = FontWeight.SemiBold)
-                                            }
-                                        }
-                                    }
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text("Follow-up: $freshFollowUp", fontSize = 12.sp, color = TextPrimary, modifier = Modifier.weight(1f))
-                                        TextButton(
-                                            onClick = { openDatePicker { picked -> freshFollowUp = picked } },
-                                            modifier = Modifier.heightIn(min = 48.dp)
-                                        ) {
-                                            Text("Pick Date", color = PrimaryActionOrange, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                    Button(
-                                        onClick = {
-                                            val resolvedName = freshName.trim().ifBlank { "Client $cleanDisplayPhone" }
-                                            val summaryReq = notes.trim().ifBlank { "$freshDivision $freshReqType in $freshLocation" }
-                                            val newLead = CrmLead(
-                                                id = "",
-                                                name = resolvedName,
-                                                phone = ContactUtils.normalizePhoneNumber(call.phoneNumber),
-                                                segment = freshDivision,
-                                                requirement = summaryReq,
-                                                requirementType = freshReqType,
-                                                location = freshLocation,
-                                                budget = freshBudget.trim().ifBlank { "Negotiable" },
-                                                status = "New",
-                                                nextFollowUp = freshFollowUp,
-                                                nextFollowUpTime = "11:00 AM",
-                                                followUpTime = "11:00 AM",
-                                                notes = summaryReq,
-                                                assignedTo = safeEmployeeName,
-                                                lastContactDate = todayDateStr,
-                                                lastContactMode = "Call",
-                                                lastContactOutcome = "Connected - Interested",
-                                                leadSource = "Inbound Call"
-                                            )
-                                            onSaveLeadAndSync(newLead, "New Client Call", summaryReq)
-                                            val savedCall = call.copy(
-                                                callerName = resolvedName,
-                                                notes = summaryReq,
-                                                isLinked = true,
-                                                linkedOpportunityType = "Client",
-                                                linkedOpportunityTitle = resolvedName
-                                            )
-                                            CrmCallManager.addOrUpdateCall(context, savedCall)
-                                            CrmCallManager.logActivity(
-                                                context = context,
-                                                entityId = savedCall.id,
-                                                type = "Fresh Call -> Client Lead",
-                                                summary = "$resolvedName ($cleanDisplayPhone)",
-                                                details = summaryReq,
-                                                author = safeEmployeeName
-                                            )
-                                            onCallResolved(savedCall)
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryActionOrange, contentColor = OnPrimaryActionColor),
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(min = 48.dp)
-                                            .testTag("post_call_save_fresh_client_btn")
-                                    ) {
-                                        Text("Save Lead to CRM & Sync", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                    }
-                                }
-
-                                PostCallRole.PROPERTY_OWNER -> {
-                                    HorizontalDivider(color = BorderGrey)
-                                    OutlinedTextField(
-                                        value = ownerNameInput,
-                                        onValueChange = { ownerNameInput = it },
-                                        label = { Text("Owner Name") },
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    SearchableDropdownField(
-                                        label = "Link to Existing Unit (Optional)",
-                                        selectedValue = selectedUnitLabel,
-                                        options = allUnitOptions,
-                                        onValueSelected = { selectedUnitLabel = it },
-                                        allowAddNew = false,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Button(
-                                            enabled = selectedUnitLabel.isNotBlank(),
-                                            onClick = {
-                                                val idx = allUnitOptions.indexOf(selectedUnitLabel)
-                                                val target = inventory.getOrNull(idx)
-                                                if (target != null) {
-                                                    val cleanPhone = ContactUtils.normalizePhoneNumber(call.phoneNumber)
-                                                    val updatedCall = call.copy(
-                                                        callerName = ownerNameInput.trim().ifBlank { target.ownerName ?: "Owner" },
-                                                        notes = notes.trim().ifBlank { "Owner phone linked to ${target.propertyCode}" },
-                                                        isLinked = true,
-                                                        linkedOpportunityType = "Owner",
-                                                        linkedOpportunityTitle = "${target.propertyCode} • ${target.projectName}",
-                                                        linkedOpportunityId = target.id
-                                                    )
-                                                    onLinkOwnerExistingProperty(target, updatedCall, ownerNameInput.trim())
-                                                    CrmCallManager.addOrUpdateCall(context, updatedCall)
-                                                    onCallResolved(updatedCall)
-                                                }
-                                            },
-                                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryActionOrange, contentColor = OnPrimaryActionColor),
-                                            shape = RoundedCornerShape(8.dp),
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .heightIn(min = 48.dp)
-                                        ) {
-                                            Text("Link Unit", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                        OutlinedButton(
-                                            onClick = { onOpenFullAddProperty(ContactUtils.normalizePhoneNumber(call.phoneNumber)) },
-                                            border = BorderStroke(1.dp, BorderGrey),
-                                            shape = RoundedCornerShape(8.dp),
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .heightIn(min = 48.dp)
-                                        ) {
-                                            Text("+ New Property", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                                        }
-                                    }
-                                }
-
-                                PostCallRole.BROKER -> {
-                                    HorizontalDivider(color = BorderGrey)
-                                    OutlinedTextField(
-                                        value = brokerNameInput,
-                                        onValueChange = { brokerNameInput = it },
-                                        label = { Text("Broker / Partner Name *") },
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    OutlinedTextField(
-                                        value = brokerFirmInput,
-                                        onValueChange = { brokerFirmInput = it },
-                                        label = { Text("Agency / Firm (Optional)") },
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Button(
-                                        onClick = {
-                                            val bName = brokerNameInput.trim().ifBlank { "Channel Partner ($cleanDisplayPhone)" }
-                                            val noteText = notes.trim().ifBlank { "Tagged Channel Partner from call" }
-                                            CrmCallManager.saveBrokerContact(context, call.phoneNumber, bName, brokerFirmInput.trim(), noteText)
-                                            val savedCall = call.copy(
-                                                callerName = bName,
-                                                notes = noteText,
-                                                isLinked = true,
-                                                linkedOpportunityType = "Broker",
-                                                linkedOpportunityTitle = bName
-                                            )
-                                            CrmCallManager.addOrUpdateCall(context, savedCall)
-                                            CrmCallManager.logActivity(
-                                                context = context,
-                                                entityId = savedCall.id,
-                                                type = "Tagged Channel Partner",
-                                                summary = "$bName ($cleanDisplayPhone)",
-                                                details = noteText,
-                                                author = safeEmployeeName
-                                            )
-                                            onCallResolved(savedCall)
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryActionOrange, contentColor = OnPrimaryActionColor),
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(min = 48.dp)
-                                    ) {
-                                        Text("Save as Broker / Channel Partner", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                    }
-                                }
-
-                                PostCallRole.DEVELOPER_POC -> {
-                                    HorizontalDivider(color = BorderGrey)
-                                    OutlinedTextField(
-                                        value = devPocName,
-                                        onValueChange = { devPocName = it },
-                                        label = { Text("Sales POC Name *") },
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    SearchableDropdownField(
-                                        label = "Link to Project",
-                                        selectedValue = selectedProjectOption,
-                                        options = projectOptions,
-                                        onValueSelected = { selectedProjectOption = it },
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    Button(
-                                        enabled = selectedProjectOption.isNotBlank(),
-                                        onClick = {
-                                            val parts = selectedProjectOption.split(" • ", limit = 2)
-                                            val pId = parts.firstOrNull().orEmpty().trim()
-                                            val pName = parts.getOrNull(1).orEmpty().ifBlank { selectedProjectOption }
-                                            val contactTitle = devPocName.trim().ifBlank { "Sales POC" }
-                                            val div = directoryProjects.firstOrNull { it.id == pId }?.division ?: "Residential"
-                                            CrmCallManager.saveProjectPocLink(context, call.phoneNumber, pId, pName, div, contactTitle)
-                                            val noteText = notes.trim().ifBlank { "Linked Developer POC $contactTitle to $pName" }
-                                            val savedCall = call.copy(
-                                                callerName = contactTitle,
-                                                notes = noteText,
-                                                isLinked = true,
-                                                linkedOpportunityType = "Developer POC",
-                                                linkedOpportunityTitle = "$pId • $pName",
-                                                linkedOpportunityId = pId
-                                            )
-                                            CrmCallManager.addOrUpdateCall(context, savedCall)
-                                            CrmCallManager.logActivity(
-                                                context = context,
-                                                entityId = pId.ifBlank { savedCall.id },
-                                                type = "Linked Developer POC",
-                                                summary = "$contactTitle • $pName ($cleanDisplayPhone)",
-                                                details = noteText,
-                                                author = safeEmployeeName
-                                            )
-                                            onCallResolved(savedCall)
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryActionOrange, contentColor = OnPrimaryActionColor),
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(min = 48.dp)
-                                    ) {
-                                        Text("Link Developer Sales POC", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                    }
-                                }
-
-                                else -> Unit
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-        }
-    }
 }
 
 

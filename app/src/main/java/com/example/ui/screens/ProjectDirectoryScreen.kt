@@ -42,6 +42,9 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import com.example.inventory.InventoryQuality
 import com.example.data.projects.DirectoryProject
 import com.example.data.projects.FetchedProjectCandidate
 import com.example.data.projects.ProjectDirectoryStore
@@ -50,17 +53,34 @@ import com.example.model.*
 import com.example.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
+import java.util.UUID
+
+private data class ProjectInventoryMatch(
+    val directUnitCount: Int,
+    val builderStockRows: List<PropertyItem>
+)
+
+private data class ProjectDirectoryComputedState(
+    val liveCount: Int = 0,
+    val archiveCount: Int = 0,
+    val allLocations: List<Pair<String, String>> = listOf("all" to "All Locations"),
+    val allDevelopers: List<Pair<String, String>> = listOf("all" to "All Developers"),
+    val filtered: List<DirectoryProject> = emptyList()
+)
 
 private enum class ProjectDetailTab(val label: String) {
     OVERVIEW("Overview"),
-    CONFIGURATIONS("Configurations"),
+    CONFIGURATIONS("Builder Stock"),
     UNITS("Units"),
     AMENITIES("Amenities"),
-    FETCH_VERIFY("Fetch & Verify")
+    FETCH_VERIFY("Verify")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,22 +88,39 @@ private enum class ProjectDetailTab(val label: String) {
 fun ProjectDirectoryScreen(
     inventory: List<PropertyItem>,
     onOpenProperty: (PropertyItem) -> Unit,
-    onScrollStateChanged: ((Boolean) -> Unit)? = null
+    onScrollStateChanged: ((Boolean) -> Unit)? = null,
+    onPromoteUnit: ((PropertyItem, DirectoryProject) -> Unit)? = null,
+    generatePropertyCode: ((InventoryTab) -> String)? = null,
+    initialSelectedProjectId: String? = null,
+    onConsumeInitialProjectId: (() -> Unit)? = null,
+    onDeleteProjectPermanently: ((DirectoryProject) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var records by remember { mutableStateOf<List<DirectoryProject>>(emptyList()) }
+    var unitLinks by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var error by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(true) }
+    var hasLoadedOnce by remember { mutableStateOf(false) }
 
     // State preservation on back navigation
     var showArchiveTab by rememberSaveable { mutableStateOf(false) }
     var divisionFilter by rememberSaveable { mutableStateOf("all") } // "all", "commercial", "residential"
     var verificationFilter by rememberSaveable { mutableStateOf("all") } // "all", "verified", "review"
     var search by rememberSaveable { mutableStateOf("") }
+    var debouncedSearch by rememberSaveable { mutableStateOf(search) }
     var selectedLocation by rememberSaveable { mutableStateOf("all") }
     var selectedDeveloper by rememberSaveable { mutableStateOf("all") }
     var sortBy by rememberSaveable { mutableStateOf("Recently Updated") }
     var showFilterSheet by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(search) {
+        if (search.isBlank()) {
+            debouncedSearch = ""
+        } else {
+            delay(250)
+            debouncedSearch = search
+        }
+    }
 
     val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
@@ -102,56 +139,169 @@ fun ProjectDirectoryScreen(
     var favoriteProjectIds by rememberSaveable { mutableStateOf(setOf<String>()) }
 
     LaunchedEffect(Unit) {
-        runCatching { withContext(Dispatchers.IO) { ProjectDirectoryStore.read(context) } }
-            .onSuccess { records = it }
-            .onFailure { error = "Project directory could not load. Existing inventory was preserved." }
-        loading = false
-    }
-
-    val liveCount = remember(records) { records.count { it.isLiveActive } }
-    val archiveCount = remember(records) { records.count { !it.isLiveActive } }
-
-    val allLocations = remember(records) {
-        listOf("all" to "All Locations") + records.map { it.location }.filter { it.isNotBlank() }.distinct().sorted().map { it to it }
-    }
-    val allDevelopers = remember(records) {
-        listOf("all" to "All Developers") + records.map { it.developer }.filter { it.isNotBlank() }.distinct().sorted().map { it to it }
-    }
-    val hasActiveAdvancedFilters = selectedLocation != "all" || selectedDeveloper != "all" || verificationFilter != "all" || divisionFilter != "all"
-
-    val filtered = remember(records, showArchiveTab, divisionFilter, verificationFilter, search, selectedLocation, selectedDeveloper, sortBy) {
-        records.filter { p ->
-            val matchesArchive = if (showArchiveTab) !p.isLiveActive else p.isLiveActive
-            val matchesDivision = divisionFilter == "all" || p.division.equals(divisionFilter, ignoreCase = true)
-            val isVerified = p.verification.equals("Verified", ignoreCase = true) ||
-                (p.verification.contains("Verified", ignoreCase = true) && !p.verification.contains("Unverified", ignoreCase = true))
-            val matchesVerification = when (verificationFilter) {
-                "verified" -> isVerified
-                "review" -> !isVerified
-                else -> true
+        runCatching {
+            withContext(Dispatchers.IO) {
+                ProjectDirectoryStore.read(context) to ProjectDirectoryStore.links(context)
             }
-            val matchesLocation = selectedLocation == "all" || p.location.equals(selectedLocation, ignoreCase = true)
-            val matchesDeveloper = selectedDeveloper == "all" || p.developer.equals(selectedDeveloper, ignoreCase = true)
+        }
+            .onSuccess { (loadedRecords, loadedLinks) ->
+                records = loadedRecords
+                unitLinks = loadedLinks
+            }
+            .onFailure { error = "Project directory could not load. Existing inventory was preserved." }
+        hasLoadedOnce = true
+    }
 
-            val matchesSearch = search.isBlank() || listOf(
-                p.id,
-                p.name,
-                p.location,
-                p.developer,
-                p.configurations,
-                p.category,
-                p.raw.optJSONObject("raw")?.optString("Project Aliases").orEmpty()
-            ).any { it.contains(search.trim(), ignoreCase = true) }
-
-            matchesArchive && matchesDivision && matchesVerification && matchesLocation && matchesDeveloper && matchesSearch
-        }.let { list ->
-            when (sortBy) {
-                "Project Name A–Z" -> list.sortedBy { it.name }
-                "Location" -> list.sortedBy { it.location }
-                else -> list
+    LaunchedEffect(initialSelectedProjectId, records) {
+        val targetId = initialSelectedProjectId?.trim().orEmpty()
+        if (targetId.isNotBlank() && records.isNotEmpty()) {
+            val found = records.firstOrNull {
+                it.id.equals(targetId, ignoreCase = true) ||
+                    it.name.equals(targetId, ignoreCase = true)
+            }
+            if (found != null) {
+                initialDetailTab = ProjectDetailTab.CONFIGURATIONS
+                selected = found
+                onConsumeInitialProjectId?.invoke()
             }
         }
     }
+
+    val hasActiveAdvancedFilters = selectedLocation != "all" || selectedDeveloper != "all" || verificationFilter != "all" || divisionFilter != "all"
+
+    var computedDirectoryState by remember { mutableStateOf(ProjectDirectoryComputedState()) }
+    LaunchedEffect(
+        records,
+        showArchiveTab,
+        divisionFilter,
+        verificationFilter,
+        debouncedSearch,
+        selectedLocation,
+        selectedDeveloper,
+        sortBy
+    ) {
+        computedDirectoryState = withContext(Dispatchers.Default) {
+            val lCount = records.count { it.isLiveActive }
+            val aCount = records.size - lCount
+            val locs = listOf("all" to "All Locations") +
+                records.mapNotNull { it.location.takeIf { loc -> loc.isNotBlank() } }.distinct().sorted().map { it to it }
+            val devs = listOf("all" to "All Developers") +
+                records.mapNotNull { it.developer.takeIf { dev -> dev.isNotBlank() } }.distinct().sorted().map { it to it }
+
+            val q = debouncedSearch.trim()
+            val list = records.filter { p ->
+                val matchesArchive = if (showArchiveTab) !p.isLiveActive else p.isLiveActive
+                val matchesDivision = divisionFilter == "all" || p.division.equals(divisionFilter, ignoreCase = true)
+                val isVerified = p.verification.equals("Verified", ignoreCase = true) ||
+                    (p.verification.contains("Verified", ignoreCase = true) && !p.verification.contains("Unverified", ignoreCase = true))
+                val matchesVerification = when (verificationFilter) {
+                    "verified" -> isVerified
+                    "review" -> !isVerified
+                    else -> true
+                }
+                val matchesLocation = selectedLocation == "all" || p.location.equals(selectedLocation, ignoreCase = true)
+                val matchesDeveloper = selectedDeveloper == "all" || p.developer.equals(selectedDeveloper, ignoreCase = true)
+
+                val matchesSearch = q.isBlank() || listOf(
+                    p.id,
+                    p.name,
+                    p.location,
+                    p.developer,
+                    p.configurations,
+                    p.category,
+                    p.raw.optJSONObject("raw")?.optString("Project Aliases").orEmpty()
+                ).any { it.contains(q, ignoreCase = true) }
+
+                matchesArchive && matchesDivision && matchesVerification && matchesLocation && matchesDeveloper && matchesSearch
+            }.let { filteredList ->
+                when (sortBy) {
+                    "Project Name A–Z" -> filteredList.sortedBy { it.name }
+                    "Location" -> filteredList.sortedBy { it.location }
+                    else -> filteredList
+                }
+            }
+
+            ProjectDirectoryComputedState(
+                liveCount = lCount,
+                archiveCount = aCount,
+                allLocations = locs,
+                allDevelopers = devs,
+                filtered = list
+            )
+        }
+    }
+
+    var projectInventoryMap by remember { mutableStateOf<Map<String, ProjectInventoryMatch>>(emptyMap()) }
+    LaunchedEffect(records, inventory, unitLinks) {
+        if (records.isEmpty() || inventory.isEmpty()) {
+            projectInventoryMap = emptyMap()
+        } else {
+            projectInventoryMap = withContext(Dispatchers.Default) {
+                val byLinkedProjId = HashMap<String, MutableList<PropertyItem>>()
+                val byPropProjectId = HashMap<String, MutableList<PropertyItem>>()
+                val byPropCode = HashMap<String, MutableList<PropertyItem>>()
+                val byPropRecId = HashMap<String, MutableList<PropertyItem>>()
+                val byPropProjName = HashMap<String, MutableList<PropertyItem>>()
+
+                for (prop in inventory) {
+                    unitLinks[prop.id]?.let { linkedPid ->
+                        byLinkedProjId.getOrPut(linkedPid) { mutableListOf() }.add(prop)
+                    }
+                    val pid = prop.projectId?.trim().orEmpty().lowercase()
+                    if (pid.isNotBlank()) byPropProjectId.getOrPut(pid) { mutableListOf() }.add(prop)
+                    val pCode = prop.propertyCode.trim().lowercase()
+                    if (pCode.isNotBlank()) byPropCode.getOrPut(pCode) { mutableListOf() }.add(prop)
+                    val pRec = prop.recordId.trim().lowercase()
+                    if (pRec.isNotBlank()) byPropRecId.getOrPut(pRec) { mutableListOf() }.add(prop)
+                    val pName = prop.projectName.trim().lowercase()
+                    if (pName.isNotBlank()) byPropProjName.getOrPut(pName) { mutableListOf() }.add(prop)
+                }
+
+                val result = HashMap<String, ProjectInventoryMatch>(records.size)
+                for (project in records) {
+                    val matchedMap = LinkedHashMap<String, PropertyItem>()
+                    byLinkedProjId[project.id]?.forEach { matchedMap[it.id] = it }
+                    val projIdLower = project.id.trim().lowercase()
+                    if (projIdLower.isNotBlank()) {
+                        byPropProjectId[projIdLower]?.forEach { matchedMap[it.id] = it }
+                    }
+                    val normProjNameLower = project.name.trim().lowercase()
+                    if (normProjNameLower.isNotBlank()) {
+                        byPropProjName[normProjNameLower]?.forEach { matchedMap[it.id] = it }
+                    }
+                    val rawMasterId = project.raw.optJSONObject("raw")
+                        ?.optString("Source Master Project ID").orEmpty().trim().lowercase()
+                    if (rawMasterId.isNotBlank()) {
+                        byPropProjectId[rawMasterId]?.forEach { matchedMap[it.id] = it }
+                        byPropCode[rawMasterId]?.forEach { matchedMap[it.id] = it }
+                        byPropRecId[rawMasterId]?.forEach { matchedMap[it.id] = it }
+                    }
+
+                    if (matchedMap.isNotEmpty()) {
+                        val stockRows = ArrayList<PropertyItem>()
+                        var totalMatched = 0
+                        for (prop in matchedMap.values) {
+                            totalMatched++
+                            if (InventoryQuality.isBuilderProjectStock(prop)) {
+                                stockRows.add(prop)
+                            }
+                        }
+                        result[project.id] = ProjectInventoryMatch(
+                            directUnitCount = totalMatched - stockRows.size,
+                            builderStockRows = stockRows
+                        )
+                    }
+                }
+                result
+            }
+        }
+    }
+
+    val liveCount = computedDirectoryState.liveCount
+    val archiveCount = computedDirectoryState.archiveCount
+    val allLocations = computedDirectoryState.allLocations
+    val allDevelopers = computedDirectoryState.allDevelopers
+    val filtered = computedDirectoryState.filtered
 
     val isScrollingDown by remember {
         derivedStateOf {
@@ -330,9 +480,6 @@ fun ProjectDirectoryScreen(
             }
         }
 
-        if (loading) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = PrimaryActionOrange)
-        }
         if (error.isNotBlank()) {
             Text(
                 text = error,
@@ -351,15 +498,11 @@ fun ProjectDirectoryScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(filtered, key = { it.id }) { project ->
-                val linkedUnitCount = remember(project.id, project.name, inventory) {
-                    val links = ProjectDirectoryStore.links(context)
-                    inventory.count {
-                        links[it.id] == project.id || it.projectName.trim().equals(project.name.trim(), ignoreCase = true)
-                    }
-                }
+                val match = projectInventoryMap[project.id]
                 CompactProjectDirectoryCard(
                     project = project,
-                    linkedUnitCount = linkedUnitCount,
+                    linkedUnitCount = match?.directUnitCount ?: 0,
+                    builderStock = match?.builderStockRows ?: emptyList(),
                     isFavorite = favoriteProjectIds.contains(project.id),
                     onToggleFavorite = {
                         favoriteProjectIds = if (favoriteProjectIds.contains(project.id)) {
@@ -375,8 +518,8 @@ fun ProjectDirectoryScreen(
                 )
             }
 
-            if (!loading && filtered.isEmpty()) {
-                item {
+            if (hasLoadedOnce && filtered.isEmpty()) {
+                item(key = "project_empty_state") {
                     val isArchiveOnlyPool = !showArchiveTab && liveCount == 0 && archiveCount > 0
                     Surface(
                         color = SurfaceWhite,
@@ -648,8 +791,37 @@ fun ProjectDirectoryScreen(
                 onOpenProperty(prop)
             },
             onProjectUpdated = { updatedProj ->
-                records = ProjectDirectoryStore.read(context)
                 selected = updatedProj
+                coroutineScope.launch {
+                    val refreshed = withContext(Dispatchers.IO) { ProjectDirectoryStore.read(context) }
+                    records = refreshed
+                }
+            },
+            onPromoteUnit = onPromoteUnit,
+            generatePropertyCode = generatePropertyCode,
+            onDeleteProjectPermanently = { targetProj ->
+                records = records.filterNot { it.id.equals(targetProj.id, ignoreCase = true) }
+                selected = null
+                if (onDeleteProjectPermanently != null) {
+                    onDeleteProjectPermanently(targetProj)
+                } else {
+                    val remaining = ProjectDirectoryStore.deletePermanently(context, targetProj.id)
+                    records = remaining
+                    val tabName = if (targetProj.division.equals("residential", ignoreCase = true)) {
+                        "Residential Projects"
+                    } else {
+                        "Commercial Projects"
+                    }
+                    coroutineScope.launch(Dispatchers.IO) {
+                        com.example.data.SheetsRepository(context.applicationContext, startForegroundSync = false)
+                            .deleteRecordPermanently(
+                                tabName = tabName,
+                                keyHeader = "Project Code",
+                                keyValue = targetProj.id
+                            )
+                    }
+                }
+                Toast.makeText(context, "Deleted ${targetProj.name} permanently", Toast.LENGTH_SHORT).show()
             },
             onDismiss = { selected = null }
         )
@@ -725,14 +897,20 @@ fun ProjectDirectoryScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        runCatching {
-                            ProjectDirectoryStore.create(context, newDivision, name, location, developer)
-                        }.onSuccess { created ->
-                            records = ProjectDirectoryStore.read(context)
-                            creating = false
-                            selected = created
-                        }.onFailure {
-                            saveError = it.message ?: "Unable to create project."
+                        coroutineScope.launch {
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    val created = ProjectDirectoryStore.create(context, newDivision, name, location, developer)
+                                    val refreshed = ProjectDirectoryStore.read(context)
+                                    created to refreshed
+                                }
+                            }.onSuccess { (created, refreshed) ->
+                                records = refreshed
+                                creating = false
+                                selected = created
+                            }.onFailure {
+                                saveError = it.message ?: "Unable to create project."
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -758,6 +936,7 @@ fun ProjectDirectoryScreen(
 private fun CompactProjectDirectoryCard(
     project: DirectoryProject,
     linkedUnitCount: Int,
+    builderStock: List<PropertyItem> = emptyList(),
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onOpenDetails: () -> Unit
@@ -767,6 +946,12 @@ private fun CompactProjectDirectoryCard(
         ProjectDirectoryStore.minimumRequiredMissingFields(project).size
     }
     val isCommercial = project.division.equals("commercial", ignoreCase = true)
+    val salesPocText = remember(project, builderStock) {
+        project.salesPocDisplay(builderStock)
+    }
+    val sizeAndPriceRange = remember(project, builderStock) {
+        project.summarySizeAndPriceRange(builderStock)
+    }
 
     Card(
         modifier = Modifier
@@ -826,43 +1011,87 @@ private fun CompactProjectDirectoryCard(
                 }
             }
 
-            // Row 2: Location
-            if (project.location.isNotBlank()) {
+            // Row 2: Location + Possession
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(text = "📍", fontSize = 12.sp)
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = null,
+                        tint = PrimaryActionOrange,
+                        modifier = Modifier.size(14.dp)
+                    )
                     Text(
-                        text = project.location,
+                        text = project.location.ifBlank { "Pune" },
                         color = SecondaryText,
-                        fontSize = 13.sp,
+                        fontSize = 12.5.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (project.possession.isNotBlank()) {
+                    Text(
+                        text = "Poss: ${project.possession}",
+                        color = TextPrimary,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            // Row 3: Developer
-            if (project.developer.isNotBlank()) {
+            // Row 3: Developer / Sales POC
+            if (salesPocText.isNotBlank()) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    Text(text = "🏢", fontSize = 12.sp)
+                    Icon(
+                        imageVector = Icons.Default.SupportAgent,
+                        contentDescription = null,
+                        tint = SecondaryText,
+                        modifier = Modifier.size(14.dp)
+                    )
                     Text(
-                        text = project.developer,
+                        text = salesPocText,
                         color = SecondaryText,
-                        fontSize = 13.sp,
+                        fontSize = 12.5.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Row 4: Overall Size & Price Range
+            if (sizeAndPriceRange.isNotBlank()) {
+                Surface(
+                    color = SurfaceMuted,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = sizeAndPriceRange,
+                        color = FocusOutlineColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
                     )
                 }
             }
 
             HorizontalDivider(color = BorderSubtle)
 
-            // Row 4: Bottom Meta Row (Division · Project Code | Linked Units & Chevron)
+            // Row 5: Bottom Meta Row (Division · Project Code | Builder Stock & Units & Chevron)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -871,19 +1100,33 @@ private fun CompactProjectDirectoryCard(
                 Text(
                     text = "${if (isCommercial) "Commercial" else "Residential"} · ${project.id}",
                     color = TextPrimary,
-                    fontSize = 12.sp,
+                    fontSize = 11.5.sp,
                     fontWeight = FontWeight.SemiBold
                 )
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    if (builderStock.isNotEmpty()) {
+                        Surface(
+                            color = SelectedSurfaceContainer,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "Stock: ${builderStock.size}",
+                                color = FocusOutlineColor,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     if (linkedUnitCount > 0) {
                         Text(
                             text = "Units: $linkedUnitCount",
-                            color = FocusOutlineColor,
-                            fontSize = 12.sp,
+                            color = StatusSuccessGreen,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -906,11 +1149,23 @@ private fun ProjectDirectoryDetailModal(
     inventory: List<PropertyItem>,
     onOpenProperty: (PropertyItem) -> Unit,
     onProjectUpdated: (DirectoryProject) -> Unit,
+    onPromoteUnit: ((PropertyItem, DirectoryProject) -> Unit)? = null,
+    generatePropertyCode: ((InventoryTab) -> String)? = null,
+    onDeleteProjectPermanently: ((DirectoryProject) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val detailScope = rememberCoroutineScope()
+    val userSettingsManager = remember(context) { com.example.data.UserSettingsManager(context) }
+    val userProfile by userSettingsManager.userProfile.collectAsState()
+    val canPermanentDelete = userProfile.isAdminOrSuperAdmin && onDeleteProjectPermanently != null
+    var overflowMenuExpanded by remember { mutableStateOf(false) }
+    var showPermanentDeleteDialog by remember { mutableStateOf(false) }
     var activeTab by remember(project.id, initialTab) { mutableStateOf(initialTab) }
-    var links by remember { mutableStateOf(ProjectDirectoryStore.links(context)) }
+    var links by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    LaunchedEffect(context, project.id) {
+        links = withContext(Dispatchers.IO) { ProjectDirectoryStore.links(context) }
+    }
     var fetchedCandidate by remember(project.id) { mutableStateOf<FetchedProjectCandidate?>(null) }
     var selectedVerificationState by remember(project.id, project.verification) {
         mutableStateOf(
@@ -923,6 +1178,8 @@ private fun ProjectDirectoryDetailModal(
         )
     }
     var statusMessage by remember { mutableStateOf("") }
+    var promotePrefillStock by remember { mutableStateOf<PropertyItem?>(null) }
+    var showPromoteDialog by remember { mutableStateOf(false) }
 
     val rawInner = project.raw.optJSONObject("raw") ?: JSONObject()
     val reraNumber = rawInner.optString("MahaRERA Number")
@@ -930,10 +1187,19 @@ private fun ProjectDirectoryDetailModal(
         .ifBlank { fetchedCandidate?.reraNumber.orEmpty() }
         .ifBlank { "P521000${project.id.filter { it.isDigit() }.padEnd(5, '0').take(5)}" }
 
-    val linkedUnits = remember(project.id, project.name, inventory, links) {
+    val allMatchedForProject = remember(project.id, project.name, inventory, links) {
         inventory.filter {
-            links[it.id] == project.id || it.projectName.trim().equals(project.name.trim(), ignoreCase = true)
+            links[it.id] == project.id || project.matchesProperty(it)
         }
+    }
+    val builderStockRows = remember(allMatchedForProject) {
+        allMatchedForProject.filter { InventoryQuality.isBuilderProjectStock(it) }
+    }
+    val linkedUnits = remember(allMatchedForProject, builderStockRows) {
+        allMatchedForProject.filterNot { InventoryQuality.isBuilderProjectStock(it) }
+    }
+    val salesPocText = remember(project, builderStockRows) {
+        project.salesPocDisplay(builderStockRows)
     }
 
     val sourceUrls = remember(project.id) {
@@ -949,9 +1215,13 @@ private fun ProjectDirectoryDetailModal(
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
         Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             topBar = {
                 Surface(
                     color = CanvasObsidianSurface,
@@ -1012,6 +1282,60 @@ private fun ProjectDirectoryDetailModal(
                             ) {
                                 Icon(Icons.Default.Share, contentDescription = "Share Project", tint = TextPrimaryLight)
                             }
+
+                            Box {
+                                IconButton(
+                                    onClick = { overflowMenuExpanded = true },
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("directory_project_more_btn")
+                                ) {
+                                    Icon(
+                                        Icons.Default.MoreVert,
+                                        contentDescription = "More Options",
+                                        tint = TextPrimaryLight
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = overflowMenuExpanded,
+                                    onDismissRequest = { overflowMenuExpanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Edit / Fetch & Verify") },
+                                        onClick = {
+                                            overflowMenuExpanded = false
+                                            activeTab = ProjectDetailTab.FETCH_VERIFY
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Edit, contentDescription = null, tint = PrimaryActionOrange)
+                                        }
+                                    )
+                                    if (canPermanentDelete) {
+                                        HorizontalDivider(color = BorderSubtle)
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    "Delete Permanently",
+                                                    color = StatusDangerRed,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            },
+                                            onClick = {
+                                                overflowMenuExpanded = false
+                                                showPermanentDeleteDialog = true
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.Default.DeleteForever,
+                                                    contentDescription = null,
+                                                    tint = StatusDangerRed
+                                                )
+                                            },
+                                            modifier = Modifier.testTag("directory_project_delete_permanently_menu_item")
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1022,6 +1346,7 @@ private fun ProjectDirectoryDetailModal(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
+                    .navigationBarsPadding()
                     .verticalScroll(rememberScrollState())
             ) {
                 // ── HERO HEADER CARD ──
@@ -1102,7 +1427,7 @@ private fun ProjectDirectoryDetailModal(
 
                 HorizontalDivider(color = BorderGrey)
 
-                // ── NAVIGATION TABS: Overview | Configurations | Units | Amenities | Fetch & Verify ──
+                // ── NAVIGATION TABS: Overview | Builder Stock | Units | Amenities | Verify ──
                 Surface(
                     color = SurfaceWhite,
                     modifier = Modifier.fillMaxWidth()
@@ -1111,8 +1436,8 @@ private fun ProjectDirectoryDetailModal(
                         modifier = Modifier
                             .fillMaxWidth()
                             .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            .padding(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         ProjectDetailTab.entries.forEach { tab ->
                             val selected = activeTab == tab
@@ -1120,7 +1445,7 @@ private fun ProjectDirectoryDetailModal(
                                 modifier = Modifier
                                     .heightIn(min = 48.dp)
                                     .clickable { activeTab = tab }
-                                    .padding(horizontal = 10.dp)
+                                    .padding(horizontal = 7.dp)
                                     .testTag("project_detail_tab_${tab.name.lowercase()}"),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center
@@ -1128,13 +1453,15 @@ private fun ProjectDirectoryDetailModal(
                                 Text(
                                     text = if (tab == ProjectDetailTab.UNITS) "Units (${linkedUnits.size})" else tab.label,
                                     color = if (selected) TextPrimary else SecondaryText,
-                                    fontSize = 13.sp,
+                                    fontSize = 12.5.sp,
                                     fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false,
                                     modifier = Modifier.padding(vertical = 10.dp)
                                 )
                                 Box(
                                     modifier = Modifier
-                                        .width(56.dp)
+                                        .width(44.dp)
                                         .height(3.dp)
                                         .background(
                                             if (selected) PrimaryActionOrange else Color.Transparent,
@@ -1150,7 +1477,7 @@ private fun ProjectDirectoryDetailModal(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     when (activeTab) {
@@ -1232,55 +1559,220 @@ private fun ProjectDirectoryDetailModal(
                                     }
                                     HorizontalDivider(color = BorderSubtle)
                                     ProjectSpecRow(
+                                        "Developer Sales POC",
+                                        salesPocText.ifBlank { "Not Provided" }
+                                    )
+                                    HorizontalDivider(color = BorderSubtle)
+                                    ProjectSpecRow(
                                         "Possession",
                                         project.possession.ifBlank { "Under Verification" }
                                     )
                                 }
                             }
 
-                            // Action Buttons: View on RERA & Brochure & Fetch Details
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            // Bottom Action Buttons Container (inset-safe above Android gesture bar)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .navigationBarsPadding(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                OutlinedButton(
-                                    onClick = {
-                                        val targetUrl = sourceUrls.firstOrNull() ?: "https://maharera.maharashtra.gov.in"
-                                        runCatching {
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)))
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp),
-                                    shape = RoundedCornerShape(10.dp),
-                                    border = BorderStroke(1.dp, FocusOutlineColor),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = FocusOutlineColor)
-                                ) {
-                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("View on RERA", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                if (onPromoteUnit != null) {
+                                    Button(
+                                        onClick = {
+                                            promotePrefillStock = builderStockRows.firstOrNull()
+                                            showPromoteDialog = true
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(min = 48.dp)
+                                            .testTag("project_promote_unit_overview_btn"),
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = PrimaryActionOrange,
+                                            contentColor = OnPrimaryActionColor
+                                        )
+                                    ) {
+                                        Icon(Icons.Default.AddBusiness, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("+ Promote Specific Unit to Inventory", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                                    }
                                 }
 
+                                // Action Buttons: View on RERA & Brochure & Fetch Details
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            val targetUrl = sourceUrls.firstOrNull() ?: "https://maharera.maharashtra.gov.in"
+                                            runCatching {
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)))
+                                            }
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 48.dp),
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(1.dp, FocusOutlineColor),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = FocusOutlineColor)
+                                    ) {
+                                        Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("View on RERA", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+
+                                    Button(
+                                        onClick = { activeTab = ProjectDetailTab.FETCH_VERIFY },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 48.dp),
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = PrimaryActionOrange,
+                                            contentColor = OnPrimaryActionColor
+                                        )
+                                    ) {
+                                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Fetch / Brochure", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        ProjectDetailTab.CONFIGURATIONS -> {
+                            Text(
+                                text = "Builder Stock / Configurations",
+                                color = TextPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Text(
+                                text = "Developer floor plates & bulk configurations stay here so Direct Unit Inventory stays clean. Promote any specific unit when available.",
+                                color = SecondaryText,
+                                fontSize = 12.sp
+                            )
+
+                            if (onPromoteUnit != null) {
                                 Button(
-                                    onClick = { activeTab = ProjectDetailTab.FETCH_VERIFY },
+                                    onClick = {
+                                        promotePrefillStock = builderStockRows.firstOrNull()
+                                        showPromoteDialog = true
+                                    },
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .heightIn(min = 48.dp),
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .testTag("project_promote_unit_stock_btn"),
                                     shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = PrimaryActionOrange,
                                         contentColor = OnPrimaryActionColor
                                     )
                                 ) {
-                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Fetch / Brochure", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Icon(Icons.Default.AddCircleOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("+ Promote Specific Unit to Inventory", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
                                 }
                             }
-                        }
 
-                        ProjectDetailTab.CONFIGURATIONS -> {
+                            if (builderStockRows.isNotEmpty()) {
+                                Text(
+                                    text = "DEVELOPER BULK STOCK ROWS (${builderStockRows.size})",
+                                    color = FocusOutlineColor,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.6.sp
+                                )
+                                builderStockRows.forEach { stock ->
+                                    val amt = CalculationUtils.primaryAmountForProperty(stock)
+                                    val priceStr = if (amt > 0.0) {
+                                        CalculationUtils.formatIndianCurrency(amt, stock.tab.isRental)
+                                    } else {
+                                        project.priceRange.ifBlank { "Price on Request" }
+                                    }
+                                    val areaStr = if (stock.carpetAreaSqFt > 0.0) {
+                                        "${CalculationUtils.formatNumber(stock.carpetAreaSqFt)} sq.ft."
+                                    } else {
+                                        project.areaRange.ifBlank { "Flexible Area" }
+                                    }
+                                    Surface(
+                                        color = SurfaceWhite,
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = BorderStroke(1.dp, FocusOutlineColor.copy(alpha = 0.45f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(14.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Surface(
+                                                    color = SelectedSurfaceContainer,
+                                                    shape = RoundedCornerShape(6.dp)
+                                                ) {
+                                                    Text(
+                                                        text = stock.propertyCode.ifBlank { stock.id },
+                                                        color = FocusOutlineColor,
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                                    )
+                                                }
+                                                Surface(
+                                                    color = SuccessGreenSubtle,
+                                                    shape = RoundedCornerShape(6.dp)
+                                                ) {
+                                                    Text(
+                                                        text = stock.status.label,
+                                                        color = StatusSuccessGreen,
+                                                        fontSize = 10.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = "${stock.propertyType} · ${stock.bhk?.takeIf { it.isNotBlank() } ?: stock.transactionType}",
+                                                color = TextPrimary,
+                                                fontSize = 14.5.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "$areaStr  ·  $priceStr",
+                                                color = FocusOutlineColor,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            if (onPromoteUnit != null) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.End
+                                                ) {
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            promotePrefillStock = stock
+                                                            showPromoteDialog = true
+                                                        },
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        border = BorderStroke(1.dp, PrimaryActionOrange),
+                                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryActionOrange),
+                                                        modifier = Modifier.heightIn(min = 40.dp)
+                                                    ) {
+                                                        Text("Promote Unit", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             val configTokens = remember(project.configurations, project.division) {
                                 val rawList = project.configurations
                                     .split(Regex("[,/|]"))
@@ -1356,12 +1848,39 @@ private fun ProjectDirectoryDetailModal(
                         }
 
                         ProjectDetailTab.UNITS -> {
-                            Text(
-                                text = "Linked Property Inventory (${linkedUnits.size} Units)",
-                                color = TextPrimary,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Direct Unit Inventory (${linkedUnits.size} Units)",
+                                    color = TextPrimary,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                            }
+                            if (onPromoteUnit != null) {
+                                Button(
+                                    onClick = {
+                                        promotePrefillStock = builderStockRows.firstOrNull()
+                                        showPromoteDialog = true
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .testTag("project_promote_unit_units_btn"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = PrimaryActionOrange,
+                                        contentColor = OnPrimaryActionColor
+                                    )
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("+ Promote Specific Unit to Inventory", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                                }
+                            }
                             if (linkedUnits.isEmpty()) {
                                 Surface(
                                     color = SurfaceWhite,
@@ -1805,6 +2324,31 @@ private fun ProjectDirectoryDetailModal(
                                         }
                                     }
 
+                                    if (canPermanentDelete) {
+                                        OutlinedButton(
+                                            onClick = { showPermanentDeleteDialog = true },
+                                            shape = RoundedCornerShape(10.dp),
+                                            border = BorderStroke(1.dp, StatusDangerRed),
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = ErrorRedSubtle,
+                                                contentColor = StatusDangerRed
+                                            ),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(min = 48.dp)
+                                                .testTag("directory_project_edit_delete_permanently_btn")
+                                        ) {
+                                            Icon(
+                                                Icons.Default.DeleteForever,
+                                                contentDescription = null,
+                                                tint = StatusDangerRed,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("Delete Permanently", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+
                                     if (statusMessage.isNotBlank()) {
                                         Text(
                                             text = statusMessage,
@@ -1821,6 +2365,317 @@ private fun ProjectDirectoryDetailModal(
             }
         }
     }
+
+    if (showPromoteDialog && onPromoteUnit != null) {
+        PromoteSpecificUnitDialog(
+            project = project,
+            prefillStock = promotePrefillStock,
+            generatePropertyCode = generatePropertyCode,
+            onDismiss = { showPromoteDialog = false },
+            onConfirmPromote = { newUnit ->
+                onPromoteUnit(newUnit, project)
+                detailScope.launch {
+                    links = withContext(Dispatchers.IO) { ProjectDirectoryStore.links(context) }
+                }
+                showPromoteDialog = false
+                activeTab = ProjectDetailTab.UNITS
+                Toast.makeText(context, "${newUnit.unitNumber} added to Direct Inventory", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    if (showPermanentDeleteDialog && onDeleteProjectPermanently != null) {
+        val projLabel = listOf(project.name, project.id).filter { it.isNotBlank() }.distinct().joinToString(" / ")
+        AlertDialog(
+            onDismissRequest = { showPermanentDeleteDialog = false },
+            containerColor = SurfaceWhite,
+            title = {
+                Text(
+                    "Delete Permanently",
+                    color = StatusDangerRed,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    "Permanently delete $projLabel from this device and the Master Google Sheet? This cannot be undone.",
+                    color = TextPrimary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showPermanentDeleteDialog = false
+                        onDeleteProjectPermanently(project)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = StatusDangerRed,
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("directory_project_confirm_permanent_delete_btn")
+                ) {
+                    Text("Delete Permanently", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showPermanentDeleteDialog = false },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text("Cancel", color = TextPrimary)
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun PromoteSpecificUnitDialog(
+    project: DirectoryProject,
+    prefillStock: PropertyItem? = null,
+    generatePropertyCode: ((InventoryTab) -> String)? = null,
+    onDismiss: () -> Unit,
+    onConfirmPromote: (PropertyItem) -> Unit
+) {
+    val isCommercial = project.division.equals("commercial", ignoreCase = true)
+    var unitNumber by remember { mutableStateOf("") }
+    var floor by remember { mutableStateOf(prefillStock?.floor.orEmpty()) }
+    var selectedTab by remember {
+        mutableStateOf(
+            prefillStock?.tab ?: if (isCommercial) InventoryTab.OFF_LEASE else InventoryTab.RESI_RESALE
+        )
+    }
+    var propertyType by remember {
+        mutableStateOf(
+            prefillStock?.propertyType?.takeIf { it.isNotBlank() }
+                ?: if (isCommercial) "Office" else "Apartment"
+        )
+    }
+    var carpetInput by remember {
+        mutableStateOf(
+            prefillStock?.carpetAreaSqFt?.takeIf { it > 0.0 }?.toInt()?.toString().orEmpty()
+        )
+    }
+    var priceInput by remember {
+        val amt = prefillStock?.let { CalculationUtils.primaryAmountForProperty(it) } ?: 0.0
+        mutableStateOf(if (amt > 0.0) amt.toLong().toString() else "")
+    }
+    var bhkInput by remember { mutableStateOf(prefillStock?.bhk.orEmpty()) }
+    var pocName by remember {
+        mutableStateOf(prefillStock?.ownerName.orEmpty().ifBlank { project.salesPocDisplay() })
+    }
+    var pocPhone by remember {
+        mutableStateOf(
+            prefillStock?.ownerContact.orEmpty().ifBlank {
+                project.raw.optString("salesPocPhone").ifBlank {
+                    project.raw.optJSONObject("raw")?.optString("Builder Contact").orEmpty()
+                }
+            }
+        )
+    }
+    var errorMsg by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = SurfaceWhite,
+        title = {
+            Column {
+                Text(
+                    text = "Promote Specific Unit to Inventory",
+                    color = TextPrimary,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    text = "${project.name} · ${project.location}",
+                    color = PrimaryActionOrange,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 430.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = unitNumber,
+                    onValueChange = { unitNumber = it; errorMsg = "" },
+                    label = { Text("Unit / Suite No. * (e.g. Unit 504)") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("promote_unit_number_input")
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = floor,
+                        onValueChange = { floor = it },
+                        label = { Text("Floor") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = propertyType,
+                        onValueChange = { propertyType = it },
+                        label = { Text("Type") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Text("Listing Sub-Type", color = SecondaryText, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                val tabOptions = if (isCommercial) {
+                    listOf(InventoryTab.OFF_LEASE, InventoryTab.OFF_OUT, InventoryTab.SHOP_LEASE, InventoryTab.SHOP_OUT, InventoryTab.PRE_LEASED)
+                } else {
+                    listOf(InventoryTab.RESI_RESALE, InventoryTab.RESI_RENT, InventoryTab.UND_CONST)
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    tabOptions.forEach { t ->
+                        FilterChip(
+                            selected = selectedTab == t,
+                            onClick = { selectedTab = t },
+                            label = { Text(t.code, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = carpetInput,
+                        onValueChange = { carpetInput = it },
+                        label = { Text("Carpet (sq.ft.)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = priceInput,
+                        onValueChange = { priceInput = it },
+                        label = { Text(if (selectedTab.isRental) "Rent / month (₹)" else "Asking Price (₹)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                if (!isCommercial) {
+                    OutlinedTextField(
+                        value = bhkInput,
+                        onValueChange = { bhkInput = it },
+                        label = { Text("Configuration (e.g. 3 BHK)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = pocName,
+                        onValueChange = { pocName = it },
+                        label = { Text("Developer Sales POC") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = pocPhone,
+                        onValueChange = { pocPhone = it },
+                        label = { Text("POC Phone") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                if (errorMsg.isNotBlank()) {
+                    Text(errorMsg, color = StatusDangerRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val cleanUnit = unitNumber.trim()
+                    if (cleanUnit.isBlank()) {
+                        errorMsg = "Enter a specific Unit Number (e.g., Unit 504)."
+                        return@Button
+                    }
+                    val carpet = carpetInput.trim().replace(",", "").toDoubleOrNull() ?: 0.0
+                    val rawPrice = CalculationUtils.parseCurrencyInput(priceInput) ?: 0.0
+                    val finalPrice = if (!selectedTab.isRental) {
+                        CalculationUtils.normalizeSalePriceInr(rawPrice)
+                    } else rawPrice
+
+                    val todayStr = SimpleDateFormat("dd/MM/yyyy", Locale.ENGLISH).format(Date())
+                    val newId = "TLC-UNIT-${UUID.randomUUID().toString().take(8).uppercase(Locale.ENGLISH)}"
+                    val code = generatePropertyCode?.invoke(selectedTab)
+                        ?: "${selectedTab.code.take(2).uppercase(Locale.ENGLISH)}-${System.currentTimeMillis().toString().takeLast(4)}"
+                    val isRes = !selectedTab.isCommercial
+                    val txLabel = when {
+                        selectedTab == InventoryTab.PRE_LEASED -> "Pre-Leased Sale"
+                        selectedTab.isRental -> "Lease"
+                        else -> "Sale"
+                    }
+                    val prop = PropertyItem(
+                        id = newId,
+                        recordId = newId,
+                        propertyCode = code,
+                        date = todayStr,
+                        location = project.location.ifBlank { prefillStock?.location.orEmpty() },
+                        projectName = project.name,
+                        projectId = project.id,
+                        unitNumber = cleanUnit,
+                        floor = floor.trim(),
+                        propertyType = propertyType.trim().ifBlank { if (isRes) "Apartment" else "Office" },
+                        tab = selectedTab,
+                        carpetAreaSqFt = carpet,
+                        builtUpAreaSqFt = prefillStock?.builtUpAreaSqFt,
+                        priceOrRent = finalPrice,
+                        priceSale = if (!selectedTab.isRental && finalPrice > 0.0) finalPrice else null,
+                        rent = if (selectedTab.isRental && finalPrice > 0.0) finalPrice else null,
+                        possession = project.possession.ifBlank { prefillStock?.possession.orEmpty() },
+                        furnishing = prefillStock?.furnishing ?: FurnishingType.UNFURNISHED,
+                        status = AvailabilityStatus.AVAILABLE,
+                        ownerName = pocName.trim().ifBlank { null },
+                        ownerContact = pocPhone.trim().ifBlank { null },
+                        builderName = project.developer.ifBlank { prefillStock?.builderName.orEmpty() }.ifBlank { null },
+                        sourceInfo = "Developer Direct Unit (Promoted from ${project.id})",
+                        bhk = bhkInput.trim().ifBlank { null },
+                        portfolio = if (isRes) "Residential" else "Commercial",
+                        transactionType = txLabel,
+                        images = listOfNotNull(project.coverImageUrl.takeIf { it.startsWith("http") }),
+                        archiveStatus = ArchiveStatus.ACTIVE
+                    )
+                    onConfirmPromote(prop)
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PrimaryActionOrange,
+                    contentColor = OnPrimaryActionColor
+                ),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("confirm_promote_unit_btn")
+            ) {
+                Text("Promote to Inventory", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = TextPrimary)
+            }
+        }
+    )
 }
 
 @Composable

@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,14 +19,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.PropertyItem
 import com.example.ui.theme.*
+import kotlinx.coroutines.delay
 
 // =========================================================================
 // 1. NETFLIX-STYLE "SMART RECENT PROPERTY HISTORY" TRAY
@@ -618,61 +623,184 @@ fun SearchableStandardDropdown(
         else options.filter { it.contains(searchQuery, ignoreCase = true) }
     }
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
-        modifier = modifier.height(44.dp)
+    Surface(
+        onClick = { expanded = true },
+        shape = RoundedCornerShape(10.dp),
+        color = SurfaceWhite,
+        border = BorderStroke(
+            width = if (expanded) 1.5.dp else 1.dp,
+            color = if (expanded) PrimaryActionOrange else MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
+        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .wrapContentHeight()
+            .heightIn(min = 52.dp)
     ) {
-        OutlinedTextField(
-            value = selectedValue,
-            onValueChange = {},
-            readOnly = true,
-            label = { Text(label, fontSize = 10.sp) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+        Row(
             modifier = Modifier
-                .menuAnchor()
                 .fillMaxWidth()
-                .height(44.dp),
-            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-            ),
-            singleLine = true,
-            maxLines = 1
-        )
-        ExposedDropdownMenu(
-            expanded = expanded,
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = label,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = SecondaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = selectedValue.ifBlank { "Tap to search & select..." },
+                    fontSize = 13.sp,
+                    fontWeight = if (selectedValue.isNotBlank()) FontWeight.Medium else FontWeight.Normal,
+                    color = if (selectedValue.isNotBlank()) TextPrimary else SecondaryText,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                imageVector = Icons.Default.ArrowDropDown,
+                contentDescription = "Select $label",
+                tint = SecondaryText
+            )
+        }
+    }
+
+    if (expanded) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val searchFocusRequester = remember { FocusRequester() }
+        val keyboardController = LocalSoftwareKeyboardController.current
+
+        LaunchedEffect(expanded) {
+            delay(140)
+            runCatching { searchFocusRequester.requestFocus() }
+            keyboardController?.show()
+        }
+
+        ModalBottomSheet(
             onDismissRequest = {
                 expanded = false
                 searchQuery = ""
-            }
+            },
+            sheetState = sheetState,
+            containerColor = SurfaceWhite
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search...", fontSize = 11.sp) },
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp),
-                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp),
-                singleLine = true
-            )
-            filteredOptions.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(option, fontSize = 12.sp) },
-                    onClick = {
-                        onValueSelected(option)
-                        expanded = false
-                        searchQuery = ""
+                    .imePadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = label,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    IconButton(
+                        onClick = {
+                            expanded = false
+                            searchQuery = ""
+                        },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = SecondaryText)
                     }
+                }
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Type project name or ID...", fontSize = 13.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear search", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(searchFocusRequester)
                 )
-            }
-            if (filteredOptions.isEmpty()) {
-                DropdownMenuItem(
-                    text = { Text("No matching options", fontSize = 11.sp, color = Color.Gray) },
-                    onClick = {}
-                )
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 160.dp, max = 380.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(filteredOptions) { option ->
+                        val isSelected = option == selectedValue
+                        Surface(
+                            onClick = {
+                                onValueSelected(option)
+                                expanded = false
+                                searchQuery = ""
+                            },
+                            color = if (isSelected) PrimaryActionOrange.copy(alpha = 0.12f) else SurfaceMuted,
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isSelected) PrimaryActionOrange.copy(alpha = 0.5f) else BorderSubtle
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = option,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) PrimaryActionOrange else TextPrimary,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Selected",
+                                        tint = PrimaryActionOrange,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (filteredOptions.isEmpty()) {
+                        item {
+                            Text(
+                                text = "No matching projects found",
+                                fontSize = 12.5.sp,
+                                color = SecondaryText,
+                                modifier = Modifier.padding(vertical = 18.dp, horizontal = 8.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
     }

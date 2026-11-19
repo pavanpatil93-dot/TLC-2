@@ -167,10 +167,12 @@ data class EmployeeProfile(
     fun effectiveAllowedDivisions(): Set<BusinessDivisionScope> {
         if (!hasConfidentialAccess()) return emptySet()
         return when (role) {
-            EmployeeAccessRole.ADMIN -> BusinessDivisionScope.entries.toSet()
-            EmployeeAccessRole.COMMERCIAL_MANAGER -> setOf(BusinessDivisionScope.ASCEND_COMMERCIAL)
-            EmployeeAccessRole.RESIDENTIAL_MANAGER -> setOf(BusinessDivisionScope.AUREA_RESIDENTIAL)
-            EmployeeAccessRole.SALES_EXECUTIVE, EmployeeAccessRole.INVENTORY_MANAGER -> businessScopes.toSet()
+            // Core team (Super Admin, Admin, Managers, Sales Executives) all see 100% of Commercial & Residential
+            EmployeeAccessRole.ADMIN,
+            EmployeeAccessRole.COMMERCIAL_MANAGER,
+            EmployeeAccessRole.RESIDENTIAL_MANAGER,
+            EmployeeAccessRole.INVENTORY_MANAGER,
+            EmployeeAccessRole.SALES_EXECUTIVE -> BusinessDivisionScope.entries.toSet()
             EmployeeAccessRole.READ_ONLY -> emptySet()
         }
     }
@@ -197,8 +199,8 @@ data class EmployeeProfile(
     fun normalizedDefaultView(): ActiveBusinessView {
         val allowed = availableBusinessViews()
         return when {
+            ActiveBusinessView.ALL_BUSINESSES in allowed -> ActiveBusinessView.ALL_BUSINESSES
             activeBusinessView in allowed -> activeBusinessView
-            role == EmployeeAccessRole.ADMIN && ActiveBusinessView.ALL_BUSINESSES in allowed -> ActiveBusinessView.ALL_BUSINESSES
             allowed.isNotEmpty() -> allowed.first()
             else -> ActiveBusinessView.ASCEND_COMMERCIAL
         }
@@ -208,14 +210,7 @@ data class EmployeeProfile(
         if (!hasConfidentialAccess()) return false
         val allowedDivisions = effectiveAllowedDivisions()
         if (allowedDivisions.isEmpty()) return false
-        val viewMatchesDivision = when (normalizedDefaultView()) {
-            ActiveBusinessView.ASCEND_COMMERCIAL -> portfolio == StandardPortfolio.COMMERCIAL &&
-                BusinessDivisionScope.ASCEND_COMMERCIAL in allowedDivisions
-            ActiveBusinessView.AUREA_RESIDENTIAL -> portfolio == StandardPortfolio.RESIDENTIAL &&
-                BusinessDivisionScope.AUREA_RESIDENTIAL in allowedDivisions
-            ActiveBusinessView.ALL_BUSINESSES -> allowedDivisions.any { it.matchesPortfolio(portfolio) }
-        }
-        return viewMatchesDivision
+        return allowedDivisions.any { it.matchesPortfolio(portfolio) }
     }
 
     fun isPinLockedOut(nowMs: Long = System.currentTimeMillis()): Boolean {

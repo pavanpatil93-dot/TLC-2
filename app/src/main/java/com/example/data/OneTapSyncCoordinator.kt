@@ -193,6 +193,9 @@ class OneTapSyncCoordinator(
                 return@withLock
             }
 
+            // First drain pending local writes + run Apps Script doGet pull (also checks appUpdate)
+            runCatching { repository.retryAllPendingSyncsAndPull() }
+
             var totalAdded = 0
             var totalUpdated = 0
             var totalSkipped = 0
@@ -254,6 +257,12 @@ class OneTapSyncCoordinator(
             )
             _syncReport.value = finalReport
             persistReport(finalReport)
+            if (finalState == MasterSyncState.SUCCESS || finalState == MasterSyncState.PARTIAL) {
+                if (totalAdded > 0 || totalUpdated > 0) {
+                    repository.reloadFromDisk()
+                }
+                repository.markSuccessfulSyncNow(finalReport.completedAt)
+            }
             _isResultSheetVisible.value = true
         }
     }
@@ -262,21 +271,16 @@ class OneTapSyncCoordinator(
         if (employee == null || !employee.hasConfidentialAccess()) return false
         val role = employee.role
         return when (worksheetName) {
-            "Commercial Inventory", "Commercial Projects" ->
-                role == EmployeeAccessRole.ADMIN ||
-                    role == EmployeeAccessRole.COMMERCIAL_MANAGER ||
-                    role == EmployeeAccessRole.SALES_EXECUTIVE ||
-                    role == EmployeeAccessRole.INVENTORY_MANAGER
-            "Residential Inventory", "Residential Projects" ->
-                role == EmployeeAccessRole.ADMIN ||
-                    role == EmployeeAccessRole.RESIDENTIAL_MANAGER ||
-                    role == EmployeeAccessRole.SALES_EXECUTIVE ||
-                    role == EmployeeAccessRole.INVENTORY_MANAGER
+            "Commercial Inventory",
+            "Commercial Projects",
+            "Residential Inventory",
+            "Residential Projects",
             "CRM" ->
                 role == EmployeeAccessRole.ADMIN ||
                     role == EmployeeAccessRole.COMMERCIAL_MANAGER ||
                     role == EmployeeAccessRole.RESIDENTIAL_MANAGER ||
-                    role == EmployeeAccessRole.SALES_EXECUTIVE
+                    role == EmployeeAccessRole.SALES_EXECUTIVE ||
+                    role == EmployeeAccessRole.INVENTORY_MANAGER
             else -> false
         }
     }
@@ -336,39 +340,80 @@ class OneTapSyncCoordinator(
         var skipped = 0
 
         val currentList = repository.properties.value.toMutableList()
+        val byRecordId = currentList.filter { it.recordId.isNotBlank() }
+            .associateBy { it.recordId.uppercase(Locale.ENGLISH) }
         val byCode = currentList.filter { it.propertyCode.isNotBlank() }
             .associateBy { it.propertyCode.uppercase(Locale.ENGLISH) }
 
+        val propertyIdIdx = headers.indexOfFirst { it.trim().equals("property id", ignoreCase = true) || it.trim().equals("record id", ignoreCase = true) }
         val codeIdx = headers.indexOfFirst { it.contains("code", ignoreCase = true) }
         val projectIdx = headers.indexOfFirst { it.contains("project", ignoreCase = true) || it.contains("building", ignoreCase = true) }
         val locationIdx = headers.indexOfFirst { it.contains("location", ignoreCase = true) }
         val priceIdx = headers.indexOfFirst { it.contains("price", ignoreCase = true) || it.contains("rent", ignoreCase = true) }
         val areaIdx = headers.indexOfFirst { it.contains("carpet", ignoreCase = true) || it.contains("area", ignoreCase = true) }
+        val pocTypeIdx = headers.indexOfFirst {
+            val h = it.trim().lowercase()
+            h == "type of poc" || h == "poc type"
+        }
+        val verifIdx = headers.indexOfFirst { it.trim().equals("verification status", ignoreCase = true) }
+        val recordStatusIdx = headers.indexOfFirst {
+            val h = it.trim().lowercase()
+            h == "record status" || h == "archive status"
+        }
+        val availStatusIdx = headers.indexOfFirst {
+            val h = it.trim().lowercase()
+            h == "availability status" || h == "status"
+        }
+        val lastVerifiedIdx = headers.indexOfFirst {
+            val h = it.trim().lowercase()
+            h == "last verified" || h == "last verified date"
+        }
+        val lastUpdatedIdx = headers.indexOfFirst {
+            val h = it.trim().lowercase()
+            h == "last updated" || h == "sync updated at"
+        }
 
         dataRows.forEach { row ->
+            val recordId = if (propertyIdIdx in row.indices) row[propertyIdIdx].trim() else ""
             val code = if (codeIdx in row.indices) row[codeIdx].trim() else ""
-            if (code.isBlank()) { skipped++; return@forEach }
+            if (code.isBlank() && recordId.isBlank()) { skipped++; return@forEach }
 
-            val existing = byCode[code.uppercase(Locale.ENGLISH)]
+            val existing = (if (recordId.isNotBlank()) byRecordId[recordId.uppercase(Locale.ENGLISH)] else null)
+                ?: (if (code.isNotBlank()) byCode[code.uppercase(Locale.ENGLISH)] else null)
             val projectName = if (projectIdx in row.indices) row[projectIdx].trim() else "Project"
             val location = if (locationIdx in row.indices) row[locationIdx].trim() else "Pune"
             val price = if (priceIdx in row.indices) row[priceIdx].toDoubleOrNull() ?: 0.0 else 0.0
             val area = if (areaIdx in row.indices) row[areaIdx].toDoubleOrNull() ?: 1000.0 else 1000.0
+            val pocType = if (pocTypeIdx in row.indices) normalizePocType(row[pocTypeIdx]) else ""
+            val sheetVerif = if (verifIdx in row.indices) VerificationStatus.fromString(row[verifIdx]) else null
+            val sheetArchive = if (recordStatusIdx in row.indices) ArchiveStatus.fromString(row[recordStatusIdx]) else null
+            val sheetAvail = if (availStatusIdx in row.indices && row[availStatusIdx].isNotBlank()) {
+                AvailabilityStatus.parse(row[availStatusIdx])
+            } else null
+            val sheetLastVerified = if (lastVerifiedIdx in row.indices) row[lastVerifiedIdx].trim() else ""
+            val sheetLastUpdated = if (lastUpdatedIdx in row.indices) row[lastUpdatedIdx].trim() else ""
 
             if (existing == null) {
                 val isResi = worksheetName.contains("Residential", ignoreCase = true)
                 val newProp = PropertyItem(
-                    id = "prop_sheet_${UUID.randomUUID()}",
-                    propertyCode = code,
+                    id = recordId.ifBlank { "prop_sheet_${UUID.randomUUID()}" },
+                    recordId = recordId,
+                    propertyCode = code.ifBlank { recordId },
                     projectName = projectName,
                     location = location,
                     carpetAreaSqFt = area,
                     priceOrRent = price,
                     portfolio = if (isResi) "Residential" else "Commercial",
                     transactionType = if (isResi) "Sale" else "Lease",
-                    status = AvailabilityStatus.AVAILABLE,
-                    verificationStatus = VerificationStatus.VERIFIED,
-                    isSyncedToSheet = true
+                    status = sheetAvail ?: AvailabilityStatus.AVAILABLE,
+                    verificationStatus = sheetVerif ?: VerificationStatus.PENDING,
+                    archiveStatus = sheetArchive ?: ArchiveStatus.ACTIVE,
+                    lastVerifiedDateClean = sheetLastVerified,
+                    lastVerificationDate = sheetLastVerified,
+                    updatedAt = sheetLastUpdated,
+                    syncUpdatedAt = sheetLastUpdated,
+                    isSyncedToSheet = true,
+                    pocType = pocType
                 )
                 currentList.add(newProp)
                 added++
@@ -379,7 +424,15 @@ class OneTapSyncCoordinator(
                         projectName = projectName.ifBlank { existing.projectName },
                         location = location.ifBlank { existing.location },
                         priceOrRent = if (price > 0.0) price else existing.priceOrRent,
-                        carpetAreaSqFt = if (area > 0.0) area else existing.carpetAreaSqFt
+                        carpetAreaSqFt = if (area > 0.0) area else existing.carpetAreaSqFt,
+                        pocType = pocType.ifBlank { existing.pocType },
+                        status = sheetAvail ?: existing.status,
+                        verificationStatus = sheetVerif ?: existing.verificationStatus,
+                        archiveStatus = sheetArchive ?: existing.archiveStatus,
+                        lastVerifiedDateClean = sheetLastVerified.ifBlank { existing.lastVerifiedDateClean },
+                        lastVerificationDate = sheetLastVerified.ifBlank { existing.lastVerificationDate },
+                        updatedAt = sheetLastUpdated.ifBlank { existing.updatedAt },
+                        syncUpdatedAt = sheetLastUpdated.ifBlank { existing.syncUpdatedAt }
                     )
                     val idx = currentList.indexOfFirst { it.id == existing.id }
                     if (idx >= 0) currentList[idx] = updatedProp

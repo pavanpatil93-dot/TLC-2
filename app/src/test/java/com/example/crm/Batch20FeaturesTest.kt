@@ -1,0 +1,293 @@
+package com.example.crm
+
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import com.example.ai.GeminiRealEstateService
+import com.example.data.UserSettingsManager
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import java.io.File
+
+@RunWith(RobolectricTestRunner::class)
+class Batch20FeaturesTest {
+
+    private lateinit var context: Context
+
+    @Before
+    fun setUp() {
+        context = ApplicationProvider.getApplicationContext()
+        File(context.filesDir, "skipped_call_ids.json").delete()
+        File(context.filesDir, "unlogged_calls_queue.json").delete()
+        File(context.filesDir, "crm_call_logs_v1.json").delete()
+    }
+
+    @Test
+    fun skippedCalls_areExcludedFromUnloggedQueue_butCountedInTotalCallsForEod() {
+        val call1 = CrmCallRecord(
+            id = "call_q_1",
+            callerName = "Rohan Kulkarni",
+            phoneNumber = "9822011111",
+            callType = CallType.INCOMING,
+            durationSeconds = 45,
+            timestamp = 1_763_400_000_000L,
+            notes = "",
+            isLinked = false
+        )
+        val call2Short = CrmCallRecord(
+            id = "call_q_2",
+            callerName = "Short Call Caller",
+            phoneNumber = "9822022222",
+            callType = CallType.OUTGOING,
+            durationSeconds = 12, // <20s still counted in EOD total
+            timestamp = 1_763_400_050_000L,
+            notes = "",
+            isLinked = false
+        )
+        CrmCallManager.saveCalls(context, listOf(call1, call2Short))
+        CrmCallManager.enqueueUnloggedCall(context, call1)
+        CrmCallManager.enqueueUnloggedCall(context, call2Short)
+
+        assertEquals(2, CrmCallManager.getUnloggedCallQueue(context).size)
+
+        // Skip call1
+        CrmCallManager.markCallSkipped(context, call1)
+        assertTrue(CrmCallManager.isCallSkipped(context, call1))
+        assertFalse(CrmCallManager.isCallSkipped(context, call2Short))
+
+        // Active unlogged queue excludes call1
+        val remainingQueue = CrmCallManager.getUnloggedCallQueue(context)
+        assertEquals(1, remainingQueue.size)
+        assertEquals("call_q_2", remainingQueue.first().id)
+
+        // Re-enqueuing a skipped call does not add it back to the active Needs Logging queue
+        CrmCallManager.enqueueUnloggedCall(context, call1)
+        assertEquals(1, CrmCallManager.getUnloggedCallQueue(context).size)
+
+        // All calls (including <20s and skipped) remain in readCalls for EOD Calls Total
+        val allCalls = CrmCallManager.readCalls(context)
+        assertEquals(2, allCalls.size)
+    }
+
+    @Test
+    fun pendingCallNavigation_mapsAllRolesAndPrefillsFieldsCleanly() {
+        val sampleCall = CrmCallRecord(
+            id = "call_nav_1",
+            callerName = "Vikram Deshmukh",
+            phoneNumber = "+91 98230 55443",
+            callType = CallType.INCOMING,
+            durationSeconds = 85,
+            timestamp = 1_763_400_100_000L,
+            notes = "Looking for 3500 sq.ft office in Baner budget 2.5 Lac",
+            isLinked = true
+        )
+
+        val leadNav = PendingCallNavigation.fromPostCallAction(
+            role = PostCallRole.CLIENT_LEAD,
+            call = sampleCall,
+            prefilledName = "Vikram Deshmukh",
+            prefilledNotes = "Looking for 3500 sq.ft office in Baner",
+            linkedEntityId = "LD-101"
+        )
+        assertEquals(PendingCallNavigation.ROUTE_ADD_EDIT_LEAD, leadNav.targetRoute)
+        assertEquals("Vikram Deshmukh", leadNav.prefillName)
+        assertEquals("9823055443", leadNav.prefillPhone)
+        assertEquals("LD-101", leadNav.taggedPropertyId)
+
+        val ownerNav = PendingCallNavigation.fromPostCallAction(
+            role = PostCallRole.PROPERTY_OWNER,
+            call = sampleCall,
+            prefilledName = "Owner Deshmukh",
+            prefilledNotes = "Unit 402 available at 95/sqft",
+            linkedEntityId = "TLC-2603-C001"
+        )
+        assertEquals(PendingCallNavigation.ROUTE_ADD_EDIT_PROPERTY, ownerNav.targetRoute)
+        assertEquals("TLC-2603-C001", ownerNav.taggedPropertyId)
+
+        val tenantNav = PendingCallNavigation.fromPostCallAction(
+            role = PostCallRole.TENANT,
+            call = sampleCall,
+            prefilledName = "Tenant Corp",
+            prefilledNotes = "AC maintenance request",
+            linkedEntityId = "TNT-009"
+        )
+        assertEquals(PendingCallNavigation.ROUTE_ADD_EDIT_TENANT, tenantNav.targetRoute)
+        assertEquals("TNT-009", tenantNav.taggedPropertyId)
+
+        val opsNav = PendingCallNavigation.fromPostCallAction(
+            role = PostCallRole.OPS_VENDOR,
+            call = sampleCall,
+            prefilledName = "CoolAir HVAC",
+            prefilledNotes = "Quoted 4500 for servicing",
+            linkedEntityId = "BV-202",
+            subRole = "HVAC / AC"
+        )
+        assertEquals(PendingCallNavigation.ROUTE_OPS_VENDOR, opsNav.targetRoute)
+        assertEquals("HVAC / AC", opsNav.subRole)
+    }
+
+    @Test
+    fun missedCallWaCallback_marksCallHandledAndUsesPoliteMessage() {
+        assertEquals(
+            "Sorry I missed your call from The Leasing Company—calling you back shortly, or feel free to share your requirement here.",
+            CrmCallManager.MISSED_CALL_WA_CALLBACK_MESSAGE
+        )
+
+        val missedCall = CrmCallRecord(
+            id = "missed_101",
+            callerName = "Neha Joshi",
+            phoneNumber = "9890012345",
+            callType = CallType.MISSED,
+            durationSeconds = 0,
+            timestamp = 1_763_400_200_000L,
+            notes = "",
+            isLinked = false
+        )
+        CrmCallManager.saveCalls(context, listOf(missedCall))
+        CrmCallManager.enqueueUnloggedCall(context, missedCall)
+
+        val updated = CrmCallManager.triggerMissedCallWaCallback(
+            context = context,
+            call = missedCall,
+            assignedAgent = "Pawan Patil",
+            openBrowserOrApp = false
+        )
+
+        assertTrue(updated.isLinked)
+        assertTrue(updated.waLogged)
+        assertEquals("Pawan Patil", updated.assignedAgent)
+        assertTrue(updated.notes.contains("WA Callback Sent"))
+        assertTrue(CrmCallManager.getUnloggedCallQueue(context).isEmpty())
+    }
+
+    @Test
+    fun lastCalledByHistory_findsLatestTeamCallAndFormatsBanner() {
+        val olderCall = CrmCallRecord(
+            id = "call_hist_1",
+            callerName = "Gera Owner",
+            phoneNumber = "+91 98220 77889",
+            callType = CallType.OUTGOING,
+            durationSeconds = 60,
+            timestamp = 1_763_300_000_000L,
+            notes = "Initial availability check",
+            isLinked = true,
+            linkedOpportunityId = "TLC-2603-C010",
+            assignedAgent = "Amit"
+        )
+        val latestCall = CrmCallRecord(
+            id = "call_hist_2",
+            callerName = "Gera Owner",
+            phoneNumber = "9822077889",
+            callType = CallType.OUTGOING,
+            durationSeconds = 115,
+            timestamp = 1_763_410_000_000L,
+            notes = "Confirmed rent 1.25 Lac negotiable",
+            isLinked = true,
+            linkedOpportunityId = "TLC-2603-C010",
+            assignedAgent = "Pawan Patil"
+        )
+        val candidates = listOf(olderCall, latestCall)
+
+        val foundByPhone = CrmCallManager.findLastCallForTarget(
+            context = context,
+            phones = listOf("09822077889"),
+            entityIds = emptyList(),
+            candidateCalls = candidates
+        )
+        assertNotNull(foundByPhone)
+        assertEquals("call_hist_2", foundByPhone?.id)
+
+        val bannerText = CrmCallManager.formatLastCalledByBannerText(foundByPhone!!)
+        assertTrue(bannerText.startsWith("Last called by Pawan Patil · "))
+        assertTrue(bannerText.endsWith("· 'Confirmed rent 1.25 Lac negotiable'"))
+    }
+
+    @Test
+    fun callRecordingMatcher_matchesOnDemandByPhoneOrTimestampWithin2Minutes() = runBlocking {
+        // Verify OEM defaults exist for Samsung, Xiaomi, OnePlus/Oppo
+        val paths = CallRecordingMatcher.OEM_DEFAULT_RELATIVE_PATHS.map { it.first }
+        assertTrue(paths.contains("Recordings/Call"))
+        assertTrue(paths.contains("MIUI/sound_recorder/call_rec"))
+        assertTrue(paths.contains("Music/Recordings/Call Recordings"))
+
+        val callStart = 1_763_420_000_000L
+        val callDurationSec = 60
+        val callEnd = callStart + callDurationSec * 1000L
+        val call = CrmCallRecord(
+            id = "rec_call_1",
+            callerName = "Kharadi Client",
+            phoneNumber = "9766880099",
+            callType = CallType.INCOMING,
+            durationSeconds = callDurationSec,
+            timestamp = callStart,
+            notes = "Looking for 2500 sq.ft office in Kharadi budget 1.8 Lac"
+        )
+
+        val unrelatedOld = CallRecordingMatcher.CandidateAudioEntry(
+            name = "Call_recording_9111122233.m4a",
+            uriOrPath = "/storage/emulated/0/Recordings/Call/old.m4a",
+            lastModified = callEnd - 10 * 60_000L, // 10 mins away
+            sizeBytes = 120_000L,
+            isContentUri = false
+        )
+        val timestampMatch = CallRecordingMatcher.CandidateAudioEntry(
+            name = "Voice_261118_1430.mp3",
+            uriOrPath = "/storage/emulated/0/Recordings/Call/Voice_261118_1430.mp3",
+            lastModified = callEnd + 35_000L, // Within +35s (<= 2 min)
+            sizeBytes = 240_000L,
+            isContentUri = false
+        )
+        val phoneAndTimestampMatch = CallRecordingMatcher.CandidateAudioEntry(
+            name = "Call_9766880099_20261118.m4a",
+            uriOrPath = "/storage/emulated/0/Recordings/Call/Call_9766880099_20261118.m4a",
+            lastModified = callEnd + 15_000L,
+            sizeBytes = 260_000L,
+            isContentUri = false
+        )
+
+        val best = CallRecordingMatcher.matchRecordingFromCandidates(
+            call = call,
+            candidates = listOf(unrelatedOld, timestampMatch, phoneAndTimestampMatch)
+        )
+        assertNotNull(best)
+        assertEquals("Call_9766880099_20261118.m4a", best?.fileName)
+
+        // Verify timestamp-only match within ±2 minutes also succeeds
+        val timeOnly = CallRecordingMatcher.matchRecordingFromCandidates(
+            call = call,
+            candidates = listOf(unrelatedOld, timestampMatch)
+        )
+        assertNotNull(timeOnly)
+        assertEquals("Voice_261118_1430.mp3", timeOnly?.fileName)
+
+        // Verify unrelated file outside ±2 minutes is rejected
+        val none = CallRecordingMatcher.matchRecordingFromCandidates(
+            call = call,
+            candidates = listOf(unrelatedOld)
+        )
+        assertNull(none)
+
+        // Verify on-demand summarize fallback writes 2-line summary + Budget/Area/Location
+        val summary = GeminiRealEstateService().summarizeCallRecordingOnDemand(
+            audioBytes = null,
+            audioMimeType = "audio/mp4",
+            audioFileName = "Call_9766880099_20261118.m4a",
+            callerName = call.callerName,
+            phoneNumber = call.phoneNumber,
+            durationSeconds = call.durationSeconds,
+            existingNotes = call.notes
+        )
+        assertTrue(summary.contains("Budget:"))
+        assertTrue(summary.contains("Area:"))
+        assertTrue(summary.contains("Location:"))
+        assertTrue(summary.contains("Kharadi"))
+
+        // Verify UserSettingsManager persists Call Recording Folder URI
+        val settings = UserSettingsManager(context)
+        settings.setCallRecordingFolder("content://com.android.externalstorage.documents/tree/primary%3ARecordings%2FCall", "Recordings/Call")
+        assertEquals("Recordings/Call", settings.callRecordingFolderLabel.value)
+    }
+}

@@ -37,6 +37,7 @@ import com.example.crm.*
 import com.example.data.PropertiesLocalDatabase
 import com.example.data.SheetsRepository
 import com.example.data.UserSettingsManager
+import com.example.loi.LoiDraftFactory
 import com.example.model.AvailabilityStatus
 import com.example.model.CalculationUtils
 import com.example.model.PropertyItem
@@ -171,11 +172,14 @@ fun CrmClientProfile(
     clientName: String,
     inventory: List<PropertyItem> = emptyList(),
     onLeadUpdated: ((CrmLead) -> Unit)? = null,
+    onDeleteLeadPermanently: ((CrmLead) -> Unit)? = null,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
     val settings = remember { UserSettingsManager(context) }
-    val loggedInEmployee = settings.userProfile.collectAsState().value.username.ifBlank { "TLC-1 Advisory Desk" }
+    val userProfile by settings.userProfile.collectAsState()
+    val loggedInEmployee = userProfile.username.ifBlank { "TLC-1 Advisory Desk" }
+    val canPermanentDelete = userProfile.isAdminOrSuperAdmin
 
     var leadState by remember(leadId) { mutableStateOf(readCrmLeads(context).firstOrNull { it.id == leadId }) }
     val lead = leadState
@@ -220,6 +224,20 @@ fun CrmClientProfile(
     var ownerRefreshTick by remember { mutableIntStateOf(0) }
     var viewingOwnerProperty by remember { mutableStateOf<PropertyItem?>(null) }
     var showMatchingClientsSheet by remember { mutableStateOf(false) }
+    var showLoiBuilderSheet by remember { mutableStateOf(false) }
+    var profileMenuExpanded by remember { mutableStateOf(false) }
+    var showPermanentDeleteDialog by remember { mutableStateOf(false) }
+
+    fun executePermanentLeadDelete(targetLead: CrmLead) {
+        if (onDeleteLeadPermanently != null) {
+            onDeleteLeadPermanently(targetLead)
+        } else {
+            val repo = SheetsRepository(context.applicationContext, startForegroundSync = false)
+            repo.permanentlyDeleteCrmLead(targetLead.id)
+            Toast.makeText(context, "Deleted ${targetLead.displayClientTitle()} permanently", Toast.LENGTH_SHORT).show()
+            onClose()
+        }
+    }
 
     val isOwner = lead?.isOwnerLead() == true
     val allLiveInventory = remember(context, inventory, ownerRefreshTick) {
@@ -393,6 +411,63 @@ fun CrmClientProfile(
                                     contentDescription = if (isOwner) "Edit Owner" else "Edit Client",
                                     tint = PrimaryActionOrange
                                 )
+                            }
+                            Box {
+                                IconButton(
+                                    onClick = { profileMenuExpanded = true },
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("crm_profile_more_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "More Options",
+                                        tint = TextPrimary
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = profileMenuExpanded,
+                                    onDismissRequest = { profileMenuExpanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(if (isOwner) "Edit Owner" else "Edit Lead") },
+                                        onClick = {
+                                            profileMenuExpanded = false
+                                            showEditLeadScreen = true
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.Edit,
+                                                contentDescription = null,
+                                                tint = PrimaryActionOrange
+                                            )
+                                        }
+                                    )
+                                    if (canPermanentDelete) {
+                                        HorizontalDivider(color = BorderSubtle)
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    "Delete Permanently",
+                                                    color = StatusDangerRed,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            },
+                                            onClick = {
+                                                profileMenuExpanded = false
+                                                showPermanentDeleteDialog = true
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.Default.DeleteForever,
+                                                    contentDescription = null,
+                                                    tint = StatusDangerRed
+                                                )
+                                            },
+                                            modifier = Modifier.testTag("crm_profile_delete_permanently_menu_item")
+                                        )
+                                    }
+                                }
                             }
                         }
                         IconButton(
@@ -722,6 +797,17 @@ fun CrmClientProfile(
                     contentPadding = PaddingValues(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // Batch 20: Team "Last Called By" History Banner
+                    val latestClientCall = matchedCalls.firstOrNull()
+                    if (latestClientCall != null) {
+                        item(key = "client_last_called_by_item") {
+                            LastCalledByBanner(
+                                lastCall = latestClientCall,
+                                testTag = "client_last_called_by_banner"
+                            )
+                        }
+                    }
+
                     // 2-Column Spec Grid Card (Hides "Not Mentioned" fields by default)
                     item {
                         val formattedBudget = remember(lead) {
@@ -1172,6 +1258,37 @@ fun CrmClientProfile(
                                     Text("Reopen Requirement", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
+                            val canGenerateLoi = remember(lead, projection) {
+                                if (lead == null) false
+                                else {
+                                    val stage = projection?.stage
+                                    val st = lead.status
+                                    stage == CrmPipelineStage.NEGOTIATION ||
+                                        stage == CrmPipelineStage.CLOSED_WON ||
+                                        st.contains("Negotiation", ignoreCase = true) ||
+                                        st.contains("LOI", ignoreCase = true) ||
+                                        st.contains("Term Sheet", ignoreCase = true) ||
+                                        st.contains("Token", ignoreCase = true)
+                                }
+                            }
+                            if (canGenerateLoi) {
+                                Button(
+                                    onClick = { showLoiBuilderSheet = true },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = PrimaryActionOrange,
+                                        contentColor = OnPrimaryActionColor
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .testTag("profile_generate_loi_pdf_btn")
+                                ) {
+                                    Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(17.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Generate LOI PDF", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
 
@@ -1588,6 +1705,10 @@ fun CrmClientProfile(
         AddEditLeadScreen(
             initial = lead,
             onDismiss = { showEditLeadScreen = false },
+            onDeletePermanently = if (canPermanentDelete) { targetLead ->
+                showEditLeadScreen = false
+                executePermanentLeadDelete(targetLead)
+            } else null,
             onSave = { editedLead, verifyLive ->
                 val allLeads = readCrmLeads(context)
                 val updatedList = if (allLeads.any { it.id == editedLead.id }) {
@@ -1851,7 +1972,24 @@ fun CrmClientProfile(
                     viewingOwnerProperty = nextProp
                     ownerRefreshTick++
                 },
-                onPropertySelect = { viewingOwnerProperty = it }
+                onPropertySelect = { viewingOwnerProperty = it },
+                onDeleteProperty = if (canPermanentDelete) {
+                    {
+                        val repo = SheetsRepository(context.applicationContext, startForegroundSync = false)
+                        val deleted = repo.permanentlyDeleteProperty(targetProp)
+                        if (deleted) {
+                            viewingOwnerProperty = null
+                            ownerRefreshTick++
+                            Toast.makeText(
+                                context,
+                                "Deleted ${targetProp.propertyCode.ifBlank { targetProp.projectName }} permanently",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            Toast.makeText(context, "Delete blocked or failed.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } else null
             )
         }
     }
@@ -1861,6 +1999,91 @@ fun CrmClientProfile(
             ownerLead = lead,
             linkedProperties = ownerLinkedProperties,
             onDismiss = { showMatchingClientsSheet = false }
+        )
+    }
+
+    if (showLoiBuilderSheet && lead != null) {
+        val matchedProperty = remember(lead, allLiveInventory, ownerLinkedProperties) {
+            ownerLinkedProperties.firstOrNull() ?: run {
+                val codes = lead.matchedPropertyCodes
+                    .split(",", "|", ";", "\n")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                allLiveInventory.firstOrNull { prop ->
+                    codes.any { c ->
+                        prop.propertyCode.equals(c, ignoreCase = true) || prop.id.equals(c, ignoreCase = true)
+                    }
+                }
+            }
+        }
+        val crmLeadsList = remember(context) {
+            runCatching { readCrmLeads(context) }.getOrDefault(emptyList())
+        }
+        LoiBuilderBottomSheet(
+            initialDraft = LoiDraftFactory.fromLead(lead, matchedProperty),
+            availableLeads = crmLeadsList,
+            availableProperties = allLiveInventory,
+            onDismiss = { showLoiBuilderSheet = false },
+            onPdfShared = { savedDraft ->
+                appendCrmActivity(
+                    context = context,
+                    leadId = leadId,
+                    type = "LOI PDF Generated",
+                    notes = "Generated LOI (${savedDraft.loiRefCode}) for ${savedDraft.propertyName.ifBlank { "Premises" }}",
+                    nextFollowUp = lead.nextFollowUp,
+                    performedBy = loggedInEmployee
+                )
+                activities = loadActivities(context, leadId)
+            }
+        )
+    }
+
+    if (showPermanentDeleteDialog && lead != null) {
+        val leadLabel = listOf(lead.displayClientTitle(), lead.id)
+            .filter { it.isNotBlank() }
+            .distinct()
+            .joinToString(" / ")
+        AlertDialog(
+            onDismissRequest = { showPermanentDeleteDialog = false },
+            containerColor = SurfaceWhite,
+            title = {
+                Text(
+                    "Delete Permanently",
+                    color = StatusDangerRed,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    "Permanently delete $leadLabel from this device and the Master Google Sheet? This cannot be undone.",
+                    color = TextPrimary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showPermanentDeleteDialog = false
+                        executePermanentLeadDelete(lead)
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = StatusDangerRed,
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("crm_confirm_permanent_delete_btn")
+                ) {
+                    Text("Delete Permanently", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showPermanentDeleteDialog = false },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text("Cancel", color = TextPrimary)
+                }
+            }
         )
     }
 }
@@ -2575,73 +2798,244 @@ private fun RequirementEditor(
     var budget by remember(initial) { mutableStateOf(initial?.budget.orEmpty()) }
     var areaRange by remember(initial) { mutableStateOf(initial?.areaRange.orEmpty()) }
     var areaBasis by remember(initial) { mutableStateOf(initial?.areaBasis ?: "CARPET") }
+    var stage by remember(initial) { mutableStateOf(initial?.stage ?: "New") }
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        containerColor = SurfaceWhite,
-        title = {
-            Text(
-                text = if (initial == null) "New Client Requirement" else "Edit Client Requirement",
-                color = TextPrimary,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Commercial", "Residential").forEach {
-                        FilterChip(selected = segment == it, onClick = { segment = it }, label = { Text(it) })
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Lease", "Purchase", "Pre-Leased").forEach {
-                        FilterChip(selected = purpose == it, onClick = { purpose = it }, label = { Text(it) })
-                    }
-                }
-                OutlinedTextField(description, { description = it }, label = { Text("Property / size / configuration") })
-                OutlinedTextField(location, { location = it }, label = { Text("Preferred location") })
-                OutlinedTextField(budget, { budget = it }, label = { Text("Budget") })
-                OutlinedTextField(areaRange, { areaRange = it }, label = { Text("Area range (sq.ft)") })
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("CARPET", "BUILT_UP", "UNKNOWN").forEach { b ->
-                        FilterChip(selected = areaBasis == b, onClick = { areaBasis = b }, label = { Text(b, fontSize = 10.sp) })
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                enabled = description.isNotBlank(),
-                onClick = {
-                    onSave(
-                        CrmRequirement(
-                            id = initial?.id ?: UUID.randomUUID().toString(),
-                            segment = segment,
-                            purpose = purpose,
-                            description = description.trim(),
-                            location = location.trim(),
-                            budget = budget.trim(),
-                            areaRange = areaRange.trim(),
-                            areaBasis = areaBasis,
-                            stage = initial?.stage ?: "New",
-                            recordVersion = (initial?.recordVersion ?: 0) + 1
-                        )
-                    )
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PrimaryActionOrange,
-                    contentColor = OnPrimaryActionColor
-                )
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = BackgroundSoft
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
             ) {
-                Text("Save", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = SecondaryText)
+                // Top Bar
+                Surface(
+                    color = SurfaceWhite,
+                    shadowElevation = 2.dp,
+                    border = BorderStroke(0.5.dp, BorderGrey),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = TextPrimary)
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = if (initial == null) "New Client Requirement" else "Edit Client Requirement",
+                            color = TextPrimary,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Scrollable 3 Section Cards
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Card 1: Division & Transaction
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+                        border = BorderStroke(1.dp, BorderGrey),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text("Division & Transaction", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 13.sp)
+
+                            Text("Division", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = SecondaryText)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("Commercial", "Residential").forEach { seg ->
+                                    val selected = segment == seg
+                                    Surface(
+                                        selected = selected,
+                                        onClick = { segment = seg },
+                                        color = if (selected) PrimaryActionOrange else BackgroundSoft,
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, if (selected) PrimaryActionOrange else BorderGrey),
+                                        modifier = Modifier.weight(1f).height(40.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                            Text(seg, color = if (selected) OnPrimaryActionColor else TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text("Transaction Type", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = SecondaryText)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf("Lease", "Purchase", "Pre-Leased").forEach { pur ->
+                                    val selected = purpose == pur
+                                    Surface(
+                                        selected = selected,
+                                        onClick = { purpose = pur },
+                                        color = if (selected) PrimaryActionOrange else BackgroundSoft,
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, if (selected) PrimaryActionOrange else BorderGrey),
+                                        modifier = Modifier.weight(1f).height(40.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                            Text(pur, color = if (selected) OnPrimaryActionColor else TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Card 2: Requirement Specifications & Budget
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+                        border = BorderStroke(1.dp, BorderGrey),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text("Requirement Specifications", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 13.sp)
+
+                            OutlinedTextField(
+                                value = description,
+                                onValueChange = { description = it },
+                                label = { Text("Property / Size / Configuration *") },
+                                placeholder = { Text("e.g. 2500 sq.ft IT Office or 3 BHK") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PrimaryActionOrange, unfocusedBorderColor = BorderGrey)
+                            )
+
+                            OutlinedTextField(
+                                value = location,
+                                onValueChange = { location = it },
+                                label = { Text("Preferred Micro-Markets") },
+                                placeholder = { Text("e.g. Kharadi, Viman Nagar, Baner") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PrimaryActionOrange, unfocusedBorderColor = BorderGrey)
+                            )
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                OutlinedTextField(
+                                    value = budget,
+                                    onValueChange = { budget = it },
+                                    label = { Text("Budget / Rent") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PrimaryActionOrange, unfocusedBorderColor = BorderGrey)
+                                )
+                                OutlinedTextField(
+                                    value = areaRange,
+                                    onValueChange = { areaRange = it },
+                                    label = { Text("Area Range (sq.ft)") },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PrimaryActionOrange, unfocusedBorderColor = BorderGrey)
+                                )
+                            }
+                        }
+                    }
+
+                    // Card 3: Pipeline Stage
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceWhite),
+                        border = BorderStroke(1.dp, BorderGrey),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text("Pipeline Stage", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 13.sp)
+                            OutlinedTextField(
+                                value = stage,
+                                onValueChange = { stage = it },
+                                label = { Text("Stage") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = PrimaryActionOrange, unfocusedBorderColor = BorderGrey)
+                            )
+                        }
+                    }
+                }
+
+                // Sticky Bottom Bar with navigationBarsPadding and imePadding
+                Surface(
+                    color = SurfaceWhite,
+                    shadowElevation = 8.dp,
+                    border = BorderStroke(1.dp, BorderGrey),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .imePadding()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, BorderGrey),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                            modifier = Modifier.weight(1f).height(48.dp)
+                        ) {
+                            Text("Cancel", fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Button(
+                            enabled = description.isNotBlank(),
+                            onClick = {
+                                onSave(
+                                    CrmRequirement(
+                                        id = initial?.id ?: UUID.randomUUID().toString(),
+                                        segment = segment,
+                                        purpose = purpose,
+                                        description = description.trim(),
+                                        location = location.trim(),
+                                        budget = budget.trim(),
+                                        areaRange = areaRange.trim(),
+                                        areaBasis = areaBasis,
+                                        stage = stage,
+                                        recordVersion = (initial?.recordVersion ?: 0) + 1
+                                    )
+                                )
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryActionOrange, contentColor = OnPrimaryActionColor),
+                            modifier = Modifier.weight(1.8f).height(48.dp)
+                        ) {
+                            Text("Save Requirement", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
-    )
+    }
 }
 
 @Composable
