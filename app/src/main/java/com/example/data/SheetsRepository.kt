@@ -2556,9 +2556,7 @@ class SheetsRepository(
     }
 
     /**
-     * Batch 38: Fetch exact building photos via Google Places Text Search & Photos API first
-     * (with coordinate bias when available), falling back to exact-quoted Bing Images only if
-     * Google Places returns 0 photos.
+     * Fetch building photo candidates via free exact-quoted Bing Images search (no API key required).
      */
     suspend fun searchOnlineProjectPhotos(
         projectName: String,
