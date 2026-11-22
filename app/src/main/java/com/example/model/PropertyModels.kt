@@ -586,6 +586,7 @@ data class UserProfile(
     val employeeId: String = "",
     val division: String = "Commercial + Residential",
     val accountStatus: String = "Active",
+    val appRole: String = "",
     val canViewFullOwnerContacts: Boolean = role == UserRole.ADMIN || role == UserRole.COMMERCIAL_MANAGER || role == UserRole.RESIDENTIAL_MANAGER || role == UserRole.INVENTORY_MANAGER,
     val canBulkExport: Boolean = role == UserRole.ADMIN || role == UserRole.COMMERCIAL_MANAGER || role == UserRole.RESIDENTIAL_MANAGER || role == UserRole.INVENTORY_MANAGER,
     val canDeleteRecords: Boolean = role == UserRole.ADMIN || role == UserRole.COMMERCIAL_MANAGER || role == UserRole.RESIDENTIAL_MANAGER
@@ -595,8 +596,16 @@ data class UserProfile(
 
     val isAdminOrSuperAdmin: Boolean
         get() = role == UserRole.ADMIN ||
+            appRole.contains("Super Admin", ignoreCase = true) ||
+            appRole.equals("Admin", ignoreCase = true) ||
+            appRole.contains("Team Lead", ignoreCase = true) ||
+            appRole.contains("Manager", ignoreCase = true) ||
             username.equals("Pawan Patil", ignoreCase = true) ||
             username.equals("Pawan", ignoreCase = true)
+
+    /** Query parameter value for Schema v2 `action=inventory&role=Admin|RM`. */
+    val apiRoleParam: String
+        get() = if (isAdminOrSuperAdmin) "Admin" else "RM"
 }
 
 data class CompanyProfile(

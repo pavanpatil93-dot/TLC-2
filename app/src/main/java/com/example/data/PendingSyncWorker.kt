@@ -21,7 +21,7 @@ class PendingSyncWorker(appContext: Context, parameters: WorkerParameters) :
             val hasRetryable = queue.isNotEmpty() && PendingSyncQueue.hasRetryableWrites(queue)
             val rawEndpoint = applicationContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
                 .getString("google_sheet_url", "")?.trim().orEmpty()
-            val endpoint = rawEndpoint.ifBlank { SheetsRepository.DEFAULT_MASTER_SHEET_URL }
+            val endpoint = TlcSchemaV2Api.resolveEndpointUrl(rawEndpoint)
             if (!BackgroundSyncScheduler.validEndpoint(endpoint)) {
                 return@withContext Result.success()
             }

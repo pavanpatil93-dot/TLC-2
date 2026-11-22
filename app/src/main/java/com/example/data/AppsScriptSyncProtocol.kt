@@ -19,9 +19,17 @@ internal object AppsScriptSyncProtocol {
         }
         val action = request.optString("action")
         if (action == "DIAGNOSTIC_PING") {
-            return if (body.optString("action") == action) {
-                Check(true, "Diagnostic ping acknowledged; property writes unverified")
+            return if (body.optString("action") == action || body.optString("status").equals("success", true)) {
+                Check(true, "Diagnostic ping acknowledged")
             } else Check(false, "Diagnostic acknowledgement missing or mismatched")
+        }
+        // Schema v2 actions (submit_inventory, upsert_lead, log_call, log_visit, submit_daily_report)
+        if (action in setOf("submit_inventory", "upsert_lead", "log_call", "log_visit", "submit_daily_report")) {
+            val okFlag = if (body.has("ok")) body.optBoolean("ok", true)
+                else if (body.has("success")) body.optBoolean("success", true)
+                else body.optString("status").trim().lowercase() !in setOf("error", "failed", "unauthorized")
+            return if (okFlag) Check(true, "Schema v2 write acknowledged ($action)")
+            else Check(false, body.optString("message", body.optString("error", "Schema v2 write rejected")))
         }
         val expectedAction = when (action) {
             "ADD" -> "ADDED"
@@ -55,12 +63,20 @@ internal object AppsScriptSyncProtocol {
         val text = response.trim()
         if (text.startsWith("[")) return runCatching { JSONArray(text) }.isSuccess
         val body = runCatching { JSONObject(text) }.getOrNull() ?: return false
-        if (body.has("status") && body.optString("status") != "success") return false
-        if (body.optJSONArray("properties") != null) return true
-        val data = body.optJSONObject("data") ?: body.optJSONObject("properties") ?: body
-        val names = listOf("Commercial Inventory", "Residential Inventory", "MASTER_PROPERTIES",
+        if (body.has("status") && body.optString("status").lowercase() !in setOf("success", "ok")) return false
+        if (body.optJSONArray("properties") != null ||
+            body.optJSONArray("inventory") != null ||
+            body.optJSONArray("units") != null ||
+            body.optJSONArray("data") != null
+        ) return true
+        val data = body.optJSONObject("data") ?: body.optJSONObject("properties") ?: body.optJSONObject("inventory") ?: body
+        val names = listOf(
+            "Commercial Lease Inventory", "Commercial Sale Inventory", "Pre-Leased Inventory",
+            "Residential Lease Inventory", "Residential Sale Inventory",
+            "Commercial Inventory", "Residential Inventory", "MASTER_PROPERTIES",
             "Master Inventory", "Properties", "Master Properties", "Off Lease", "Off Out",
-            "Shop Lease", "Shop Out", "Pre - Leased", "Resi Rent", "Resi Resale", "Und Const")
+            "Shop Lease", "Shop Out", "Pre - Leased", "Resi Rent", "Resi Resale", "Und Const"
+        )
         return names.any { data.optJSONArray(it) != null }
     }
 
@@ -94,10 +110,17 @@ internal object AppsScriptSyncProtocol {
         postChecked(targetUrl, request).let { it.accepted to it.message }
 
     fun postChecked(targetUrl: String, request: JSONObject): Check {
-        var url = URL(targetUrl.trim())
+        val resolvedTarget = TlcSchemaV2Api.resolveEndpointUrl(targetUrl)
+        var url = URL(resolvedTarget)
         val origin = url
         var method = "POST"
-        val payload = request.toString().toByteArray(Charsets.UTF_8)
+        val signedRequest = JSONObject(request.toString()).apply {
+            if (!has("api_key")) {
+                val key = TlcSchemaV2Api.resolveApiKey()
+                if (key.isNotBlank()) put("api_key", key)
+            }
+        }
+        val payload = signedRequest.toString().toByteArray(Charsets.UTF_8)
         repeat(5) {
             var connection: HttpURLConnection? = null
             try {

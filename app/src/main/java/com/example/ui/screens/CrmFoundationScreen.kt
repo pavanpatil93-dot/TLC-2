@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.ContactsContract
+import android.speech.RecognizerIntent
 import android.text.format.DateFormat
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -3008,8 +3009,68 @@ internal fun AddEditLeadScreen(
     var followUpTime by remember(initial) { mutableStateOf(initial?.nextFollowUpTime.orEmpty().ifBlank { initial?.followUpTime.orEmpty().ifBlank { "11:00 AM" } }) }
     var actionNotes by remember(initial) { mutableStateOf(cleanActionNotesForDisplay(initial?.notes.orEmpty().ifBlank { initial?.clientNotes.orEmpty() })) }
 
-    // AI Paste Sheet state
+    // AI Paste Sheet & Voice Fill AI state
     var showAiPasteSheet by remember { mutableStateOf(false) }
+    var isParsingVoiceLead by remember { mutableStateOf(false) }
+    val voiceScope = rememberCoroutineScope()
+
+    val voiceLeadLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()?.trim().orEmpty()
+            if (spoken.isNotBlank()) {
+                isParsingVoiceLead = true
+                voiceScope.launch {
+                    try {
+                        val draft = com.example.ai.GeminiRealEstateService()
+                            .parseBrokerOrClientLeadsBatch(spoken)
+                            .firstOrNull()
+                        if (draft != null) {
+                            clientTypeMode = if (draft.isBrokerLead) "Broker / CP" else "Direct Client"
+                            if (draft.isBrokerLead && draft.brokerName.isNotBlank()) {
+                                name = if (draft.clientName.isNotBlank() && !draft.clientName.equals(draft.brokerName, true)) {
+                                    "${draft.brokerName} (${draft.clientName})"
+                                } else draft.brokerName
+                            } else if (draft.clientName.isNotBlank()) {
+                                name = draft.clientName
+                            }
+                            if (draft.firmName.isNotBlank()) brokerFirmName = draft.firmName
+                            if (draft.mobile.isNotBlank()) phone = draft.mobile
+                            segment = draft.division
+                            propertyType = draft.propertyType
+                            transactionType = draft.transactionType
+                            if (draft.subOption.isNotBlank()) subOption = draft.subOption
+                            if (draft.location.isNotBlank()) location = draft.location
+                            if (draft.areaRangeText.isNotBlank()) {
+                                selectedSizePreset = "Custom"
+                                carpetAreaRange = draft.areaRangeText
+                                customMinSqFt = draft.minCarpetSqFt?.toString().orEmpty()
+                                customMaxSqFt = draft.maxCarpetSqFt?.toString().orEmpty()
+                            }
+                            if (draft.budgetText.isNotBlank() || draft.maxBudgetInr != null || draft.minBudgetInr != null) {
+                                selectedBudgetPreset = "Custom"
+                                budget = draft.budgetText.ifBlank { (draft.maxBudgetInr ?: draft.minBudgetInr)?.toString().orEmpty() }
+                                customMinBudgetInr = draft.minBudgetInr?.toString().orEmpty()
+                                customMaxBudgetInr = draft.maxBudgetInr?.toString().orEmpty()
+                            }
+                            actionNotes = draft.notes.ifBlank { spoken }
+                            Toast.makeText(context, "Voice note parsed into lead form — review & save.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            actionNotes = if (actionNotes.isBlank()) spoken else "$actionNotes\n$spoken"
+                            Toast.makeText(context, "Voice note added to remarks.", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (_: Exception) {
+                        actionNotes = if (actionNotes.isBlank()) spoken else "$actionNotes\n$spoken"
+                        Toast.makeText(context, "Voice note added to remarks.", Toast.LENGTH_SHORT).show()
+                    } finally {
+                        isParsingVoiceLead = false
+                    }
+                }
+            }
+        }
+    }
 
     val contactPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -3329,6 +3390,39 @@ internal fun AddEditLeadScreen(
                             )
                         }
                         if (!isOwnerClient) {
+                            IconButton(
+                                onClick = {
+                                    if (isParsingVoiceLead) return@IconButton
+                                    val voiceIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+                                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak lead details (name, location, area, budget)")
+                                    }
+                                    runCatching { voiceLeadLauncher.launch(voiceIntent) }.onFailure {
+                                        Toast.makeText(context, "Voice dictation not available on this device.", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(SelectedSurfaceContainer)
+                                    .testTag("lead_voice_fill_btn")
+                            ) {
+                                if (isParsingVoiceLead) {
+                                    CircularProgressIndicator(
+                                        color = PrimaryActionOrange,
+                                        strokeWidth = 2.dp,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Mic,
+                                        contentDescription = "Voice Fill Lead with AI",
+                                        tint = PrimaryActionOrange,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
                             OutlinedButton(
                                 onClick = { showAiPasteSheet = true },
                                 shape = RoundedCornerShape(8.dp),

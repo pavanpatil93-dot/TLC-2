@@ -1294,15 +1294,21 @@ fun PostCallSmartSheet(
                         .testTag("post_call_notes_input")
                 )
 
-                // Batch 20: Strictly On-Demand Call Recording Match (▶ Play & ✨ Summarize)
-                CallRecordingOnDemandSection(
-                    call = workingCall,
-                    currentNotes = notes,
-                    onSummaryGenerated = { summary ->
-                        notes = if (notes.isBlank()) summary else "$notes\n$summary"
-                    },
-                    testTagPrefix = "post_call_recording"
-                )
+                // Strictly On-Demand Call Recording Match (Play, Choose recording & Summarize)
+                // Keyed by workingCall.id so switching call cards immediately stops playback and cancels stale searches/summaries.
+                key(workingCall.id) {
+                    val boundCallId = workingCall.id
+                    CallRecordingOnDemandSection(
+                        call = workingCall,
+                        currentNotes = notes,
+                        onSummaryGenerated = { summary ->
+                            if (workingCall.id == boundCallId) {
+                                notes = if (notes.isBlank()) summary else "$notes\n$summary"
+                            }
+                        },
+                        testTagPrefix = "post_call_recording"
+                    )
+                }
 
                 // ── 3. 2-STEP QUICK FOLLOW-UP (INDEPENDENT OF ROLE) ───────────
                 Surface(

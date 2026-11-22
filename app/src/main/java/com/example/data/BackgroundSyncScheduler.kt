@@ -56,7 +56,7 @@ internal object BackgroundSyncScheduler {
     fun ensureMasterAutoSyncScheduled(context: Context): Boolean {
         val rawEndpoint = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
             .getString("google_sheet_url", "")?.trim().orEmpty()
-        val endpoint = rawEndpoint.ifBlank { SheetsRepository.DEFAULT_MASTER_SHEET_URL }
+        val endpoint = TlcSchemaV2Api.resolveEndpointUrl(rawEndpoint)
         if (!validEndpoint(endpoint)) return false
         val manager = WorkManager.getInstance(context.applicationContext)
         manager.enqueueUniquePeriodicWork(
@@ -68,8 +68,9 @@ internal object BackgroundSyncScheduler {
     }
 
     fun ensureScheduled(context: Context): Boolean {
-        val endpoint = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val rawEndpoint = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
             .getString("google_sheet_url", "").orEmpty()
+        val endpoint = TlcSchemaV2Api.resolveEndpointUrl(rawEndpoint)
         if (!validEndpoint(endpoint)) return false
         val queue = PropertiesLocalDatabase.loadPendingWrites(context)
         if (!PendingSyncQueue.hasRetryableWrites(queue)) return false

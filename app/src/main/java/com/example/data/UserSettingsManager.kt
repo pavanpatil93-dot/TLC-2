@@ -249,10 +249,18 @@ class UserSettingsManager(private val context: Context?) {
             ?: "Commercial + Residential"
         val accountStatus = primary?.getString("user_account_status", null)
             ?: fallback?.getString("user_account_status", "Active") ?: "Active"
+        val appRole = primary?.getString("user_app_role", null)
+            ?: fallback?.getString("user_app_role", "") ?: ""
         val roleEnum = UserRole.fromString(roleStr)
-        val canView = primary?.getBoolean("can_view_owner", roleEnum == UserRole.ADMIN || roleEnum == UserRole.COMMERCIAL_MANAGER || roleEnum == UserRole.RESIDENTIAL_MANAGER || roleEnum == UserRole.INVENTORY_MANAGER) ?: true
-        val canBulk = primary?.getBoolean("can_bulk_export", roleEnum == UserRole.ADMIN || roleEnum == UserRole.COMMERCIAL_MANAGER || roleEnum == UserRole.RESIDENTIAL_MANAGER || roleEnum == UserRole.INVENTORY_MANAGER) ?: true
-        val canDel = primary?.getBoolean("can_delete", roleEnum == UserRole.ADMIN || roleEnum == UserRole.COMMERCIAL_MANAGER || roleEnum == UserRole.RESIDENTIAL_MANAGER) ?: true
+        val isAppAdmin = appRole.contains("Super Admin", ignoreCase = true) ||
+            appRole.equals("Admin", ignoreCase = true) ||
+            appRole.contains("Team Lead", ignoreCase = true) ||
+            appRole.contains("Manager", ignoreCase = true)
+        val isAppOps = appRole.contains("Backoffice", ignoreCase = true) ||
+            appRole.contains("Ops", ignoreCase = true)
+        val canView = primary?.getBoolean("can_view_owner", isAppAdmin || isAppOps || roleEnum == UserRole.ADMIN || roleEnum == UserRole.COMMERCIAL_MANAGER || roleEnum == UserRole.RESIDENTIAL_MANAGER || roleEnum == UserRole.INVENTORY_MANAGER) ?: true
+        val canBulk = primary?.getBoolean("can_bulk_export", isAppAdmin || isAppOps || roleEnum == UserRole.ADMIN || roleEnum == UserRole.COMMERCIAL_MANAGER || roleEnum == UserRole.RESIDENTIAL_MANAGER || roleEnum == UserRole.INVENTORY_MANAGER) ?: true
+        val canDel = primary?.getBoolean("can_delete", isAppAdmin || roleEnum == UserRole.ADMIN || roleEnum == UserRole.COMMERCIAL_MANAGER || roleEnum == UserRole.RESIDENTIAL_MANAGER) ?: true
         return UserProfile(
             username = username,
             mobileNumber = mobile,
@@ -262,6 +270,7 @@ class UserSettingsManager(private val context: Context?) {
             employeeId = employeeId,
             division = division,
             accountStatus = accountStatus,
+            appRole = appRole,
             canViewFullOwnerContacts = canView,
             canBulkExport = canBulk,
             canDeleteRecords = canDel
@@ -397,6 +406,7 @@ class UserSettingsManager(private val context: Context?) {
                 putString("user_email", cleanProfile.email)
                 putString("user_division", cleanProfile.division)
                 putString("user_role", cleanProfile.role.label)
+                putString("user_app_role", cleanProfile.appRole.ifBlank { cleanProfile.role.label })
                 putString("user_account_status", cleanProfile.accountStatus)
                 putString("active_brand", resolvedBrand.name)
                 putBoolean("can_view_owner", cleanProfile.canViewFullOwnerContacts)
@@ -652,6 +662,28 @@ class UserSettingsManager(private val context: Context?) {
             addCleaned(email)
             addCleaned(empId)
             return ids
+        }
+
+        fun readCurrentFullName(context: Context): String {
+            val prefs = context.applicationContext.getSharedPreferences("ascend_aurea_user_settings", Context.MODE_PRIVATE)
+            val legacy = context.applicationContext.getSharedPreferences("real_estate_user_settings", Context.MODE_PRIVATE)
+            return (prefs.getString("user_username", null)
+                ?: legacy.getString("user_username", "").orEmpty()).trim()
+        }
+
+        fun readCurrentApiRole(context: Context): String {
+            val prefs = context.applicationContext.getSharedPreferences("ascend_aurea_user_settings", Context.MODE_PRIVATE)
+            val legacy = context.applicationContext.getSharedPreferences("real_estate_user_settings", Context.MODE_PRIVATE)
+            val appRole = (prefs.getString("user_app_role", null)
+                ?: legacy.getString("user_app_role", "").orEmpty()).trim()
+            val roleStr = (prefs.getString("user_role", null)
+                ?: legacy.getString("user_role", "").orEmpty()).trim()
+            val isAdmin = appRole.contains("Super Admin", ignoreCase = true) ||
+                appRole.equals("Admin", ignoreCase = true) ||
+                appRole.contains("Team Lead", ignoreCase = true) ||
+                appRole.contains("Manager", ignoreCase = true) ||
+                roleStr.equals("Admin", ignoreCase = true)
+            return if (isAdmin) "Admin" else "RM"
         }
     }
 }

@@ -49,6 +49,13 @@ enum class CallType(val label: String) {
     }
 }
 
+enum class UnwantedCallReason(val badgeLabel: String) {
+    NONE(""),
+    SPAM_TELEMARKETER("Spam"),
+    PERSONAL_OR_IGNORED("Personal"),
+    SHORT_OR_MISSED("Short")
+}
+
 data class CrmCallRecord(
     val id: String = UUID.randomUUID().toString(),
     val callerName: String,
@@ -350,7 +357,7 @@ object CrmCallManager {
                 val dateIdx = it.getColumnIndex(CallLog.Calls.DATE)
                 val durIdx = it.getColumnIndex(CallLog.Calls.DURATION)
 
-                while (list.size < 50 && it.moveToNext()) {
+                while (list.size < 200 && it.moveToNext()) {
                     val rawName = if (nameIdx >= 0) it.getString(nameIdx).orEmpty() else ""
                     val rawNum = if (numIdx >= 0) it.getString(numIdx).orEmpty() else ""
                     val typeVal = if (typeIdx >= 0) it.getInt(typeIdx) else CallLog.Calls.INCOMING_TYPE
@@ -1615,11 +1622,86 @@ object CrmCallManager {
         removeFromUnloggedQueue(context, call)
     }
 
+    fun markCallsSkipped(context: Context, callsToIgnore: List<CrmCallRecord>) {
+        if (callsToIgnore.isEmpty()) return
+        ensureSkippedHydrated(context)
+        for (call in callsToIgnore) {
+            if (call.id.isNotBlank()) skippedKeysSet.add(call.id)
+            val dedup = callDedupKey(call)
+            if (dedup.isNotBlank()) skippedKeysSet.add(dedup)
+            markPostCallPopupShown(context, call)
+            removeFromUnloggedQueue(context, call)
+        }
+        persistSkippedAsync(context)
+    }
+
     fun unskipCall(context: Context, call: CrmCallRecord) {
         ensureSkippedHydrated(context)
         skippedKeysSet.remove(call.id)
         skippedKeysSet.remove(callDedupKey(call))
         persistSkippedAsync(context)
+    }
+
+    fun unskipCalls(context: Context, callsToRestore: List<CrmCallRecord>) {
+        if (callsToRestore.isEmpty()) return
+        ensureSkippedHydrated(context)
+        for (call in callsToRestore) {
+            skippedKeysSet.remove(call.id)
+            skippedKeysSet.remove(callDedupKey(call))
+        }
+        persistSkippedAsync(context)
+    }
+
+    private val SPAM_NAME_REGEX = Regex(
+        """\b(spam|suspected\s+spam|scam|fraud|telemarket\w*|loan\s+offer|credit\s+card|insurance\s+offer|policybazaar|bajaj\s+fin\w*|swiggy|zomato|amazon\s+delivery|flipkart|bluedart|delhivery|ekart|courier|delivery\s+boy|customer\s+care|ivr|promotional|automated)\b""",
+        RegexOption.IGNORE_CASE
+    )
+    private val PERSONAL_NAME_REGEX = Regex(
+        """\b(mom|mummy|maa|aai|papa|dad|baba|wife|husband|home|bro|brother|sister|didi|tai|family|personal|maid|cook|driver|milkman|watchman|plumber|electrician|doctor|salon|gym)\b""",
+        RegexOption.IGNORE_CASE
+    )
+
+    /**
+     * Deterministic unwanted-call auto-tagger for fast batch cleanup.
+     * Already-linked business calls are never tagged as unwanted.
+     */
+    fun classifyUnwantedCall(
+        call: CrmCallRecord,
+        isPersonalOrIgnoredNumber: Boolean = false
+    ): UnwantedCallReason {
+        if (call.isLinked) return UnwantedCallReason.NONE
+
+        val rawDigits = call.phoneNumber.filter { it.isDigit() }
+        val normalizedLocal = when {
+            rawDigits.startsWith("91") && rawDigits.length >= 12 -> rawDigits.drop(2)
+            rawDigits.startsWith("0") && rawDigits.length >= 11 -> rawDigits.drop(1)
+            else -> rawDigits
+        }
+
+        val isTelemarketerPrefix = normalizedLocal.startsWith("140") ||
+            normalizedLocal.startsWith("160") ||
+            normalizedLocal.startsWith("1800") ||
+            normalizedLocal.startsWith("1860") ||
+            (rawDigits.isNotEmpty() && rawDigits.length <= 6)
+
+        if (isTelemarketerPrefix || SPAM_NAME_REGEX.containsMatchIn(call.callerName)) {
+            return UnwantedCallReason.SPAM_TELEMARKETER
+        }
+
+        if (isPersonalOrIgnoredNumber || PERSONAL_NAME_REGEX.containsMatchIn(call.callerName)) {
+            return UnwantedCallReason.PERSONAL_OR_IGNORED
+        }
+
+        if (call.callType == CallType.MISSED || call.durationSeconds in 0..9) {
+            return UnwantedCallReason.SHORT_OR_MISSED
+        }
+
+        return UnwantedCallReason.NONE
+    }
+
+    fun classifyUnwantedCall(context: Context, call: CrmCallRecord): UnwantedCallReason {
+        val ignored = IgnoredNumbersManager.isIgnoredOrInternal(context, call.phoneNumber)
+        return classifyUnwantedCall(call, isPersonalOrIgnoredNumber = ignored)
     }
 
     /**

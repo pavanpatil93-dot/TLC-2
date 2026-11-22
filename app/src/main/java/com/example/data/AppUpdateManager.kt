@@ -92,12 +92,15 @@ object AppUpdateManager {
     }
 
     suspend fun checkForAppUpdate(
-        scriptUrl: String = SheetsRepository.DEFAULT_MASTER_SHEET_URL
+        scriptUrl: String = TlcSchemaV2Api.BASE_WEB_APP_URL
     ): Result<AppUpdateInfo?> = withContext(Dispatchers.IO) {
-        val endpoint = scriptUrl.trim().ifBlank { SheetsRepository.DEFAULT_MASTER_SHEET_URL }
+        val endpoint = TlcSchemaV2Api.resolveEndpointUrl(scriptUrl)
+        val authedUrl = TlcSchemaV2Api.buildGetUrl(endpoint, action = "bootstrap").getOrElse {
+            return@withContext Result.failure(it)
+        }
         runCatching {
             val request = Request.Builder()
-                .url(endpoint)
+                .url(authedUrl)
                 .header("User-Agent", "TLC-Android/${BuildConfig.VERSION_NAME}")
                 .get()
                 .build()

@@ -34,6 +34,10 @@ import com.example.access.ActiveBusinessView
 import com.example.access.BusinessDivisionScope
 import com.example.access.EmployeeAccessRole
 import com.example.access.EmployeeProfile
+import com.example.ai.DailyAiBriefingResult
+import com.example.ai.DailyBriefingAction
+import com.example.ai.DailyBriefingSnapshot
+import com.example.ai.GeminiProductivityEngine
 import com.example.crm.CrmCallManager
 import com.example.crm.CrmCallRecord
 import com.example.crm.CrmPipelineAndWorkloadEngine
@@ -43,6 +47,7 @@ import com.example.crm.DashboardMetricProjectionState
 import com.example.crm.DashboardReportPeriod
 import com.example.crm.EmployeeEligibilityItem
 import com.example.crm.PendingLoopsQueueCard
+import com.example.crm.WhatsAppFollowUpStore
 import com.example.data.ApprovalAndAuditManager
 import com.example.data.OfflineDiskCache
 import com.example.data.SheetsRepository
@@ -103,6 +108,7 @@ fun DashboardScreen(
     onNavigateToProjects: () -> Unit = onNavigateToInventory,
     onSearchInventory: (String) -> Unit = { onNavigateToInventory() },
     onNavigateToCalls: () -> Unit = {},
+    onNavigateToWhatsAppInbox: () -> Unit = {},
     onNavigateToDeals: () -> Unit = {},
     dailyReports: List<DailyReportRecord> = emptyList(),
     onNavigateToDailyOps: () -> Unit = {},
@@ -273,6 +279,86 @@ fun DashboardScreen(
     val live60DayRecheckDueCount = computedState.live60DayRecheckDueCount
     var activePostCallRecord by remember { mutableStateOf<CrmCallRecord?>(null) }
     var postCallQueue by remember { mutableStateOf<List<CrmCallRecord>>(emptyList()) }
+
+    // Daily AI Priority Briefing (cached per IST day, refreshes on demand)
+    var dailyBriefing by remember { mutableStateOf<DailyAiBriefingResult?>(null) }
+    var isLoadingBriefing by remember { mutableStateOf(false) }
+    var isBriefingExpanded by remember { mutableStateOf(true) }
+    var briefingRefreshNonce by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(
+        todayIso,
+        liveCrmLeads.size,
+        liveUnloggedCallsCount,
+        commercialAvailableCount,
+        residentialAvailableCount,
+        briefingRefreshNonce
+    ) {
+        val forceRefresh = briefingRefreshNonce > 0
+        val cached = withContext(Dispatchers.IO) { GeminiProductivityEngine.loadCachedDailyBriefing(context) }
+        if (cached != null && dailyBriefing == null) {
+            dailyBriefing = cached
+        }
+        val snapshot = withContext(Dispatchers.IO) {
+            val activeLeads = liveCrmLeads.filter { lead ->
+                !lead.status.contains("Closed", ignoreCase = true) &&
+                    !lead.status.contains("Archived", ignoreCase = true)
+            }
+            val overdueLeads = activeLeads.filter { lead ->
+                !lead.followUpCompleted && lead.nextFollowUp.length >= 10 && lead.nextFollowUp.take(10) < todayIso
+            }
+            val dueTodayLeads = activeLeads.filter { lead ->
+                !lead.followUpCompleted && (lead.nextFollowUp.contains("Today", ignoreCase = true) ||
+                    (lead.nextFollowUp.length >= 10 && lead.nextFollowUp.take(10) == todayIso))
+            }
+            val hotLeads = activeLeads.filter { lead ->
+                lead.priority.equals("Hot", ignoreCase = true) ||
+                    lead.status.contains("Negotiation", ignoreCase = true) ||
+                    lead.status.contains("Site Visit", ignoreCase = true)
+            }
+            val todayVisits = activeLeads.count { lead ->
+                lead.siteVisitDate.length >= 10 && lead.siteVisitDate.take(10) == todayIso
+            }
+            val waInbox = WhatsAppFollowUpStore.getMessages(context).filter { it.isAiInboxEligible() }
+            val waPropCount = waInbox.count { it.aiIntent == "PROPERTY_LISTING" || it.aiIntent == "EXISTING_PROPERTY_UPDATE" }
+            val waReqCount = waInbox.count { it.aiIntent == "CLIENT_REQUIREMENT" }
+            val availLocations = activeProperties
+                .filter { it.status == AvailabilityStatus.AVAILABLE }
+                .map { it.location.lowercase(Locale.ENGLISH) }
+                .filter { it.isNotBlank() }
+                .toSet()
+            val hotWithMatches = hotLeads.count { lead ->
+                val loc = lead.location.lowercase(Locale.ENGLISH)
+                loc.isNotBlank() && availLocations.any { it.contains(loc) || loc.contains(it) }
+            }
+            DailyBriefingSnapshot(
+                employeeName = userProfile.username.ifBlank { "TLC Team" },
+                overdueFollowUps = overdueLeads.size,
+                dueTodayFollowUps = dueTodayLeads.size,
+                hotLeadsCount = hotLeads.size,
+                hotLeadsWithLiveMatches = hotWithMatches,
+                todaySiteVisits = todayVisits,
+                unloggedCallsCount = liveUnloggedCallsCount,
+                pendingAiInboxCount = waInbox.size,
+                pendingAiPropertyCount = waPropCount,
+                pendingAiRequirementCount = waReqCount,
+                availableCommercialCount = commercialAvailableCount,
+                availableResidentialCount = residentialAvailableCount,
+                topOverdueLeadNames = overdueLeads.take(3).map { it.name.ifBlank { it.id } },
+                topHotLeadSummaries = hotLeads.take(3).map { "${it.name} (${it.location.ifBlank { "Pune" }})" }
+            )
+        }
+        isLoadingBriefing = true
+        try {
+            dailyBriefing = GeminiProductivityEngine.generateDailyPriorityBriefing(
+                context = context,
+                snapshot = snapshot,
+                forceRefresh = forceRefresh
+            )
+        } finally {
+            isLoadingBriefing = false
+        }
+    }
     var postCallQueueIndex by remember { mutableIntStateOf(0) }
 
     val advanceDashboardPostCallQueue: () -> Unit = {
@@ -550,6 +636,27 @@ fun DashboardScreen(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // 2A. Daily AI Priority Briefing Card (Gemini Executive Chief of Staff)
+        DailyAiPriorityBriefingCard(
+            briefing = dailyBriefing,
+            isLoading = isLoadingBriefing,
+            expanded = isBriefingExpanded,
+            onToggleExpand = { isBriefingExpanded = !isBriefingExpanded },
+            onRefresh = { briefingRefreshNonce++ },
+            onActionClick = { action ->
+                when (action.targetKey) {
+                    "CRM" -> onNavigateToCrm()
+                    "AI_INBOX" -> onNavigateToWhatsAppInbox()
+                    "VISITS" -> onNavigateToVisits()
+                    "CALLS" -> onNavigateToCalls()
+                    "INVENTORY" -> onNavigateToInventory()
+                    else -> onNavigateToCrm()
+                }
+            }
+        )
 
         Spacer(modifier = Modifier.height(10.dp))
 
@@ -2251,3 +2358,185 @@ private fun PendingApprovalRow(
         }
     }
 }
+
+@Composable
+private fun DailyAiPriorityBriefingCard(
+    briefing: DailyAiBriefingResult?,
+    isLoading: Boolean,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onRefresh: () -> Unit,
+    onActionClick: (DailyBriefingAction) -> Unit
+) {
+    Surface(
+        color = PrimaryNavy,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.55f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("dashboard_daily_ai_briefing_card")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggleExpand),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(BrandGold.copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = "Daily AI Priority Briefing",
+                            tint = BrandGold,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Daily AI Priority Briefing",
+                            color = Color.White,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = briefing?.headline ?: "Analyzing overdue follow-ups, hot deals & AI Inbox...",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 11.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            color = BrandGold,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier
+                                .padding(horizontal = 8.dp)
+                                .size(16.dp)
+                        )
+                    } else {
+                        IconButton(
+                            onClick = onRefresh,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .testTag("dashboard_ai_briefing_refresh_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh Daily AI Briefing",
+                                tint = BrandGold,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = onToggleExpand,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .testTag("dashboard_ai_briefing_toggle_btn")
+                    ) {
+                        Icon(
+                            imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (expanded) "Collapse Briefing" else "Expand Briefing",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            if (expanded && briefing != null && briefing.priorityBullets.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    briefing.priorityBullets.forEachIndexed { idx, action ->
+                        val ctaLabel = when (action.targetKey) {
+                            "AI_INBOX" -> "Open Inbox"
+                            "VISITS" -> "Visits"
+                            "CALLS" -> "Calls"
+                            "INVENTORY" -> "Inventory"
+                            else -> "Open CRM"
+                        }
+                        Surface(
+                            onClick = { onActionClick(action) },
+                            color = Color.White.copy(alpha = 0.08f),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.14f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("dashboard_ai_briefing_action_$idx")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = action.title,
+                                        color = BrandGold,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = action.detail,
+                                        color = Color(0xFFE2E8F0),
+                                        fontSize = 11.sp,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Surface(
+                                    color = PrimaryActionOrange,
+                                    shape = RoundedCornerShape(7.dp)
+                                ) {
+                                    Text(
+                                        text = ctaLabel,
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!briefing.statusNote.isNullOrBlank()) {
+                    Text(
+                        text = briefing.statusNote,
+                        color = Color(0xFF94A3B8),
+                        fontSize = 9.5.sp
+                    )
+                }
+            }
+        }
+    }
+}
+

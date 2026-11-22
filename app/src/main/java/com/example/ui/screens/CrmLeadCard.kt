@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -7,6 +9,7 @@ import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -27,8 +30,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ai.AiPitchTone
+import com.example.ai.CrmReplyScenario
+import com.example.ai.GeminiProductivityEngine
 import com.example.data.SheetsRepository
 import com.example.ui.theme.*
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -666,61 +673,207 @@ internal fun CrmMessageTemplateDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    var selectedTemplate by remember { mutableStateOf("Follow-up") }
-    val defaultText = "Hello ${lead.name}, regarding your requirement for ${lead.requirement.ifBlank { "properties" }} in ${lead.location.ifBlank { "Pune" }}, please let us know when you'd like to schedule a visit or call. — The Leasing Company"
-    var messageText by remember { mutableStateOf(defaultText) }
+    val coroutineScope = rememberCoroutineScope()
+    val latestActivityNote = remember(lead.id) {
+        readLeadCardActivities(context, lead.id)
+            .firstOrNull()
+            ?.optString("notes")
+            .orEmpty()
+            .ifBlank { lead.notes.ifBlank { lead.clientNotes } }
+    }
+
+    var selectedScenario by remember {
+        mutableStateOf(
+            when {
+                lead.status.contains("Visit Done", ignoreCase = true) -> CrmReplyScenario.POST_VISIT_FEEDBACK
+                lead.status.contains("Visit", ignoreCase = true) || lead.siteVisitDate.isNotBlank() -> CrmReplyScenario.SITE_VISIT_CONFIRMATION
+                else -> CrmReplyScenario.POST_CALL_FOLLOW_UP
+            }
+        )
+    }
+    var selectedTone by remember { mutableStateOf(AiPitchTone.EXECUTIVE) }
+    var isDrafting by remember { mutableStateOf(false) }
+    var statusNote by remember { mutableStateOf<String?>(null) }
+    var messageText by remember {
+        mutableStateOf(
+            GeminiProductivityEngine.buildDeterministicCrmReply(
+                cleanName = lead.name.ifBlank { "Sir/Ma'am" },
+                requirement = lead.requirement.ifBlank { "property requirement" },
+                location = lead.location.ifBlank { "Pune" },
+                siteVisitDate = lead.siteVisitDate,
+                scenario = selectedScenario,
+                tone = selectedTone,
+                employeeName = lead.assignedTo.ifBlank { "The Leasing Company" }
+            )
+        )
+    }
+
+    fun triggerAiDraft(scenario: CrmReplyScenario, tone: AiPitchTone) {
+        if (isDrafting) return
+        isDrafting = true
+        statusNote = null
+        coroutineScope.launch {
+            val res = GeminiProductivityEngine.draftCrmFollowUpMessage(
+                leadName = lead.name,
+                requirement = lead.requirement,
+                location = lead.location,
+                budget = lead.budget,
+                status = lead.status,
+                lastNote = latestActivityNote,
+                nextFollowUp = lead.nextFollowUp,
+                siteVisitDate = lead.siteVisitDate,
+                scenario = scenario,
+                tone = tone,
+                employeeName = lead.assignedTo.ifBlank { "TLC Advisory" }
+            )
+            messageText = res.text
+            statusNote = res.statusNote
+            isDrafting = false
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("WhatsApp & Message Template • ${lead.name}", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = BrandGold, modifier = Modifier.size(18.dp))
+                Text(
+                    text = "AI Reply Drafter • ${lead.name}",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Follow-up", "Pitch", "Visit").forEach { t ->
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Scenario", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    CrmReplyScenario.entries.forEach { sc ->
                         FilterChip(
-                            selected = selectedTemplate == t,
+                            selected = selectedScenario == sc,
                             onClick = {
-                                selectedTemplate = t
-                                messageText = when (t) {
-                                    "Follow-up" -> "Hello ${lead.name}, following up on your property search in ${lead.location.ifBlank { "Pune" }}. Please let us know a convenient time to connect. — The Leasing Company"
-                                    "Pitch" -> "Hello ${lead.name}, sharing verified inventory matching your requirement for ${lead.requirement.ifBlank { "commercial space" }} in ${lead.location}. Let us know your availability for a private viewing."
-                                    else -> "Hello ${lead.name}, confirming your site visit schedule. Looking forward to showing you the shortlisted options."
-                                }
+                                selectedScenario = sc
+                                triggerAiDraft(sc, selectedTone)
                             },
-                            label = { Text(t, fontSize = 11.sp) }
+                            label = { Text(sc.label, fontSize = 11.sp, maxLines = 1) },
+                            modifier = Modifier.testTag("crm_reply_scenario_${sc.name.lowercase(Locale.ENGLISH)}")
                         )
                     }
                 }
+
+                Text("Tone", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SecondaryText)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    AiPitchTone.entries.forEach { tone ->
+                        FilterChip(
+                            selected = selectedTone == tone,
+                            onClick = {
+                                selectedTone = tone
+                                triggerAiDraft(selectedScenario, tone)
+                            },
+                            label = { Text(tone.label, fontSize = 11.sp, maxLines = 1) },
+                            modifier = Modifier.testTag("crm_reply_tone_${tone.name.lowercase(Locale.ENGLISH)}")
+                        )
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = { triggerAiDraft(selectedScenario, selectedTone) },
+                    enabled = !isDrafting,
+                    border = BorderStroke(1.dp, PrimaryActionOrange),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .testTag("crm_reply_generate_ai_btn")
+                ) {
+                    if (isDrafting) {
+                        CircularProgressIndicator(
+                            color = PrimaryActionOrange,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Drafting with Gemini AI...", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PrimaryActionOrange)
+                    } else {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = PrimaryActionOrange, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Draft with Gemini AI", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PrimaryActionOrange)
+                    }
+                }
+
+                if (!statusNote.isNullOrBlank()) {
+                    Text(
+                        text = statusNote.orEmpty(),
+                        fontSize = 10.5.sp,
+                        color = SecondaryText,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
                 OutlinedTextField(
                     value = messageText,
                     onValueChange = { messageText = it },
-                    label = { Text("Message Draft") },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
-                    minLines = 4
+                    label = { Text("Editable WhatsApp Message") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 130.dp)
+                        .testTag("crm_reply_message_input"),
+                    minLines = 5
                 )
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    val phone = lead.phone.filter { it.isDigit() }
-                    val international = if (phone.length == 10) "91$phone" else phone
-                    val encoded = Uri.encode(messageText)
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$international?text=$encoded"))
-                    runCatching { context.startActivity(intent) }.onFailure {
-                        Toast.makeText(context, "Could not open WhatsApp", Toast.LENGTH_SHORT).show()
-                    }
-                    onDismiss()
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366), contentColor = Color.White)
-            ) {
-                Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Send via WhatsApp", fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        cm?.setPrimaryClip(ClipData.newPlainText("CRM Follow-up", messageText))
+                        Toast.makeText(context, "Reply copied", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.testTag("crm_reply_copy_btn")
+                ) {
+                    Text("Copy", fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = {
+                        val phone = lead.phone.filter { it.isDigit() }
+                        val international = if (phone.length == 10) "91$phone" else phone
+                        val encoded = Uri.encode(messageText)
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$international?text=$encoded"))
+                        runCatching { context.startActivity(intent) }.onFailure {
+                            Toast.makeText(context, "Could not open WhatsApp", Toast.LENGTH_SHORT).show()
+                        }
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366), contentColor = Color.White),
+                    modifier = Modifier.testTag("crm_reply_send_wa_btn")
+                ) {
+                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Send WA", fontWeight = FontWeight.Bold)
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text("Close") }
         },
         containerColor = SurfaceWhite
     )

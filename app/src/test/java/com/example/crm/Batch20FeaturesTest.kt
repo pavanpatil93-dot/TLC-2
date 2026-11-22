@@ -206,14 +206,19 @@ class Batch20FeaturesTest {
     }
 
     @Test
-    fun callRecordingMatcher_matchesOnDemandByPhoneOrTimestampWithin2Minutes() = runBlocking {
+    fun callRecordingMatcher_matchesStrictOneToOneBySamsungMetadata() = runBlocking {
         // Verify OEM defaults exist for Samsung, Xiaomi, OnePlus/Oppo
         val paths = CallRecordingMatcher.OEM_DEFAULT_RELATIVE_PATHS.map { it.first }
         assertTrue(paths.contains("Recordings/Call"))
         assertTrue(paths.contains("MIUI/sound_recorder/call_rec"))
         assertTrue(paths.contains("Music/Recordings/Call Recordings"))
 
-        val callStart = 1_763_420_000_000L
+        val tz = java.util.TimeZone.getTimeZone("Asia/Kolkata")
+        val callStart = java.util.Calendar.getInstance(tz, java.util.Locale.US).apply {
+            clear()
+            set(2026, 10, 18, 14, 30, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
         val callDurationSec = 60
         val callEnd = callStart + callDurationSec * 1000L
         val call = CrmCallRecord(
@@ -226,47 +231,44 @@ class Batch20FeaturesTest {
             notes = "Looking for 2500 sq.ft office in Kharadi budget 1.8 Lac"
         )
 
-        val unrelatedOld = CallRecordingMatcher.CandidateAudioEntry(
-            name = "Call_recording_9111122233.m4a",
-            uriOrPath = "/storage/emulated/0/Recordings/Call/old.m4a",
-            lastModified = callEnd - 10 * 60_000L, // 10 mins away
+        val unrelatedWrongPhone = CallRecordingCandidate(
+            fileName = "Call recording +919111122233_261118_143000.m4a",
+            uriOrPath = "content://media/external/audio/media/101",
+            lastModifiedMs = callEnd,
+            durationMs = 60_000L,
             sizeBytes = 120_000L,
-            isContentUri = false
+            isContentUri = true
         )
-        val timestampMatch = CallRecordingMatcher.CandidateAudioEntry(
-            name = "Voice_261118_1430.mp3",
-            uriOrPath = "/storage/emulated/0/Recordings/Call/Voice_261118_1430.mp3",
-            lastModified = callEnd + 35_000L, // Within +35s (<= 2 min)
+        val wrongDuration = CallRecordingCandidate(
+            fileName = "Call recording +919766880099_261118_143002.m4a",
+            uriOrPath = "content://media/external/audio/media/102",
+            lastModifiedMs = callStart + 20_000L,
+            durationMs = 20_000L, // 40s diff -> rejected
             sizeBytes = 240_000L,
-            isContentUri = false
+            isContentUri = true
         )
-        val phoneAndTimestampMatch = CallRecordingMatcher.CandidateAudioEntry(
-            name = "Call_9766880099_20261118.m4a",
-            uriOrPath = "/storage/emulated/0/Recordings/Call/Call_9766880099_20261118.m4a",
-            lastModified = callEnd + 15_000L,
+        val exactSamsungMatch = CallRecordingCandidate(
+            fileName = "Call recording +919766880099_261118_143003.m4a",
+            uriOrPath = "content://media/external/audio/media/103",
+            lastModifiedMs = callEnd + 5_000L,
+            durationMs = 59_000L,
             sizeBytes = 260_000L,
-            isContentUri = false
+            isContentUri = true
         )
 
         val best = CallRecordingMatcher.matchRecordingFromCandidates(
             call = call,
-            candidates = listOf(unrelatedOld, timestampMatch, phoneAndTimestampMatch)
+            candidates = listOf(unrelatedWrongPhone, wrongDuration, exactSamsungMatch),
+            timeZone = tz
         )
         assertNotNull(best)
-        assertEquals("Call_9766880099_20261118.m4a", best?.fileName)
+        assertEquals("Call recording +919766880099_261118_143003.m4a", best?.fileName)
 
-        // Verify timestamp-only match within ±2 minutes also succeeds
-        val timeOnly = CallRecordingMatcher.matchRecordingFromCandidates(
-            call = call,
-            candidates = listOf(unrelatedOld, timestampMatch)
-        )
-        assertNotNull(timeOnly)
-        assertEquals("Voice_261118_1430.mp3", timeOnly?.fileName)
-
-        // Verify unrelated file outside ±2 minutes is rejected
+        // Verify wrong phone / wrong duration never falls back to a wrong file
         val none = CallRecordingMatcher.matchRecordingFromCandidates(
             call = call,
-            candidates = listOf(unrelatedOld)
+            candidates = listOf(unrelatedWrongPhone, wrongDuration),
+            timeZone = tz
         )
         assertNull(none)
 
@@ -290,4 +292,200 @@ class Batch20FeaturesTest {
         settings.setCallRecordingFolder("content://com.android.externalstorage.documents/tree/primary%3ARecordings%2FCall", "Recordings/Call")
         assertEquals("Recordings/Call", settings.callRecordingFolderLabel.value)
     }
+
+    @Test
+    fun samsungCallRecordingMatcher_handlesBldSaurabhTak_satishFukePair_andAmbiguousMatches() {
+        val tz = java.util.TimeZone.getTimeZone("Asia/Kolkata")
+        fun ts(y: Int, m: Int, d: Int, hh: Int, mm: Int, ss: Int): Long =
+            java.util.Calendar.getInstance(tz, java.util.Locale.US).apply {
+                isLenient = false
+                clear()
+                set(y, m - 1, d, hh, mm, ss)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }.timeInMillis
+
+        // 1. Bld Saurabh Tak (1m 23s) vs May Bld Sm Ujwal Hawa Mantra Leasing
+        val saurabhCall = CrmCallRecord(
+            id = "b20_saurabh",
+            callerName = "Bld Saurabh Tak",
+            phoneNumber = "9822044556",
+            callType = CallType.INCOMING,
+            durationSeconds = 83,
+            timestamp = ts(2026, 11, 21, 13, 21, 20)
+        )
+        val saurabhCorrect = CallRecordingCandidate(
+            fileName = "Call recording Bld Saurabh Tak_261121_132124.m4a",
+            uriOrPath = "content://media/external/audio/media/501",
+            lastModifiedMs = ts(2026, 11, 21, 13, 22, 44),
+            durationMs = 80_000L,
+            sizeBytes = 600_000L,
+            isContentUri = true
+        )
+        val mantraMayWrong = CallRecordingCandidate(
+            fileName = "Call recording Bld Sm Ujwal Hawa Mantra Leasing_260523_112501.m4a",
+            uriOrPath = "content://media/external/audio/media/502",
+            lastModifiedMs = ts(2026, 11, 21, 13, 22, 43), // even if modified today
+            durationMs = 83_000L,
+            sizeBytes = 610_000L,
+            isContentUri = true
+        )
+        assertEquals(
+            saurabhCorrect.fileName,
+            CallRecordingMatcher.matchRecordingFromCandidates(saurabhCall, listOf(mantraMayWrong, saurabhCorrect), tz)?.fileName
+        )
+        assertNull(
+            CallRecordingMatcher.matchRecordingFromCandidates(saurabhCall, listOf(mantraMayWrong), tz)
+        )
+
+        // 2. Satish Fuke two calls on 21 Nov 2026 (forward & reverse order)
+        val satish1 = CrmCallRecord(
+            id = "b20_satish_1",
+            callerName = "Satish Fuke",
+            phoneNumber = "9823011223",
+            callType = CallType.OUTGOING,
+            durationSeconds = 178,
+            timestamp = ts(2026, 11, 21, 13, 34, 18)
+        )
+        val satish2 = CrmCallRecord(
+            id = "b20_satish_2",
+            callerName = "Satish Fuke",
+            phoneNumber = "9823011223",
+            callType = CallType.OUTGOING,
+            durationSeconds = 462,
+            timestamp = ts(2026, 11, 21, 13, 37, 29)
+        )
+        val satishFile1 = CallRecordingCandidate(
+            fileName = "Call recording Satish Fuke_261121_133420.m4a",
+            uriOrPath = "content://media/external/audio/media/503",
+            lastModifiedMs = ts(2026, 11, 21, 13, 37, 17),
+            durationMs = 176_000L,
+            sizeBytes = 1_400_000L,
+            isContentUri = true
+        )
+        val satishFile2 = CallRecordingCandidate(
+            fileName = "Call recording Satish Fuke_261121_133731.m4a",
+            uriOrPath = "content://media/external/audio/media/504",
+            lastModifiedMs = ts(2026, 11, 21, 13, 45, 11),
+            durationMs = 460_000L,
+            sizeBytes = 3_680_000L,
+            isContentUri = true
+        )
+        val reverseResult = CallRecordingMatcher.matchRecordingsStrictOneToOne(
+            calls = listOf(satish2, satish1),
+            candidates = listOf(satishFile2, satishFile1),
+            timeZone = tz
+        )
+        assertEquals(satishFile1.fileName, reverseResult["b20_satish_1"]?.fileName)
+        assertEquals(satishFile2.fileName, reverseResult["b20_satish_2"]?.fileName)
+    }
+
+    @Test
+    fun unwantedCallAutoTagging_detectsSpamPersonalAndShort_whileProtectingRealAndLinkedCalls() {
+        val spam140 = CrmCallRecord(
+            id = "u_spam_140",
+            callerName = "Unknown",
+            phoneNumber = "+91 1409876543",
+            callType = CallType.INCOMING,
+            durationSeconds = 35,
+            timestamp = 1_763_400_000_000L
+        )
+        val spamNamed = CrmCallRecord(
+            id = "u_spam_named",
+            callerName = "Suspected Spam HDFC Loan",
+            phoneNumber = "9822000111",
+            callType = CallType.INCOMING,
+            durationSeconds = 25,
+            timestamp = 1_763_400_010_000L
+        )
+        val personalCall = CrmCallRecord(
+            id = "u_personal",
+            callerName = "Mom Home",
+            phoneNumber = "9822000222",
+            callType = CallType.OUTGOING,
+            durationSeconds = 120,
+            timestamp = 1_763_400_020_000L
+        )
+        val shortCall = CrmCallRecord(
+            id = "u_short",
+            callerName = "New Inquiry",
+            phoneNumber = "9822000333",
+            callType = CallType.INCOMING,
+            durationSeconds = 6,
+            timestamp = 1_763_400_030_000L
+        )
+        val missedCall = CrmCallRecord(
+            id = "u_missed",
+            callerName = "Callback Lead",
+            phoneNumber = "9822000444",
+            callType = CallType.MISSED,
+            durationSeconds = 0,
+            timestamp = 1_763_400_040_000L
+        )
+        val realBusinessCall = CrmCallRecord(
+            id = "u_real",
+            callerName = "Bld Saurabh Tak",
+            phoneNumber = "+91 98220 44556",
+            callType = CallType.INCOMING,
+            durationSeconds = 83,
+            timestamp = 1_763_400_050_000L
+        )
+        val linkedShortCall = shortCall.copy(id = "u_linked_short", isLinked = true)
+
+        assertEquals(UnwantedCallReason.SPAM_TELEMARKETER, CrmCallManager.classifyUnwantedCall(context, spam140))
+        assertEquals(UnwantedCallReason.SPAM_TELEMARKETER, CrmCallManager.classifyUnwantedCall(context, spamNamed))
+        assertEquals(UnwantedCallReason.PERSONAL_OR_IGNORED, CrmCallManager.classifyUnwantedCall(context, personalCall))
+        assertEquals(UnwantedCallReason.SHORT_OR_MISSED, CrmCallManager.classifyUnwantedCall(context, shortCall))
+        assertEquals(UnwantedCallReason.SHORT_OR_MISSED, CrmCallManager.classifyUnwantedCall(context, missedCall))
+        assertEquals(UnwantedCallReason.NONE, CrmCallManager.classifyUnwantedCall(context, realBusinessCall))
+        assertEquals(UnwantedCallReason.NONE, CrmCallManager.classifyUnwantedCall(context, linkedShortCall))
+    }
+
+    @Test
+    fun bulkHideToIgnoredAndReversibleRestore_updatesSkippedSetCleanly() {
+        val c1 = CrmCallRecord(
+            id = "bulk_1",
+            callerName = "Telemarketer",
+            phoneNumber = "1401112222",
+            callType = CallType.INCOMING,
+            durationSeconds = 12,
+            timestamp = 1_763_401_000_000L,
+            isLinked = false
+        )
+        val c2 = CrmCallRecord(
+            id = "bulk_2",
+            callerName = "Mom",
+            phoneNumber = "9822099988",
+            callType = CallType.OUTGOING,
+            durationSeconds = 55,
+            timestamp = 1_763_401_100_000L,
+            isLinked = false
+        )
+        val c3 = CrmCallRecord(
+            id = "bulk_3",
+            callerName = "Satish Fuke",
+            phoneNumber = "9823011223",
+            callType = CallType.OUTGOING,
+            durationSeconds = 178,
+            timestamp = 1_763_401_200_000L,
+            isLinked = false
+        )
+        CrmCallManager.saveCalls(context, listOf(c1, c2, c3))
+        CrmCallManager.enqueueUnloggedCall(context, c1)
+        CrmCallManager.enqueueUnloggedCall(context, c2)
+        CrmCallManager.enqueueUnloggedCall(context, c3)
+
+        // Bulk hide c1 & c2 to Ignored
+        CrmCallManager.markCallsSkipped(context, listOf(c1, c2))
+        assertTrue(CrmCallManager.isCallSkipped(context, c1))
+        assertTrue(CrmCallManager.isCallSkipped(context, c2))
+        assertFalse(CrmCallManager.isCallSkipped(context, c3))
+        assertEquals(listOf("bulk_3"), CrmCallManager.getUnloggedCallQueue(context).map { it.id })
+
+        // Reversible restore of c2 from Ignored back to active list
+        CrmCallManager.unskipCalls(context, listOf(c2))
+        assertTrue(CrmCallManager.isCallSkipped(context, c1))
+        assertFalse(CrmCallManager.isCallSkipped(context, c2))
+        assertFalse(CrmCallManager.isCallSkipped(context, c3))
+    }
 }
+

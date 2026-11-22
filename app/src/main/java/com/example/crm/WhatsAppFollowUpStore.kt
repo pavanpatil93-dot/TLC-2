@@ -2,12 +2,19 @@ package com.example.crm
 
 import android.content.Context
 import android.util.AtomicFile
+import com.example.ai.GeminiRealEstateService
+import com.example.ai.WhatsAppMessageClassification
+import com.example.model.CalculationUtils
 import com.example.model.PropertyItem
 import com.example.ui.screens.CrmLead
 import com.example.ui.screens.displayClientTitle
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -31,7 +38,16 @@ data class WhatsAppFollowUpMessage(
     val groupName: String = "",
     val senderSubName: String = "",
     val skipped: Boolean = false,
-    val skippedAt: Long? = null
+    val skippedAt: Long? = null,
+    // Gemini AI Inbox fields (backward-compatible defaults)
+    val aiStatus: String = "NONE", // NONE, PENDING, ANALYZED, APPROVED
+    val aiIntent: String = "", // PROPERTY_LISTING, CLIENT_REQUIREMENT, EXISTING_PROPERTY_UPDATE, FOLLOW_UP, UNRELATED
+    val aiConfidence: Int = 0,
+    val aiSummary: String = "",
+    val aiLocation: String = "",
+    val aiBudgetOrRent: String = "",
+    val aiAreaText: String = "",
+    val aiReviewFlagCount: Int = 0
 ) {
     fun effectiveThreadKey(): String {
         if (threadKey.isNotBlank()) return threadKey
@@ -45,6 +61,14 @@ data class WhatsAppFollowUpMessage(
 
     fun formattedBodyLine(): String =
         if (isGroup && senderSubName.isNotBlank()) "$senderSubName: $messageText" else messageText
+
+    fun isAiInboxEligible(): Boolean =
+        !reviewed && !skipped && (
+            aiStatus == "PENDING" ||
+                aiStatus == "ANALYZED" ||
+                aiIntent in setOf("PROPERTY_LISTING", "CLIENT_REQUIREMENT", "EXISTING_PROPERTY_UPDATE") ||
+                matchedKeywords.isNotEmpty()
+            )
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -62,6 +86,14 @@ data class WhatsAppFollowUpMessage(
         put("senderSubName", senderSubName)
         put("skipped", skipped)
         if (skippedAt != null) put("skippedAt", skippedAt)
+        put("aiStatus", aiStatus)
+        put("aiIntent", aiIntent)
+        put("aiConfidence", aiConfidence)
+        put("aiSummary", aiSummary)
+        put("aiLocation", aiLocation)
+        put("aiBudgetOrRent", aiBudgetOrRent)
+        put("aiAreaText", aiAreaText)
+        put("aiReviewFlagCount", aiReviewFlagCount)
     }
 
     companion object {
@@ -96,7 +128,15 @@ data class WhatsAppFollowUpMessage(
                 groupName = obj.optString("groupName", ""),
                 senderSubName = obj.optString("senderSubName", ""),
                 skipped = obj.optBoolean("skipped", false),
-                skippedAt = skipAt
+                skippedAt = skipAt,
+                aiStatus = obj.optString("aiStatus", "NONE"),
+                aiIntent = obj.optString("aiIntent", ""),
+                aiConfidence = obj.optInt("aiConfidence", 0),
+                aiSummary = obj.optString("aiSummary", ""),
+                aiLocation = obj.optString("aiLocation", ""),
+                aiBudgetOrRent = obj.optString("aiBudgetOrRent", ""),
+                aiAreaText = obj.optString("aiAreaText", ""),
+                aiReviewFlagCount = obj.optInt("aiReviewFlagCount", 0)
             )
         }
     }
@@ -131,7 +171,12 @@ data class WhatsAppThreadCluster(
     val hasInventorySignal: Boolean,
     val bestMatch: WhatsAppSenderMatch,
     val isReviewed: Boolean,
-    val isSkipped: Boolean
+    val isSkipped: Boolean,
+    val aiStatus: String = "NONE",
+    val aiIntent: String = "",
+    val aiConfidence: Int = 0,
+    val aiSummary: String = "",
+    val aiReviewFlagCount: Int = 0
 ) {
     fun messageIds(): List<String> = messages.map { it.id }
 
@@ -144,8 +189,9 @@ data class WhatsAppThreadCluster(
 
 /**
  * Strictly ON-DEVICE store in context.filesDir for incoming WhatsApp & WhatsApp Business
- * reply notifications. Never synced to Google Sheets automatically.
- * Auto-expires reviewed/skipped items after 7 days.
+ * reply notifications + Gemini AI Inbox queue. Never synced to Google Sheets automatically
+ * until the user taps Approve.
+ * Auto-expires reviewed/skipped items after 48 hours.
  */
 object WhatsAppFollowUpStore {
     private const val FILE_MESSAGES = "wa_followup_messages.json"
@@ -154,21 +200,60 @@ object WhatsAppFollowUpStore {
     private const val MAX_STORED_MESSAGES = 150
 
     private val lock = Any()
+    private val aiScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _unreadCount = MutableStateFlow(0)
     val unreadCount: StateFlow<Int> = _unreadCount.asStateFlow()
 
+    private val _aiInboxCount = MutableStateFlow(0)
+    val aiInboxCount: StateFlow<Int> = _aiInboxCount.asStateFlow()
+
     val FOLLOWUP_KEYWORDS = listOf(
-        "visit", "tomorrow", "call me", "available", "budget",
-        "rent", "sqft", "sq ft", "sq.ft", "share details",
+        "visit", "site visit", "tomorrow", "call me", "available", "budget",
+        "rent", "lease", "sale", "resale", "sqft", "sq ft", "sq.ft", "sft",
+        "carpet", "built up", "bua", "bhk", "office", "shop", "showroom",
+        "warehouse", "plot", "land", "furnished", "unfurnished", "warm shell",
+        "bare shell", "requirement", "looking for", "need ", "pre-leased",
+        "preleased", "roi", "possession", "deposit", "share details",
         "interested", "agreement", "udya", "bhetu"
     )
 
-    private val INVENTORY_SIGNAL_TERMS = listOf(
-        "sq.ft", "sqft", "sq ft", "sft", "carpet", "rent", "sale",
-        "furnished", "unfurnished", "semi-furnished", "warm shell", "bare shell",
-        "floor", "unit", "office", "shop", "showroom", "bhk", "lac", "lakh", "cr", "crore"
+    val PUNE_REAL_ESTATE_LOCALITIES = listOf(
+        "kharadi", "baner", "balewadi", "hinjewadi", "wakad", "viman nagar",
+        "kalyani nagar", "koregaon park", "magarpatta", "hadapsar", "aundh",
+        "bavdhan", "kothrud", "shivajinagar", "sb road", "fc road", "jm road",
+        "bund garden", "yerwada", "wagholi", "pimple saudagar", "mundhwa", "keshav nagar"
     )
+
+    private val INVENTORY_SIGNAL_TERMS = listOf(
+        "sq.ft", "sqft", "sq ft", "sft", "carpet", "rent", "sale", "lease",
+        "furnished", "unfurnished", "semi-furnished", "warm shell", "bare shell",
+        "floor", "unit", "office", "shop", "showroom", "bhk", "lac", "lakh", "cr", "crore",
+        "pre-leased", "preleased", "workstation", "cabin"
+    )
+
+    /**
+     * Real-estate notification keyword pre-gate: returns true only when an incoming WhatsApp
+     * notification contains genuine property/brokerage intent so personal chats stay untouched.
+     */
+    fun hasRealEstateKeyword(text: String): Boolean {
+        val clean = text.trim()
+        if (clean.length < 8) return false
+        val lower = clean.lowercase(Locale.ENGLISH)
+        val strongTerms = listOf(
+            "sq.ft", "sqft", "sq ft", "sft", "carpet", "bhk", "office space", "commercial office",
+            "shop for", "showroom", "warehouse", "pre-leased", "preleased", "warm shell", "bare shell",
+            "site visit", "looking for", "requirement", "client req", "urgent req", "for lease",
+            "for rent", "for sale", "available for rent", "available for lease", "available for sale",
+            "resale", "workstation", "semi furnished", "fully furnished", "unfurnished"
+        )
+        if (strongTerms.any { lower.contains(it) }) return true
+
+        val localityHit = PUNE_REAL_ESTATE_LOCALITIES.any { lower.contains(it) }
+        val genericPropHit = listOf("office", "shop", "flat", "apartment", "villa", "plot", "land", "rent", "lease", "sale", "budget", "deposit", "possession", "brokerage", "roi", "lac", "lakh", "cr", "crore").count { lower.contains(it) }
+        val hasNumber = Regex("\\d").containsMatchIn(lower)
+        return (localityHit && (genericPropHit >= 1 || hasNumber)) || (genericPropHit >= 2) || (genericPropHit >= 1 && hasNumber && lower.contains("k "))
+    }
 
     private val IGNORED_SYSTEM_TITLES = setOf(
         "whatsapp", "whatsapp business", "you", "checking for new messages",
@@ -310,6 +395,7 @@ object WhatsAppFollowUpStore {
             saveMessagesInternal(context, finalCapped)
         }
         _unreadCount.value = finalCapped.count { !it.reviewed && !it.skipped }
+        _aiInboxCount.value = finalCapped.count { it.isAiInboxEligible() }
         return finalCapped
     }
 
@@ -322,6 +408,7 @@ object WhatsAppFollowUpStore {
         }
         writeAtomic(context, FILE_MESSAGES, arr.toString())
         _unreadCount.value = trimmed.count { !it.reviewed && !it.skipped }
+        _aiInboxCount.value = trimmed.count { it.isAiInboxEligible() }
     }
 
     fun refreshUnreadCount(context: Context): Int = synchronized(lock) {
@@ -340,7 +427,14 @@ object WhatsAppFollowUpStore {
         val idSet = messageIds.toSet()
         val now = System.currentTimeMillis()
         val updated = loadMessagesInternal(context).map { msg ->
-            if (msg.id in idSet) msg.copy(reviewed = true, reviewedAt = now, skipped = false) else msg
+            if (msg.id in idSet) {
+                msg.copy(
+                    reviewed = true,
+                    reviewedAt = now,
+                    skipped = false,
+                    aiStatus = if (msg.aiStatus != "NONE") "APPROVED" else msg.aiStatus
+                )
+            } else msg
         }
         saveMessagesInternal(context, updated)
         updated
@@ -354,6 +448,133 @@ object WhatsAppFollowUpStore {
         }
         saveMessagesInternal(context, updated)
         updated
+    }
+
+    /**
+     * Persists Gemini AI Inbox classification & extracted spec preview for a captured message.
+     */
+    fun updateMessageAiAnalysis(
+        context: Context,
+        messageId: String,
+        aiIntent: String,
+        aiConfidence: Int,
+        aiSummary: String,
+        aiLocation: String = "",
+        aiBudgetOrRent: String = "",
+        aiAreaText: String = "",
+        aiReviewFlagCount: Int = 0
+    ): List<WhatsAppFollowUpMessage> = synchronized(lock) {
+        val updated = loadMessagesInternal(context).map { msg ->
+            if (msg.id == messageId) {
+                msg.copy(
+                    aiStatus = if (aiIntent == "UNRELATED") "NONE" else "ANALYZED",
+                    aiIntent = aiIntent,
+                    aiConfidence = aiConfidence.coerceIn(0, 100),
+                    aiSummary = aiSummary.trim(),
+                    aiLocation = aiLocation.trim(),
+                    aiBudgetOrRent = aiBudgetOrRent.trim(),
+                    aiAreaText = aiAreaText.trim(),
+                    aiReviewFlagCount = aiReviewFlagCount.coerceAtLeast(0)
+                )
+            } else msg
+        }
+        saveMessagesInternal(context, updated)
+        updated
+    }
+
+    /**
+     * Runs Gemini (with automatic safe offline fallback) to classify a captured WhatsApp message
+     * into PROPERTY_LISTING, CLIENT_REQUIREMENT, EXISTING_PROPERTY_UPDATE, or UNRELATED,
+     * and saves a compact spec preview to the on-device AI Inbox queue for 1-tap approval.
+     */
+    suspend fun analyzeMessageForAiInbox(
+        context: Context,
+        message: WhatsAppFollowUpMessage,
+        aiService: GeminiRealEstateService = GeminiRealEstateService()
+    ): List<WhatsAppFollowUpMessage> {
+        val senderLabel = if (message.isGroup && message.senderSubName.isNotBlank()) message.senderSubName else message.senderName
+        val batch = runCatching {
+            aiService.extractWhatsAppSafely(
+                rawText = message.messageText,
+                senderName = senderLabel,
+                senderPhone = message.senderPhone
+            )
+        }.getOrNull() ?: return getMessages(context)
+
+        var summary = ""
+        var loc = ""
+        var budgetOrRent = ""
+        var areaText = ""
+        var flagCount = 0
+
+        when (batch.classification) {
+            WhatsAppMessageClassification.PROPERTY_LISTING,
+            WhatsAppMessageClassification.EXISTING_PROPERTY_UPDATE,
+            WhatsAppMessageClassification.AMBIGUOUS_NEEDS_REVIEW -> {
+                val draft = batch.drafts.firstOrNull()
+                if (draft != null) {
+                    loc = draft.location
+                    if (draft.carpetAreaSqFt > 0.0) {
+                        areaText = "${CalculationUtils.formatNumber(draft.carpetAreaSqFt)} sq.ft CA"
+                    } else if ((draft.builtUpAreaSqFt ?: 0.0) > 0.0) {
+                        areaText = "${CalculationUtils.formatNumber(draft.builtUpAreaSqFt!!)} sq.ft BUA"
+                    }
+                    val amount = draft.rent ?: draft.priceSale ?: draft.priceOrRent
+                    if (amount > 0.0) {
+                        budgetOrRent = CalculationUtils.formatIndianCurrency(amount, isMonthly = draft.tab.isRental)
+                    }
+                    flagCount = draft.reviewWarnings.size + draft.extractedFields.values.count { it.needsReview }
+                    val multiTag = if (batch.drafts.size > 1) "+${batch.drafts.size - 1} more" else null
+                    summary = listOfNotNull(
+                        draft.projectName.takeIf { it.isNotBlank() } ?: draft.propertyType.takeIf { it.isNotBlank() },
+                        loc.takeIf { it.isNotBlank() },
+                        areaText.takeIf { it.isNotBlank() },
+                        budgetOrRent.takeIf { it.isNotBlank() },
+                        multiTag
+                    ).joinToString(" • ")
+                }
+            }
+            WhatsAppMessageClassification.CLIENT_REQUIREMENT -> {
+                val leadDraft = runCatching {
+                    aiService.parseBrokerOrClientLeadsBatch(message.messageText).firstOrNull()
+                }.getOrNull()
+                if (leadDraft != null) {
+                    loc = leadDraft.location
+                    areaText = leadDraft.areaRangeText
+                    budgetOrRent = leadDraft.budgetText
+                    summary = listOfNotNull(
+                        leadDraft.requirementSummary.takeIf { it.isNotBlank() },
+                        loc.takeIf { it.isNotBlank() },
+                        budgetOrRent.takeIf { it.isNotBlank() }
+                    ).joinToString(" • ")
+                }
+            }
+            WhatsAppMessageClassification.UNRELATED -> {
+                summary = ""
+            }
+        }
+
+        val resolvedIntent = when (batch.classification) {
+            WhatsAppMessageClassification.PROPERTY_LISTING -> "PROPERTY_LISTING"
+            WhatsAppMessageClassification.CLIENT_REQUIREMENT -> "CLIENT_REQUIREMENT"
+            WhatsAppMessageClassification.EXISTING_PROPERTY_UPDATE -> "EXISTING_PROPERTY_UPDATE"
+            WhatsAppMessageClassification.AMBIGUOUS_NEEDS_REVIEW -> {
+                if (batch.drafts.isNotEmpty()) "PROPERTY_LISTING" else "FOLLOW_UP"
+            }
+            WhatsAppMessageClassification.UNRELATED -> "UNRELATED"
+        }
+
+        return updateMessageAiAnalysis(
+            context = context,
+            messageId = message.id,
+            aiIntent = resolvedIntent,
+            aiConfidence = batch.classificationConfidence,
+            aiSummary = summary.ifBlank { batch.classificationReason.take(120) },
+            aiLocation = loc,
+            aiBudgetOrRent = budgetOrRent,
+            aiAreaText = areaText,
+            aiReviewFlagCount = flagCount
+        )
     }
 
     fun clearReviewed(context: Context): List<WhatsAppFollowUpMessage> = synchronized(lock) {
@@ -398,6 +619,7 @@ object WhatsAppFollowUpStore {
         if (isMutedSender(context, cleanTitle, senderPhone)) return
 
         val matchedKeywords = extractMatchingKeywords(cleanText)
+        val hasRealEstateSignal = hasRealEstateKeyword(cleanText)
         val computedThreadKey = if (isGroupChat) {
             "grp:${normalizeSenderKey(cleanTitle)}"
         } else if (senderPhone.length == 10) {
@@ -406,6 +628,7 @@ object WhatsAppFollowUpStore {
             "nm:${normalizeSenderKey(cleanTitle)}"
         }
 
+        var newlyCaptured: WhatsAppFollowUpMessage? = null
         synchronized(lock) {
             val existing = loadMessagesInternal(context).toMutableList()
             val normBody = cleanText.trim().lowercase(Locale.ENGLISH)
@@ -415,27 +638,38 @@ object WhatsAppFollowUpStore {
             }
             if (duplicate) return
 
-            existing.add(
-                0,
-                WhatsAppFollowUpMessage(
-                    id = UUID.randomUUID().toString(),
-                    senderName = cleanTitle,
-                    senderPhone = senderPhone,
-                    packageName = packageName,
-                    messageText = cleanText,
-                    timestamp = timestampMs,
-                    reviewed = false,
-                    reviewedAt = null,
-                    matchedKeywords = matchedKeywords,
-                    threadKey = computedThreadKey,
-                    isGroup = isGroupChat,
-                    groupName = if (isGroupChat) cleanTitle else "",
-                    senderSubName = groupMemberName,
-                    skipped = false,
-                    skippedAt = null
-                )
+            val entry = WhatsAppFollowUpMessage(
+                id = UUID.randomUUID().toString(),
+                senderName = cleanTitle,
+                senderPhone = senderPhone,
+                packageName = packageName,
+                messageText = cleanText,
+                timestamp = timestampMs,
+                reviewed = false,
+                reviewedAt = null,
+                matchedKeywords = matchedKeywords,
+                threadKey = computedThreadKey,
+                isGroup = isGroupChat,
+                groupName = if (isGroupChat) cleanTitle else "",
+                senderSubName = groupMemberName,
+                skipped = false,
+                skippedAt = null,
+                aiStatus = if (hasRealEstateSignal) "PENDING" else "NONE"
             )
+            newlyCaptured = entry
+            existing.add(0, entry)
             saveMessagesInternal(context, existing)
+        }
+
+        // Non-blocking background Gemini classification into AI Inbox when real-estate keywords matched
+        val targetMsg = newlyCaptured
+        if (hasRealEstateSignal && targetMsg != null) {
+            val appCtx = context.applicationContext ?: context
+            aiScope.launch {
+                runCatching {
+                    analyzeMessageForAiInbox(appCtx, targetMsg)
+                }
+            }
         }
     }
 
@@ -453,6 +687,7 @@ object WhatsAppFollowUpStore {
         pocLinks: Map<String, ProjectPocEntry>
     ): List<WhatsAppThreadCluster> {
         val baseScoped = when (filter) {
+            "AI Inbox" -> messages.filter { it.isAiInboxEligible() }
             "Unread" -> messages.filter { !it.reviewed && !it.skipped }
             "Keywords" -> messages.filter { !it.skipped && it.matchedKeywords.isNotEmpty() }
             "Skipped" -> messages.filter { it.skipped }
@@ -482,6 +717,16 @@ object WhatsAppFollowUpStore {
                 candidate.takeIf { it.role != FollowUpSenderRole.UNMATCHED }
             } ?: matchSender(latest, leads, inventory, brokerContacts, pocLinks)
 
+            val bestAiMsg = chronological.lastOrNull { it.aiIntent.isNotBlank() && it.aiIntent != "UNRELATED" }
+                ?: chronological.lastOrNull { it.aiStatus == "PENDING" }
+                ?: latest
+            val effectiveAiStatus = when {
+                chronological.any { it.aiStatus == "ANALYZED" } -> "ANALYZED"
+                chronological.any { it.aiStatus == "PENDING" } -> "PENDING"
+                chronological.any { it.aiStatus == "APPROVED" } -> "APPROVED"
+                else -> "NONE"
+            }
+
             WhatsAppThreadCluster(
                 threadKey = latest.effectiveThreadKey(),
                 displayName = latest.groupName.ifBlank { latest.senderName },
@@ -491,10 +736,17 @@ object WhatsAppFollowUpStore {
                 latestTimestamp = latest.timestamp,
                 combinedText = combined,
                 allKeywords = keywords,
-                hasInventorySignal = hasInventoryListingSignal(combined),
+                hasInventorySignal = hasInventoryListingSignal(combined) ||
+                    bestAiMsg.aiIntent == "PROPERTY_LISTING" ||
+                    bestAiMsg.aiIntent == "EXISTING_PROPERTY_UPDATE",
                 bestMatch = bestMatch,
                 isReviewed = clusterMsgs.all { it.reviewed },
-                isSkipped = clusterMsgs.all { it.skipped }
+                isSkipped = clusterMsgs.all { it.skipped },
+                aiStatus = effectiveAiStatus,
+                aiIntent = bestAiMsg.aiIntent,
+                aiConfidence = bestAiMsg.aiConfidence,
+                aiSummary = bestAiMsg.aiSummary,
+                aiReviewFlagCount = bestAiMsg.aiReviewFlagCount
             )
         }.sortedByDescending { it.latestTimestamp }
     }

@@ -9,6 +9,7 @@ import com.example.data.EmployeeActivityJournal
 import com.example.data.UserSettingsManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
 import android.net.Uri
 import android.speech.RecognizerIntent
 import android.text.format.DateFormat
@@ -59,8 +60,10 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 private data class CrmCallsComputedState(
+    val activeCallsCount: Int = 0,
     val unlinkedCount: Int = 0,
-    val skippedCount: Int = 0,
+    val unwantedCount: Int = 0,
+    val ignoredCount: Int = 0,
     val internalCount: Int = 0,
     val todayCallsCount: Int = 0,
     val convertedCount: Int = 0,
@@ -68,7 +71,8 @@ private data class CrmCallsComputedState(
     val incomingCount: Int = 0,
     val outgoingCount: Int = 0,
     val filteredCalls: List<CrmCallRecord> = emptyList(),
-    val followUpByCallId: Map<String, Pair<FollowUpState, String?>> = emptyMap()
+    val followUpByCallId: Map<String, Pair<FollowUpState, String?>> = emptyMap(),
+    val unwantedReasonByCallId: Map<String, UnwantedCallReason> = emptyMap()
 )
 
 @Composable
@@ -189,10 +193,93 @@ fun CrmCallsScreen(
 
     var callsComputed by remember { mutableStateOf(CrmCallsComputedState()) }
     var skippedRefreshTick by remember { mutableIntStateOf(0) }
+
+    // Single-pass batch Samsung/OEM recording match state (scanned once off the UI thread)
+    var recordingOutcomesByCallId by remember { mutableStateOf<Map<String, CallRecordingMatchOutcome>>(emptyMap()) }
+    var isBatchMatchingRecordings by remember { mutableStateOf(false) }
+    var recordingScanTick by remember { mutableIntStateOf(0) }
+
+    // Single shared MediaPlayer controller across the Calls list (prevents overlapping audio & leaks)
+    var activePlayingCallId by remember { mutableStateOf<String?>(null) }
+    var inlineMediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var inlineAudioErrorByCallId by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+
+    fun stopInlinePlayback() {
+        runCatching {
+            inlineMediaPlayer?.stop()
+            inlineMediaPlayer?.release()
+        }
+        inlineMediaPlayer = null
+        activePlayingCallId = null
+    }
+
+    fun toggleInlineRecordingPlay(call: CrmCallRecord, recording: MatchedCallRecording) {
+        if (activePlayingCallId == call.id) {
+            stopInlinePlayback()
+            return
+        }
+        stopInlinePlayback()
+        inlineAudioErrorByCallId = inlineAudioErrorByCallId - call.id
+        runCatching {
+            if (!CallRecordingMatcher.canOpenAudioRecording(context, recording)) {
+                throw IllegalStateException("Audio file cannot be opened")
+            }
+            val mp = MediaPlayer()
+            if (recording.isContentUri || recording.uriOrPath.startsWith("content://")) {
+                mp.setDataSource(context, Uri.parse(recording.uriOrPath))
+            } else {
+                mp.setDataSource(recording.uriOrPath)
+            }
+            mp.setOnCompletionListener {
+                if (activePlayingCallId == call.id) {
+                    stopInlinePlayback()
+                }
+            }
+            mp.prepare()
+            mp.start()
+            inlineMediaPlayer = mp
+            activePlayingCallId = call.id
+        }.onFailure {
+            stopInlinePlayback()
+            inlineAudioErrorByCallId = inlineAudioErrorByCallId + (
+                call.id to "Could not open \"${recording.fileName}\". Call notes were left intact."
+            )
+            Toast.makeText(context, "Unable to open ${recording.fileName}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            stopInlinePlayback()
+        }
+    }
+
+    // Batch-match all loaded calls in ONE background folder scan (no per-card folder scan!)
+    LaunchedEffect(calls, recordingScanTick) {
+        if (calls.isEmpty()) {
+            recordingOutcomesByCallId = emptyMap()
+            isBatchMatchingRecordings = false
+            return@LaunchedEffect
+        }
+        isBatchMatchingRecordings = true
+        val outcomes = CallRecordingMatcher.matchRecordingOutcomesForCallsOnDemand(context, calls)
+        recordingOutcomesByCallId = outcomes
+        isBatchMatchingRecordings = false
+    }
+
+    // Multi-select bulk cleanup state
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedCallIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(selectedFilter) {
+        selectedCallIds = emptySet()
+    }
+
     LaunchedEffect(calls, selectedFilter, debouncedSearchQuery, externalRefreshTick, skippedRefreshTick) {
         callsComputed = withContext(Dispatchers.Default) {
+            var activeCount = 0
             var unlinked = 0
-            var skipped = 0
+            var unwanted = 0
+            var ignored = 0
             var internal = 0
             var todayCount = 0
             var converted = 0
@@ -202,31 +289,49 @@ fun CrmCallsScreen(
             val q = debouncedSearchQuery.trim()
             val filtered = ArrayList<CrmCallRecord>(calls.size)
             val followUpMap = HashMap<String, Pair<FollowUpState, String?>>(calls.size)
+            val unwantedMap = HashMap<String, UnwantedCallReason>(calls.size)
 
             for (call in calls) {
                 val isInternal = CrmCallManager.isInternalTeamCall(context, call)
-                val isSkipped = CrmCallManager.isCallSkipped(context, call)
-                when {
-                    isInternal -> internal++
-                    isSkipped && !call.isLinked -> skipped++
-                    !call.isLinked -> unlinked++
-                    else -> converted++
+                val isIgnored = CrmCallManager.isCallSkipped(context, call)
+                val unwantedReason = if (!isInternal && !call.isLinked) {
+                    CrmCallManager.classifyUnwantedCall(context, call)
+                } else {
+                    UnwantedCallReason.NONE
                 }
-                if (call.timestamp >= today) todayCount++
-                when (call.callType) {
-                    CallType.MISSED -> missed++
-                    CallType.INCOMING -> incoming++
-                    CallType.OUTGOING -> outgoing++
+                unwantedMap[call.id] = unwantedReason
+
+                if (isIgnored && !call.isLinked) {
+                    ignored++
+                } else {
+                    activeCount++
+                    when {
+                        isInternal -> internal++
+                        !call.isLinked -> {
+                            unlinked++
+                            if (unwantedReason != UnwantedCallReason.NONE) unwanted++
+                        }
+                        else -> converted++
+                    }
+                    if (call.timestamp >= today) todayCount++
+                    when (call.callType) {
+                        CallType.MISSED -> missed++
+                        CallType.INCOMING -> incoming++
+                        CallType.OUTGOING -> outgoing++
+                    }
                 }
+
                 val matchesFilter = when (selectedFilter) {
-                    "Unlinked" -> !call.isLinked && !isSkipped && !isInternal
-                    "Skipped" -> isSkipped && !call.isLinked && !isInternal
-                    "Internal" -> isInternal
-                    "Incoming" -> call.callType == CallType.INCOMING
-                    "Outgoing" -> call.callType == CallType.OUTGOING
-                    "Missed" -> call.callType == CallType.MISSED
+                    "All" -> !isIgnored
+                    "Unlinked" -> !call.isLinked && !isIgnored && !isInternal
+                    "Unwanted" -> !call.isLinked && !isIgnored && !isInternal && unwantedReason != UnwantedCallReason.NONE
+                    "Ignored" -> isIgnored && !call.isLinked
+                    "Internal" -> isInternal && !isIgnored
+                    "Incoming" -> !isIgnored && call.callType == CallType.INCOMING
+                    "Outgoing" -> !isIgnored && call.callType == CallType.OUTGOING
+                    "Missed" -> !isIgnored && call.callType == CallType.MISSED
                     "Converted" -> call.isLinked
-                    else -> true
+                    else -> !isIgnored
                 }
                 val matchesSearch = q.isBlank() ||
                     call.callerName.contains(q, ignoreCase = true) ||
@@ -242,8 +347,10 @@ fun CrmCallsScreen(
             }
 
             CrmCallsComputedState(
+                activeCallsCount = activeCount,
                 unlinkedCount = unlinked,
-                skippedCount = skipped,
+                unwantedCount = unwanted,
+                ignoredCount = ignored,
                 internalCount = internal,
                 todayCallsCount = todayCount,
                 convertedCount = converted,
@@ -251,7 +358,8 @@ fun CrmCallsScreen(
                 incomingCount = incoming,
                 outgoingCount = outgoing,
                 filteredCalls = filtered,
-                followUpByCallId = followUpMap
+                followUpByCallId = followUpMap,
+                unwantedReasonByCallId = unwantedMap
             )
         }
     }
@@ -261,6 +369,13 @@ fun CrmCallsScreen(
     convertedCount = callsComputed.convertedCount
     val filteredCalls = callsComputed.filteredCalls
     val followUpByCallId = callsComputed.followUpByCallId
+    val unwantedReasonByCallId = callsComputed.unwantedReasonByCallId
+    val matchedRecordingsCount = remember(recordingOutcomesByCallId, calls, skippedRefreshTick) {
+        calls.count { call ->
+            !CrmCallManager.isCallSkipped(context, call) &&
+                recordingOutcomesByCallId[call.id]?.status == CallRecordingMatchStatus.MATCHED
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -282,11 +397,16 @@ fun CrmCallsScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                CompactCallStatPill(label = "All", value = "${calls.size}")
+                CompactCallStatPill(label = "All", value = "${callsComputed.activeCallsCount}")
                 CompactCallStatPill(
                     label = "Unlinked",
                     value = "$unlinkedCount",
                     highlight = unlinkedCount > 0
+                )
+                CompactCallStatPill(
+                    label = "Recs",
+                    value = if (isBatchMatchingRecordings) "..." else "$matchedRecordingsCount",
+                    highlight = matchedRecordingsCount > 0
                 )
                 CompactCallStatPill(label = "Today", value = "$todayCallsCount")
                 CompactCallStatPill(label = "Conv", value = "$convertedCount")
@@ -365,9 +485,48 @@ fun CrmCallsScreen(
                 Text("Import", fontSize = 12.sp)
             }
 
+            OutlinedButton(
+                onClick = {
+                    if (isSelectionMode) {
+                        isSelectionMode = false
+                        selectedCallIds = emptySet()
+                    } else {
+                        isSelectionMode = true
+                        if (selectedFilter == "All" && callsComputed.unwantedCount > 0) {
+                            selectedCallIds = filteredCalls
+                                .filter { (unwantedReasonByCallId[it.id] ?: UnwantedCallReason.NONE) != UnwantedCallReason.NONE }
+                                .map { it.id }
+                                .toSet()
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(
+                    1.dp,
+                    if (isSelectionMode || callsComputed.unwantedCount > 0) PrimaryActionOrange.copy(alpha = 0.7f) else BorderGrey
+                ),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("calls_cleanup_select_btn")
+            ) {
+                Icon(
+                    imageVector = if (isSelectionMode) Icons.Default.Close else Icons.Default.CleaningServices,
+                    contentDescription = "Bulk clean up unwanted calls",
+                    tint = if (isSelectionMode || callsComputed.unwantedCount > 0) PrimaryActionOrange else TextPrimaryDark,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = if (isSelectionMode) "Done" else if (callsComputed.unwantedCount > 0) "Clean (${callsComputed.unwantedCount})" else "Select",
+                    fontSize = 12.sp
+                )
+            }
+
             if (onNewCallReview != null || onOpenPostCallQueue != null || onOpenPostCallSheet != null) {
                 OutlinedButton(
                     onClick = {
+                        stopInlinePlayback()
                         val unlinkedQueue = calls.filter {
                             !it.isLinked &&
                                 !CrmCallManager.isCallSkipped(context, it) &&
@@ -397,7 +556,10 @@ fun CrmCallsScreen(
 
             if (onOpenSavedReviews != null) {
                 OutlinedButton(
-                    onClick = onOpenSavedReviews,
+                    onClick = {
+                        stopInlinePlayback()
+                        onOpenSavedReviews()
+                    },
                     shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                     modifier = Modifier
@@ -543,20 +705,21 @@ fun CrmCallsScreen(
 
         Spacer(Modifier.height(6.dp))
 
-        // Filter Chips (Batch 20: includes Skipped chip so skipped calls stay out of Unlinked)
+        // Filter Chips: active calls exclude Ignored; Ignored tab lets user review & restore hidden calls
         androidx.compose.foundation.lazy.LazyRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             val filterOptions = listOf(
-                "All" to "${calls.size}",
+                "All" to "${callsComputed.activeCallsCount}",
                 "Unlinked" to "$unlinkedCount",
+                "Unwanted" to "${callsComputed.unwantedCount}",
                 "Missed" to "${callsComputed.missedCount}",
                 "Incoming" to "${callsComputed.incomingCount}",
                 "Outgoing" to "${callsComputed.outgoingCount}",
                 "Converted" to "$convertedCount",
                 "Internal" to "${callsComputed.internalCount}",
-                "Skipped" to "${callsComputed.skippedCount}"
+                "Ignored" to "${callsComputed.ignoredCount}"
             )
             items(filterOptions, key = { it.first }) { (label, count) ->
                 FilterChip(
@@ -568,11 +731,35 @@ fun CrmCallsScreen(
             }
         }
 
+        if (isBatchMatchingRecordings) {
+            Spacer(Modifier.height(4.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 2.dp)
+                    .testTag("calls_batch_recording_scan_bar")
+            ) {
+                CircularProgressIndicator(
+                    color = PrimaryActionOrange,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(13.dp)
+                )
+                Text(
+                    text = "Matching call recordings across linked folder...",
+                    fontSize = 11.sp,
+                    color = TextSecondaryDark
+                )
+            }
+        }
+
         Spacer(Modifier.height(6.dp))
 
         // Call Records List (Expanded primary content area)
         LazyColumn(
             verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = if (isSelectionMode) 12.dp else 20.dp),
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
@@ -580,9 +767,12 @@ fun CrmCallsScreen(
         ) {
             items(filteredCalls, key = { it.id }) { call ->
                 val followUpEntry = followUpByCallId[call.id]
+                val outcome = recordingOutcomesByCallId[call.id]
+                val unwantedReason = unwantedReasonByCallId[call.id] ?: UnwantedCallReason.NONE
                 CallRecordCard(
                     call = call,
                     onCreateOpportunity = {
+                        stopInlinePlayback()
                         val unlinkedQueue = calls.filter { !it.isLinked && !CrmCallManager.isCallSkipped(context, it) }
                         if (!call.isLinked && onOpenPostCallQueue != null && unlinkedQueue.isNotEmpty()) {
                             val idx = unlinkedQueue.indexOfFirst { it.id == call.id }.coerceAtLeast(0)
@@ -600,7 +790,31 @@ fun CrmCallsScreen(
                     loggedInEmployeeName = userProfile.username.ifBlank { "TLC Team" },
                     followUpState = followUpEntry?.first ?: FollowUpState.NONE,
                     followUpDate = followUpEntry?.second,
-                    canViewUnmaskedConfidential = canViewUnmaskedConfidential
+                    canViewUnmaskedConfidential = canViewUnmaskedConfidential,
+                    recordingOutcome = outcome,
+                    isPlayingInline = activePlayingCallId == call.id,
+                    inlineAudioError = inlineAudioErrorByCallId[call.id],
+                    onToggleInlinePlay = { rec -> toggleInlineRecordingPlay(call, rec) },
+                    onRecordingOutcomeChanged = { updatedOutcome ->
+                        recordingOutcomesByCallId = recordingOutcomesByCallId + (call.id to updatedOutcome)
+                    },
+                    allCallsForStrictDedup = calls,
+                    unwantedReason = unwantedReason,
+                    isSelectionMode = isSelectionMode,
+                    isSelected = call.id in selectedCallIds,
+                    onToggleSelect = {
+                        selectedCallIds = if (call.id in selectedCallIds) {
+                            selectedCallIds - call.id
+                        } else {
+                            selectedCallIds + call.id
+                        }
+                    },
+                    isIgnoredTab = selectedFilter == "Ignored",
+                    onRestoreIgnored = {
+                        CrmCallManager.unskipCall(context, call)
+                        skippedRefreshTick++
+                        Toast.makeText(context, "Restored ${call.callerName.ifBlank { call.phoneNumber }} to active list", Toast.LENGTH_SHORT).show()
+                    }
                 )
             }
 
@@ -614,23 +828,164 @@ fun CrmCallsScreen(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
-                                imageVector = Icons.Default.PhoneMissed,
+                                imageVector = if (selectedFilter == "Ignored") Icons.Default.CheckCircleOutline else Icons.Default.PhoneMissed,
                                 contentDescription = null,
                                 tint = TextSecondaryDark,
                                 modifier = Modifier.size(40.dp)
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                text = "No calls found for '$selectedFilter'",
+                                text = when (selectedFilter) {
+                                    "Ignored" -> "No ignored calls"
+                                    "Unwanted" -> "No unwanted calls detected"
+                                    else -> "No calls found for '$selectedFilter'"
+                                },
                                 style = MaterialTheme.typography.titleMedium,
                                 color = TextPrimaryDark
                             )
                             Text(
-                                text = "Tap 'Log Call' or '+ Demo' to add enquiry records.",
+                                text = when (selectedFilter) {
+                                    "Ignored" -> "Hidden spam, short, or personal calls appear here and can be restored anytime."
+                                    "Unwanted" -> "Spam, 140/telemarketer, personal, and <10s calls are auto-tagged here for quick bulk removal."
+                                    else -> "Tap 'Import' to load device calls or '+ Call' to log manually."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = TextSecondaryDark
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        // Sticky Multi-Select Bulk Cleanup / Restore Bar (sits cleanly above Android gesture bar)
+        if (isSelectionMode) {
+            val isIgnoredView = selectedFilter == "Ignored"
+            Surface(
+                color = SurfaceWhite,
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, PrimaryActionOrange.copy(alpha = 0.55f)),
+                tonalElevation = 4.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(top = 6.dp)
+                    .testTag("calls_bulk_action_bar")
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${selectedCallIds.size} selected",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (!isIgnoredView) {
+                                OutlinedButton(
+                                    onClick = {
+                                        val unwantedIds = filteredCalls
+                                            .filter {
+                                                !it.isLinked &&
+                                                    (unwantedReasonByCallId[it.id] ?: UnwantedCallReason.NONE) != UnwantedCallReason.NONE
+                                            }
+                                            .map { it.id }
+                                            .toSet()
+                                        selectedCallIds = unwantedIds
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier
+                                        .heightIn(min = 38.dp)
+                                        .testTag("calls_select_all_unwanted_btn")
+                                ) {
+                                    Text("Select Unwanted", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = PrimaryActionOrange)
+                                }
+                            } else {
+                                OutlinedButton(
+                                    onClick = {
+                                        selectedCallIds = filteredCalls.map { it.id }.toSet()
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier
+                                        .heightIn(min = 38.dp)
+                                        .testTag("calls_select_all_ignored_btn")
+                                ) {
+                                    Text("Select All", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = PrimaryActionOrange)
+                                }
+                            }
+                            TextButton(
+                                onClick = {
+                                    isSelectionMode = false
+                                    selectedCallIds = emptySet()
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 38.dp)
+                                    .testTag("calls_bulk_cancel_btn")
+                            ) {
+                                Text("Cancel", fontSize = 11.sp, color = SecondaryText)
+                            }
+                        }
+                    }
+
+                    Button(
+                        enabled = selectedCallIds.isNotEmpty(),
+                        onClick = {
+                            val targets = calls.filter { it.id in selectedCallIds }
+                            if (activePlayingCallId in selectedCallIds) {
+                                stopInlinePlayback()
+                            }
+                            if (isIgnoredView) {
+                                CrmCallManager.unskipCalls(context, targets)
+                                Toast.makeText(context, "Restored ${targets.size} call(s) to active list", Toast.LENGTH_SHORT).show()
+                            } else {
+                                val hideable = targets.filterNot { it.isLinked }
+                                CrmCallManager.markCallsSkipped(context, hideable)
+                                val msg = if (hideable.size < targets.size) {
+                                    "Moved ${hideable.size} unlinked call(s) to Ignored tab (linked calls kept)"
+                                } else {
+                                    "Moved ${hideable.size} call(s) to Ignored tab (reversible)"
+                                }
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            }
+                            selectedCallIds = emptySet()
+                            isSelectionMode = false
+                            skippedRefreshTick++
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryActionOrange,
+                            contentColor = OnPrimaryActionColor
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("calls_bulk_confirm_btn")
+                    ) {
+                        Icon(
+                            imageVector = if (isIgnoredView) Icons.Default.Restore else Icons.Default.VisibilityOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = if (isIgnoredView) {
+                                "Restore Selected (${selectedCallIds.size})"
+                            } else {
+                                "Hide Selected (${selectedCallIds.size}) to Ignored"
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -1231,12 +1586,24 @@ private fun CallRecordCard(
     loggedInEmployeeName: String = "TLC Team",
     followUpState: FollowUpState = FollowUpState.NONE,
     followUpDate: String? = null,
-    canViewUnmaskedConfidential: Boolean = true
+    canViewUnmaskedConfidential: Boolean = true,
+    recordingOutcome: CallRecordingMatchOutcome? = null,
+    isPlayingInline: Boolean = false,
+    inlineAudioError: String? = null,
+    onToggleInlinePlay: ((MatchedCallRecording) -> Unit)? = null,
+    onRecordingOutcomeChanged: ((CallRecordingMatchOutcome) -> Unit)? = null,
+    allCallsForStrictDedup: List<CrmCallRecord>? = null,
+    unwantedReason: UnwantedCallReason = UnwantedCallReason.NONE,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: (() -> Unit)? = null,
+    isIgnoredTab: Boolean = false,
+    onRestoreIgnored: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var showRecordingPanel by remember(call.id) { mutableStateOf(false) }
-    val isSkipped = remember(call.id, call.isLinked, call.notes) {
+    val isSkipped = remember(call.id, call.isLinked, call.notes, isIgnoredTab) {
         CrmCallManager.isCallSkipped(context, call)
     }
     val (typeIcon, typeColor) = when (call.callType) {
@@ -1259,14 +1626,33 @@ private fun CallRecordCard(
             call.handedOverAt > 0L &&
             (System.currentTimeMillis() - call.handedOverAt) > (2L * 60L * 60L * 1000L)
     }
+    val matchedRecording = recordingOutcome?.takeIf { it.status == CallRecordingMatchStatus.MATCHED }?.matched
+    val isAmbiguousRecording = recordingOutcome?.status == CallRecordingMatchStatus.AMBIGUOUS &&
+        recordingOutcome.ambiguousCandidates.isNotEmpty()
+    val cardBorderColor = when {
+        isSelected -> PrimaryActionOrange
+        isPlayingInline -> PrimaryActionOrange.copy(alpha = 0.85f)
+        else -> BrandCharcoalBorder
+    }
+    val cardBorderWidth = if (isSelected || isPlayingInline) 1.5.dp else 0.8.dp
+    val cardModifier = Modifier
+        .fillMaxWidth()
+        .let { base ->
+            if (isSelectionMode && onToggleSelect != null) {
+                base.clickable { onToggleSelect() }
+            } else {
+                base
+            }
+        }
+        .testTag("call_record_card_${call.id}")
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("call_record_card_${call.id}"),
+        modifier = cardModifier,
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = BrandCharcoalSurface),
-        border = androidx.compose.foundation.BorderStroke(0.8.dp, BrandCharcoalBorder)
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) PrimaryActionOrange.copy(alpha = 0.06f) else BrandCharcoalSurface
+        ),
+        border = BorderStroke(cardBorderWidth, cardBorderColor)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -1275,6 +1661,20 @@ private fun CallRecordCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    if (isSelectionMode) {
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = { onToggleSelect?.invoke() },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = PrimaryActionOrange,
+                                checkmarkColor = Color.White
+                            ),
+                            modifier = Modifier
+                                .size(40.dp)
+                                .testTag("call_card_checkbox_${call.id}")
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
                     Box(
                         modifier = Modifier
                             .size(32.dp)
@@ -1312,6 +1712,27 @@ private fun CallRecordCard(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (unwantedReason != UnwantedCallReason.NONE && !call.isLinked) {
+                        val (uBg, uFg) = when (unwantedReason) {
+                            UnwantedCallReason.SPAM_TELEMARKETER -> Color(0xFFFEF2F2) to Color(0xFFDC2626)
+                            UnwantedCallReason.PERSONAL_OR_IGNORED -> Color(0xFFF3E8FF) to Color(0xFF7E22CE)
+                            UnwantedCallReason.SHORT_OR_MISSED -> Color(0xFFFFFBEB) to Color(0xFFB45309)
+                            UnwantedCallReason.NONE -> Color.Transparent to TextSecondaryDark
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = uBg,
+                            modifier = Modifier.testTag("call_card_unwanted_badge_${call.id}")
+                        ) {
+                            Text(
+                                text = unwantedReason.badgeLabel,
+                                color = uFg,
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     if (isInternalTeam) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
@@ -1467,16 +1888,17 @@ private fun CallRecordCard(
             } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Surface(
                         shape = RoundedCornerShape(4.dp),
-                        color = Color(0xFFFFFBEB),
-                        border = BorderStroke(0.6.dp, Color(0xFFFDE68A))
+                        color = if (isIgnoredTab) Color(0xFFF1F5F9) else Color(0xFFFFFBEB),
+                        border = BorderStroke(0.6.dp, if (isIgnoredTab) Color(0xFFCBD5E1) else Color(0xFFFDE68A))
                     ) {
                         Text(
-                            text = "Unlinked Enquiry",
-                            color = Color(0xFFB45309),
+                            text = if (isIgnoredTab) "Ignored Call" else "Unlinked Enquiry",
+                            color = if (isIgnoredTab) Color(0xFF475569) else Color(0xFFB45309),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -1484,6 +1906,154 @@ private fun CallRecordCard(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
+                }
+            }
+
+            // Direct Inline Matched Call Recording Strip (single-tap Play/Pause directly on the call card)
+            if (matchedRecording != null) {
+                Spacer(Modifier.height(8.dp))
+                val recDurationSec = (matchedRecording.durationMs / 1000L).toInt()
+                val playLabel = when {
+                    isPlayingInline -> "Pause"
+                    recDurationSec > 0 -> "Play • ${CrmCallManager.formatDuration(recDurationSec)}"
+                    else -> "Play"
+                }
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isPlayingInline) PrimaryActionOrange.copy(alpha = 0.11f) else Color(0xFFF1F5F9),
+                    border = BorderStroke(
+                        width = 0.8.dp,
+                        color = if (isPlayingInline) PrimaryActionOrange.copy(alpha = 0.55f) else BrandCharcoalBorder
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("call_card_inline_rec_strip_${call.id}")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { onToggleInlinePlay?.invoke(matchedRecording) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isPlayingInline) PrimaryActionOrange else Color(0xFF1E3A5F),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .defaultMinSize(minWidth = 84.dp, minHeight = 48.dp)
+                                .testTag("call_card_inline_play_${call.id}")
+                        ) {
+                            Icon(
+                                imageVector = if (isPlayingInline) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlayingInline) "Pause Call Recording" else "Play Call Recording",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = playLabel,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = matchedRecording.fileName,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimaryDark,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = matchedRecording.matchReason.ifBlank { "Strict timestamp + caller match" },
+                                fontSize = 10.sp,
+                                color = if (isPlayingInline) PrimaryActionOrange else TextSecondaryDark,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                if (isPlayingInline) onToggleInlinePlay?.invoke(matchedRecording)
+                                showRecordingPanel = !showRecordingPanel
+                            },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("call_card_inline_rec_more_${call.id}")
+                        ) {
+                            Icon(
+                                imageVector = if (showRecordingPanel) Icons.Default.ExpandLess else Icons.Default.AutoAwesome,
+                                contentDescription = "Summarize or Change Recording",
+                                tint = if (showRecordingPanel) PrimaryActionOrange else Color(0xFF1E3A5F),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            } else if (isAmbiguousRecording) {
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    onClick = { showRecordingPanel = true },
+                    shape = RoundedCornerShape(9.dp),
+                    color = Color(0xFFFFFBEB),
+                    border = BorderStroke(0.8.dp, Color(0xFFF59E0B)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .testTag("call_card_ambiguous_rec_${call.id}")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.WarningAmber,
+                            contentDescription = "Multiple Possible Recordings",
+                            tint = Color(0xFFD97706),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "${recordingOutcome!!.ambiguousCandidates.size} possible recordings — tap to choose exact file",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF92400E),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+
+            if (!inlineAudioError.isNullOrBlank()) {
+                Spacer(Modifier.height(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFFEF2F2),
+                    border = BorderStroke(0.8.dp, Color(0xFFFCA5A5)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("call_card_inline_audio_error_${call.id}")
+                ) {
+                    Text(
+                        text = inlineAudioError,
+                        color = Color(0xFFB91C1C),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
                 }
             }
 
@@ -1531,7 +2101,7 @@ private fun CallRecordCard(
                     }
 
                     // Batch 20: 1-tap WA Callback on Missed Call Cards
-                    if (call.callType == CallType.MISSED) {
+                    if (call.callType == CallType.MISSED && !isIgnoredTab) {
                         Surface(
                             onClick = {
                                 val updated = CrmCallManager.triggerMissedCallWaCallback(
@@ -1570,23 +2140,54 @@ private fun CallRecordCard(
                         }
                     }
 
-                    // Batch 20: On-Demand Call Recording Play & Summarize Toggle
+                    // Batch 20: On-Demand Call Recording Play, Picker & Summarize Toggle
                     IconButton(
-                        onClick = { showRecordingPanel = !showRecordingPanel },
+                        onClick = {
+                            if (isPlayingInline && matchedRecording != null) {
+                                onToggleInlinePlay?.invoke(matchedRecording)
+                            }
+                            showRecordingPanel = !showRecordingPanel
+                        },
                         modifier = Modifier
-                            .size(44.dp)
+                            .size(48.dp)
                             .testTag("call_card_recording_toggle_${call.id}")
                     ) {
                         Icon(
                             imageVector = Icons.Default.GraphicEq,
-                            contentDescription = "Play or Summarize Call Recording",
-                            tint = if (showRecordingPanel) PrimaryActionOrange else TextSecondaryDark,
+                            contentDescription = "Play, Pick, or Summarize Call Recording",
+                            tint = if (showRecordingPanel || matchedRecording != null) PrimaryActionOrange else TextSecondaryDark,
                             modifier = Modifier.size(20.dp)
                         )
                     }
                 }
 
-                if (!call.isLinked) {
+                if (isIgnoredTab && onRestoreIgnored != null) {
+                    OutlinedButton(
+                        onClick = onRestoreIgnored,
+                        border = BorderStroke(1.dp, Color(0xFF059669)),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 104.dp, minHeight = 48.dp)
+                            .testTag("call_card_restore_${call.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Restore,
+                            contentDescription = "Restore Ignored Call",
+                            tint = Color(0xFF059669),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Restore",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF059669),
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                } else if (!call.isLinked) {
                     Button(
                         onClick = onCreateOpportunity,
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryActionOrange, contentColor = OnPrimaryActionColor),
@@ -1626,24 +2227,32 @@ private fun CallRecordCard(
                 }
             }
 
-            // Strictly On-Demand Call Recording Bar (loaded only when user expands/taps recording icon)
+            // Expanded Call Recording Panel (reuses parent's single-pass batch outcome; supports Summarize, Pick, and Clear)
             if (showRecordingPanel) {
                 Spacer(Modifier.height(8.dp))
-                CallRecordingOnDemandSection(
-                    call = call,
-                    currentNotes = call.notes,
-                    onSummaryGenerated = { summary ->
-                        val mergedNotes = if (call.notes.isBlank()) summary else "${call.notes}\n$summary"
-                        val updated = call.copy(notes = mergedNotes)
-                        coroutineScope.launch {
-                            withContext(Dispatchers.IO) {
-                                CrmCallManager.addOrUpdateCall(context, updated)
+                key(call.id) {
+                    val boundCallId = call.id
+                    CallRecordingOnDemandSection(
+                        call = call,
+                        currentNotes = call.notes,
+                        onSummaryGenerated = { summary ->
+                            if (call.id == boundCallId) {
+                                val mergedNotes = if (call.notes.isBlank()) summary else "${call.notes}\n$summary"
+                                val updated = call.copy(notes = mergedNotes)
+                                coroutineScope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        CrmCallManager.addOrUpdateCall(context, updated)
+                                    }
+                                    onCallUpdated(updated)
+                                }
                             }
-                            onCallUpdated(updated)
-                        }
-                    },
-                    testTagPrefix = "call_card_recording_${call.id}"
-                )
+                        },
+                        testTagPrefix = "call_card_recording_${call.id}",
+                        allCallsForStrictDedup = allCallsForStrictDedup,
+                        precomputedOutcome = recordingOutcome,
+                        onRecordingOutcomeChanged = onRecordingOutcomeChanged
+                    )
+                }
             }
         }
     }

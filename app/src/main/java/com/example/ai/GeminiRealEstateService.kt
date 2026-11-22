@@ -25,6 +25,9 @@ data class ExtractedPropertyDraft(
     val bhkConfiguration: String = "",
     val carpetAreaSqFt: Double = 0.0,
     val builtUpAreaSqFt: Double? = null,
+    val saleableAreaSqFt: Double? = null,
+    val landAreaValue: Double? = null,
+    val landAreaUnit: String = "",
     val priceOrRent: Double = 0.0,
     val priceSale: Double? = null,
     val rent: Double? = null,
@@ -38,6 +41,15 @@ data class ExtractedPropertyDraft(
     val maintenanceTerms: String = "",
     val workstations: Int? = null,
     val cabins: Int? = null,
+    val conferenceRooms: Int? = null,
+    val tenantName: String = "",
+    val negotiable: Boolean? = null,
+    val isSevenTwelveClear: Boolean? = null,
+    val ownerName: String = "",
+    val ownerPhone: String = "",
+    val sourceBrokerName: String = "",
+    val sourceBrokerPhone: String = "",
+    val additionalPhones: List<String> = emptyList(),
     val contactName: String = "",
     val contactPhone: String = "",
     val remarks: String = "",
@@ -45,8 +57,14 @@ data class ExtractedPropertyDraft(
     val builderName: String = "",
     val rawSnippet: String = "",
     val hasExplicitFurnishing: Boolean = false,
+    val isPriceConflictOrUpdate: Boolean = false,
+    val reviewWarnings: List<String> = emptyList(),
+    val extractedFields: Map<String, ExtractedField<String>> = emptyMap(),
     val missingFields: List<String> = emptyList()
-)
+) {
+    val hasFlaggedFields: Boolean
+        get() = reviewWarnings.isNotEmpty() || extractedFields.values.any { it.tier == ConfidenceTier.CONFIRM_REQUIRED }
+}
 
 data class OnlineProjectFetchResult(
     val projectName: String = "",
@@ -157,51 +175,111 @@ class GeminiRealEstateService {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    suspend fun parsePropertyMessage(rawText: String, defaultCompanyPrefix: String = "ACS"): ExtractedPropertyDraft = withContext(Dispatchers.IO) {
-        val list = parsePropertyMessagesBatch(rawText, defaultCompanyPrefix)
-        list.firstOrNull() ?: ExtractedPropertyDraft()
-    }
+    /**
+     * Build 01: Two-Step Safe WhatsApp Classification & Multi-Property Extraction.
+     * - Step A classifies message intent (PROPERTY_LISTING, CLIENT_REQUIREMENT, EXISTING_PROPERTY_UPDATE,
+     *   UNRELATED, AMBIGUOUS_NEEDS_REVIEW). Blocks CLIENT_REQUIREMENT & UNRELATED from Add Property.
+     * - Step B extracts isolated multi-property drafts with field-level evidence, confidence (0-100),
+     *   and needsReview flags. Zero fabricated defaults; graceful offline fallback.
+     */
+    suspend fun extractWhatsAppSafely(
+        rawText: String,
+        senderName: String = "",
+        senderPhone: String = ""
+    ): WhatsAppExtractionBatchResult = withContext(Dispatchers.IO) {
+        val cleaned = rawText.replace("\r\n", "\n").trim()
+        if (cleaned.isBlank()) {
+            return@withContext WhatsAppExtractionBatchResult(
+                classification = WhatsAppMessageClassification.UNRELATED,
+                classificationConfidence = 100,
+                classificationReason = "Message is empty.",
+                drafts = emptyList(),
+                rawMessage = "",
+                usedFallbackParser = true
+            )
+        }
 
-    suspend fun parsePropertyMessagesBatch(rawText: String, defaultCompanyPrefix: String = "ACS"): List<ExtractedPropertyDraft> = withContext(Dispatchers.IO) {
-        val apiKey = try { BuildConfig.GEMINI_API_KEY } catch (e: Exception) { "" }
+        // Fast deterministic pre-guard for obvious client requirements / unrelated chats so AI never misroutes them
+        val (localClass, localConf, localReason) = SafeWhatsAppExtractor.classifyMessage(cleaned)
+        if ((localClass == WhatsAppMessageClassification.CLIENT_REQUIREMENT && localConf >= 90) ||
+            (localClass == WhatsAppMessageClassification.UNRELATED && localConf >= 92)
+        ) {
+            return@withContext SafeWhatsAppExtractor.extractOffline(cleaned, senderName, senderPhone)
+        }
+
+        val apiKey = try { BuildConfig.GEMINI_API_KEY } catch (_: Exception) { "" }
+        var networkError: String? = null
 
         if (apiKey.isNotBlank() && apiKey != "MY_GEMINI_API_KEY") {
             try {
-                val prompt = rawText.replace("\"", "'")
+                val escapedInput = cleaned.replace("\"\"\"", "'")
                 val systemPrompt = """
-You are a senior real estate data ingestion specialist for PROPERTY OS in Pune.
-Extract structured inventory fields from the pasted broker/client message or WhatsApp forward (which may contain 1 or multiple properties).
-STRICT RULES:
-- NEVER invent fake values. If a field is not present in the text, leave it blank ("") or null / 0.0. Never output placeholder names like "Prime Center" or "Available Unit".
-- Output ONLY a JSON array of objects (even if there is only 1 property) with keys:
-  "tab": one of ["Off Lease", "Off Out", "Shop Lease", "Shop Out", "Pre - Leased", "Resi Rent", "Resi Resale", "Und Const"]
-  "propertyType": string
-  "subType": string
-  "projectName": string (leave blank if not mentioned)
-  "location": string (Pune micro-market or locality)
-  "microMarket": string
-  "unitNumber": string (leave blank if not mentioned)
-  "floor": string (leave blank if not mentioned)
-  "bhkConfiguration": string
-  "carpetAreaSqFt": number (0.0 if not mentioned)
-  "builtUpAreaSqFt": number or null
-  "priceSale": number or null
-  "rent": number or null
-  "deposit": number or null
-  "roiPercent": number or null
-  "furnishing": one of ["Bare Shell", "Warm Shell", "Semi-Furnished", "Fully Furnished", "Unfurnished"]
-  "possession": string
-  "parking": string
-  "lockInMonths": string
-  "escalationTerms": string
-  "maintenanceTerms": string
-  "workstations": integer or null
-  "cabins": integer or null
-  "contactName": string
-  "contactPhone": string
-  "remarks": string
-Text to parse:
-"$prompt"
+You are a strict Pune real estate data extraction specialist for TLC-1.
+Analyze the WhatsApp message in TWO STEPS and return ONLY raw JSON (no markdown fences):
+
+STEP A — Classify the message into exactly ONE of:
+"PROPERTY_LISTING", "CLIENT_REQUIREMENT", "EXISTING_PROPERTY_UPDATE", "UNRELATED", "AMBIGUOUS_NEEDS_REVIEW".
+- Use "CLIENT_REQUIREMENT" if someone is looking for / needs / wants a property or asks to share options (even if formatted like specs).
+- Use "EXISTING_PROPERTY_UPDATE" if it revises/drops/updates price, rent, or sold/leased status of a unit.
+- Use "UNRELATED" if it is non-real-estate chat.
+
+STEP B — If PROPERTY_LISTING, EXISTING_PROPERTY_UPDATE, or AMBIGUOUS_NEEDS_REVIEW, extract an isolated array "properties" (1 object per distinct property).
+STRICT ZERO-FABRICATION RULES:
+1. NEVER invent defaults (NO fake 1000 sqft, ₹85000, ₹1.25 Cr, 6 months deposit, Kharadi, Prime Center, Mid Floor, Immediate). Unmentioned fields MUST be null or "".
+2. NEVER substitute Carpet Area for Built-up Area (BU/BUA) or Saleable Area (SBA). Keep them strictly separate.
+3. Preserve Land units ("Guntha", "Acre", "Sq.Ft") in landAreaValue + landAreaUnit instead of carpetAreaSqFt.
+4. Resolve Pune shorthands from context: FF (First Floor vs Fully Furnished), WS (Workstations vs Warm Shell), BS (Bare Shell), SF (Semi-Furnished), GF/UG, Conf, Cab, LI, Esc, CAM, PL, Avl, Nego, Poss, Imd, Dep/SD, 7/12.
+5. Normalize numbers deterministically (35k -> 35000, 1.2L -> 120000, 1.50Cr -> 15000000). Flag ambiguous amounts like "2.55k rent" with confidence < 70 and needsReview=true.
+6. Separate Owner (only if explicitly labeled Owner/Landlord/Malak) from Source/Broker. NEVER assume the WhatsApp sender is the Owner.
+7. Wrap extracted fields as {"value": ..., "evidence": "exact short quote", "confidence": 0-100, "needsReview": boolean}.
+
+JSON schema:
+{
+  "classification": "PROPERTY_LISTING|CLIENT_REQUIREMENT|EXISTING_PROPERTY_UPDATE|UNRELATED|AMBIGUOUS_NEEDS_REVIEW",
+  "classificationConfidence": 0-100,
+  "classificationReason": "short reason",
+  "properties": [
+    {
+      "tab": {"value": "Off Lease|Off Out|Shop Lease|Shop Out|Pre - Leased|Resi Rent|Resi Resale|Und Const", "evidence": "", "confidence": 0, "needsReview": false},
+      "propertyType": {"value": "", "evidence": "", "confidence": 0, "needsReview": false},
+      "projectName": {"value": "", "evidence": "", "confidence": 0, "needsReview": false},
+      "location": {"value": "", "evidence": "", "confidence": 0, "needsReview": false},
+      "unitNumber": {"value": "", "evidence": "", "confidence": 0, "needsReview": false},
+      "floor": {"value": "", "evidence": "", "confidence": 0, "needsReview": false},
+      "bhkConfiguration": {"value": "", "evidence": "", "confidence": 0, "needsReview": false},
+      "carpetAreaSqFt": {"value": null, "evidence": "", "confidence": 0, "needsReview": false},
+      "builtUpAreaSqFt": {"value": null, "evidence": "", "confidence": 0, "needsReview": false},
+      "saleableAreaSqFt": {"value": null, "evidence": "", "confidence": 0, "needsReview": false},
+      "landAreaValue": {"value": null, "evidence": "", "confidence": 0, "needsReview": false},
+      "landAreaUnit": "",
+      "rent": {"value": null, "evidence": "", "confidence": 0, "needsReview": false},
+      "priceSale": {"value": null, "evidence": "", "confidence": 0, "needsReview": false},
+      "deposit": {"value": null, "evidence": "", "confidence": 0, "needsReview": false},
+      "roiPercent": {"value": null, "evidence": "", "confidence": 0, "needsReview": false},
+      "furnishing": {"value": "", "evidence": "", "confidence": 0, "needsReview": false},
+      "possession": {"value": "", "evidence": "", "confidence": 0, "needsReview": false},
+      "parking": {"value": "", "evidence": "", "confidence": 0, "needsReview": false},
+      "lockInMonths": {"value": "", "evidence": "", "confidence": 0, "needsReview": false},
+      "escalationTerms": {"value": "", "evidence": "", "confidence": 0, "needsReview": false},
+      "maintenanceTerms": {"value": "", "evidence": "", "confidence": 0, "needsReview": false},
+      "workstations": {"value": null, "evidence": "", "confidence": 0, "needsReview": false},
+      "cabins": {"value": null, "evidence": "", "confidence": 0, "needsReview": false},
+      "conferenceRooms": {"value": null, "evidence": "", "confidence": 0, "needsReview": false},
+      "tenantName": {"value": "", "evidence": "", "confidence": 0, "needsReview": false},
+      "ownerName": "",
+      "ownerPhone": "",
+      "sourceBrokerName": "",
+      "sourceBrokerPhone": "",
+      "builderName": "",
+      "rawSnippet": "original text for this property only",
+      "remarks": "",
+      "reviewWarnings": []
+    }
+  ]
+}
+
+Message:
+"$escapedInput"
                 """.trimIndent()
 
                 val jsonPayload = JSONObject().apply {
@@ -233,6 +311,8 @@ Text to parse:
                     if (response.isSuccessful) {
                         success = true
                         break
+                    } else {
+                        networkError = "AI service returned HTTP ${response.code}; switched to offline parser."
                     }
                 }
 
@@ -246,85 +326,37 @@ Text to parse:
                         .getString("text")
 
                     val cleanedJson = stripJsonFences(text)
-                    val jsonArray = if (cleanedJson.trim().startsWith("[")) {
-                        JSONArray(cleanedJson)
-                    } else {
-                        JSONArray().put(JSONObject(cleanedJson))
+                    val parsedResult = SafeWhatsAppExtractor.parseGeminiBatchJson(
+                        cleanedJson = cleanedJson,
+                        rawMessage = cleaned,
+                        senderName = senderName,
+                        senderPhone = senderPhone
+                    )
+                    if (parsedResult != null) {
+                        return@withContext parsedResult
                     }
-
-                    val results = mutableListOf<ExtractedPropertyDraft>()
-                    for (i in 0 until jsonArray.length()) {
-                        val parsed = jsonArray.getJSONObject(i)
-                        val tabStr = parsed.optString("tab", "Off Lease").trim()
-                        val matchedTab = InventoryTab.entries.find { it.code.equals(tabStr, ignoreCase = true) } ?: InventoryTab.OFF_LEASE
-                        val furnStr = parsed.optString("furnishing", "").trim()
-                        val hasExplicitFurn = furnStr.isNotBlank() && !furnStr.equals("null", true)
-                        val matchedFurn = if (hasExplicitFurn) {
-                            FurnishingType.entries.find { it.label.equals(furnStr, ignoreCase = true) } ?: FurnishingType.UNFURNISHED
-                        } else {
-                            FurnishingType.UNFURNISHED
-                        }
-
-                        val rentVal = if (parsed.has("rent") && !parsed.isNull("rent")) parsed.optDouble("rent").takeIf { it > 0.0 } else null
-                        val saleVal = if (parsed.has("priceSale") && !parsed.isNull("priceSale")) parsed.optDouble("priceSale").takeIf { it > 0.0 } else null
-                        val depositVal = if (parsed.has("deposit") && !parsed.isNull("deposit")) parsed.optDouble("deposit").takeIf { it > 0.0 } else null
-                        val carpetVal = parsed.optDouble("carpetAreaSqFt", 0.0).takeIf { it.isFinite() && it > 0.0 } ?: 0.0
-                        val buaVal = if (parsed.has("builtUpAreaSqFt") && !parsed.isNull("builtUpAreaSqFt")) parsed.optDouble("builtUpAreaSqFt").takeIf { it.isFinite() && it > 0.0 } else null
-                        val roiVal = if (parsed.has("roiPercent") && !parsed.isNull("roiPercent")) parsed.optDouble("roiPercent").takeIf { it.isFinite() && it > 0.0 } else null
-                        val primaryPrice = if (matchedTab.isRental) (rentVal ?: 0.0) else (saleVal ?: 0.0)
-
-                        val cleanProj = sanitizeExtractedString(parsed.optString("projectName", ""))
-                        val cleanLoc = sanitizeExtractedString(parsed.optString("location", ""))
-                        val cleanMicro = sanitizeExtractedString(parsed.optString("microMarket", ""))
-                        val cleanUnit = sanitizeExtractedString(parsed.optString("unitNumber", ""))
-                        val cleanFloor = sanitizeExtractedString(parsed.optString("floor", ""))
-                        val cleanType = sanitizeExtractedString(parsed.optString("propertyType", ""))
-                        val cleanPhone = normalizeIndianPhone(parsed.optString("contactPhone", ""))
-                        val cleanContactName = sanitizeExtractedString(parsed.optString("contactName", ""))
-                        val cleanPoss = sanitizeExtractedString(parsed.optString("possession", ""))
-
-                        val draft = ExtractedPropertyDraft(
-                            tab = matchedTab,
-                            propertyType = cleanType,
-                            subType = sanitizeExtractedString(parsed.optString("subType", "")),
-                            projectName = cleanProj,
-                            location = cleanLoc.ifBlank { cleanMicro },
-                            microMarket = cleanMicro,
-                            unitNumber = cleanUnit,
-                            floor = cleanFloor,
-                            bhkConfiguration = sanitizeExtractedString(parsed.optString("bhkConfiguration", "")),
-                            carpetAreaSqFt = carpetVal,
-                            builtUpAreaSqFt = buaVal,
-                            priceOrRent = primaryPrice,
-                            priceSale = saleVal,
-                            rent = rentVal,
-                            deposit = depositVal,
-                            roiPercent = roiVal,
-                            furnishing = matchedFurn,
-                            possession = cleanPoss,
-                            parking = sanitizeExtractedString(parsed.optString("parking", "")),
-                            lockInMonths = sanitizeExtractedString(parsed.optString("lockInMonths", "")),
-                            escalationTerms = sanitizeExtractedString(parsed.optString("escalationTerms", "")),
-                            maintenanceTerms = sanitizeExtractedString(parsed.optString("maintenanceTerms", "")),
-                            workstations = if (parsed.has("workstations") && !parsed.isNull("workstations")) parsed.optInt("workstations").takeIf { it > 0 } else null,
-                            cabins = if (parsed.has("cabins") && !parsed.isNull("cabins")) parsed.optInt("cabins").takeIf { it > 0 } else null,
-                            contactName = cleanContactName,
-                            contactPhone = cleanPhone,
-                            remarks = sanitizeExtractedString(parsed.optString("remarks", "")),
-                            confidenceNotes = "Extracted via Gemini 2.5 Flash Model",
-                            rawSnippet = rawText.trim(),
-                            hasExplicitFurnishing = hasExplicitFurn
-                        )
-                        results.add(draft.copy(missingFields = computeDraftMissingFields(draft)))
-                    }
-                    if (results.isNotEmpty()) return@withContext results
                 }
             } catch (e: Exception) {
-                Log.w("GeminiRealEstate", "Gemini batch error: ${e.message}")
+                Log.w("GeminiRealEstate", "Safe WhatsApp extraction AI error: ${e.message}")
+                networkError = "Offline or AI unavailable (${e.localizedMessage ?: "network error"}) — using safe offline parser."
             }
         }
 
-        return@withContext fallbackParsePropertiesBatch(rawText)
+        return@withContext SafeWhatsAppExtractor.extractOffline(
+            rawText = cleaned,
+            senderName = senderName,
+            senderPhone = senderPhone,
+            errorMessage = networkError
+        )
+    }
+
+    suspend fun parsePropertyMessage(rawText: String, defaultCompanyPrefix: String = "ACS"): ExtractedPropertyDraft = withContext(Dispatchers.IO) {
+        val result = extractWhatsAppSafely(rawText)
+        result.drafts.firstOrNull() ?: ExtractedPropertyDraft(rawSnippet = rawText.trim())
+    }
+
+    suspend fun parsePropertyMessagesBatch(rawText: String, defaultCompanyPrefix: String = "ACS"): List<ExtractedPropertyDraft> = withContext(Dispatchers.IO) {
+        extractWhatsAppSafely(rawText).drafts
     }
 
     private fun stripJsonFences(raw: String): String {
@@ -338,243 +370,10 @@ Text to parse:
             .trim()
     }
 
-    private fun sanitizeExtractedString(value: String?): String {
-        val cleaned = value?.trim().orEmpty()
-        if (cleaned.equals("null", true) || cleaned.equals("n/a", true) || cleaned.equals("none", true)) return ""
-        val forbiddenFake = setOf("prime center", "available unit", "mid floor", "not specified", "not mentioned")
-        return if (cleaned.lowercase() in forbiddenFake) "" else cleaned
-    }
-
-    private fun normalizeIndianPhone(raw: String?): String {
-        val digits = raw.orEmpty().filter { it.isDigit() }
-        return when {
-            digits.length == 10 && digits.first() in '6'..'9' -> digits
-            digits.length > 10 -> digits.takeLast(10).takeIf { it.first() in '6'..'9' }.orEmpty()
-            else -> ""
-        }
-    }
-
-    private fun computeDraftMissingFields(draft: ExtractedPropertyDraft): List<String> = buildList {
-        if (draft.projectName.isBlank()) add("Project / Building")
-        if (draft.location.isBlank()) add("Locality / Micro-Market")
-        if (draft.carpetAreaSqFt <= 0.0) add("Carpet Area")
-        if (draft.tab.isRental && (draft.rent ?: 0.0) <= 0.0) add("Monthly Rent")
-        if (!draft.tab.isRental && (draft.priceSale ?: 0.0) <= 0.0) add("Sale Price")
-        if (draft.unitNumber.isBlank()) add("Unit / Shop No")
-        if (draft.contactPhone.isBlank()) add("Contact Mobile")
-    }
-
-    fun fallbackParseProperty(rawText: String): ExtractedPropertyDraft = parseSingleTextSegment(rawText)
-
-    private fun fallbackParsePropertiesBatch(rawText: String): List<ExtractedPropertyDraft> {
-        val normalized = rawText.replace("\r\n", "\n").trim()
-        if (normalized.isBlank()) return emptyList()
-
-        // Split numbered lists, bullet dividers, or blank-line separated property blocks cleanly
-        val splitByDivider = normalized.split(Regex("""(?m)(?:\n\s*[-=*_]{3,}\s*\n|\n\s*\n+|^\s*(?:option|property|unit)\s*\d+\s*[:\.\-]\s*|(?=^\s*\d{1,2}[\.\)]\s+[A-Za-z]))"""))
-            .map { it.trim() }
-            .filter { it.length >= 12 }
-
-        val textBlocks = when {
-            splitByDivider.size > 1 -> splitByDivider
-            else -> {
-                // Also try splitting when repeated "Project:" / "Office for" / "Shop for" lines occur
-                val lineStarts = normalized.split(Regex("""(?im)(?=\n(?:project|building|office\s+(?:for|at|in)|shop\s+(?:for|at|in)|[1-5]\s*bhk\s+(?:for|at|in))\b)"""))
-                    .map { it.trim() }
-                    .filter { it.length >= 12 }
-                if (lineStarts.size > 1) lineStarts else listOf(normalized)
-            }
-        }
-        return textBlocks.map { parseSingleTextSegment(it) }
-    }
-
-    private fun parseSingleTextSegment(text: String): ExtractedPropertyDraft {
-        val lower = text.lowercase()
-
-        val isRentalHint = lower.contains("rent") || lower.contains("lease") || lower.contains("p.m") || lower.contains("/month") || lower.contains("per month")
-        val isSaleHint = lower.contains("sale") || lower.contains("outright") || lower.contains("resale") || lower.contains("sell") || lower.contains("buy")
-
-        val tab = when {
-            lower.contains("pre-leased") || lower.contains("pre leased") || lower.contains("preleased") || lower.contains("roi") || lower.contains("yield") -> InventoryTab.PRE_LEASED
-            (lower.contains("shop") || lower.contains("showroom") || lower.contains("retail")) && isSaleHint && !isRentalHint -> InventoryTab.SHOP_OUT
-            lower.contains("shop") || lower.contains("showroom") || lower.contains("retail") -> InventoryTab.SHOP_LEASE
-            (lower.contains("office") || lower.contains("commercial") || lower.contains("it park") || lower.contains("workstation")) && isSaleHint && !isRentalHint -> InventoryTab.OFF_OUT
-            lower.contains("office") || lower.contains("commercial") || lower.contains("it park") || lower.contains("workstation") -> InventoryTab.OFF_LEASE
-            lower.contains("under construction") || lower.contains("rera") -> InventoryTab.UND_CONST
-            (lower.contains("bhk") || lower.contains("flat") || lower.contains("apartment") || lower.contains("villa")) && isRentalHint -> InventoryTab.RESI_RENT
-            lower.contains("bhk") || lower.contains("flat") || lower.contains("apartment") || lower.contains("villa") || lower.contains("resale") -> InventoryTab.RESI_RESALE
-            else -> InventoryTab.OFF_LEASE
-        }
-
-        val puneProjects = listOf(
-            "Gera Imperium Alpha", "Gera Imperium Rise", "Gera Imperium Oasis", "Gera Imperium Star",
-            "Gera Commerzone", "World Trade Center", "WTC", "EON Free Zone", "EON IT Park",
-            "Global Business Hub", "Finswell", "Nyati Enthral", "Nyati Tech Park", "Nyati Unitree",
-            "Zensar", "Panchshil Towers", "Panchshil Business Park", "Panchshil Tech Park",
-            "Yoo Pune", "Trump Towers", "Godrej Boulevard", "Godrej Greens", "Godrej Rejuve",
-            "Riverdale Grand", "Riverdale Grove", "Riverdale Heights", "Gagan Avencia",
-            "VTP Pegasus", "VTP Leonara", "VTP Blue Waters", "Lodha Belmondo",
-            "Kolte Patil Life Republic", "Amanora Park Town", "Magarpatta Cybercity",
-            "Phoenix Marketcity", "Amar Business Zone", "Amar Tech Park", "Supreme HQ",
-            "Balewadi High Street", "Kapil Zenith", "Solitaire Business Hub", "Cerebrum IT Park"
-        ).sortedByDescending { it.length }
-
-        val projectName = puneProjects.firstOrNull { candidate ->
-            Regex("""\b${Regex.escape(candidate)}\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
-        }
-            ?: Regex("""(?im)(?:project|building|society|tower|complex)\s*[:\-]\s*([^\n,|]{2,60})""").find(text)?.groupValues?.get(1)?.trim().orEmpty()
-
-        val puneLocalities = listOf(
-            "Kharadi", "Viman Nagar", "Kalyani Nagar", "Koregaon Park", "Mundhwa", "Keshav Nagar",
-            "Magarpatta", "Hadapsar", "Amanora", "Wagholi", "Yerwada", "Baner", "Balewadi", "Wakad",
-            "Hinjawadi", "Hinjewadi", "Aundh", "Shivaji Nagar", "Shivajinagar", "Camp", "Pimpri",
-            "Chinchwad", "NIBM", "Undri", "Kondhwa", "Pashan", "Bavdhan", "Kothrud", "Karve Nagar",
-            "Senapati Bapat Road", "SB Road", "FC Road", "JM Road", "Boat Club Road", "Bund Garden",
-            "Ravet", "Tathawade", "Punawale", "Pimple Saudagar", "Pimple Nilakh", "Dhanori", "Lohegaon"
-        ).sortedByDescending { it.length }
-
-        val location = puneLocalities.firstOrNull { loc ->
-            Regex("""\b${Regex.escape(loc)}\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
-        }
-            ?: Regex("""(?im)(?:location|locality|area|micro[\-\s]?market)\s*[:\-]\s*([^\n|]{2,45})""").find(text)?.groupValues?.get(1)?.trim().orEmpty()
-
-        val unitNumber = Regex("""(?im)\b(?:unit|office|shop|flat|suite)(?:\s*no\.?|\s*#)?\s*[:\-#]?\s*([A-Z]?\d{1,5}[A-Z]?)\b""").find(text)?.groupValues?.get(1)?.trim().orEmpty()
-        val floor = Regex("""(?im)(?:\b(\d+(?:st|nd|rd|th)?|ground|gf|lower ground|lgf|mezzanine)\s+floor\b|\bfloor\s*[:\-]\s*([^\n,|]{1,24}))""").find(text)?.let { match ->
-            match.groupValues[2].takeIf { it.isNotBlank() }?.trim()
-                ?: match.groupValues[1].takeIf { it.isNotBlank() }?.let { "$it Floor" }
-        }.orEmpty()
-
-        val carpetRegex = Regex("""(?:(\d[\d,.]*)\s*(?:sq\.?\s*ft|sqft|sft)?\s*(?:carpet|ca\b)|carpet(?:\s*area)?\s*[:\-]?\s*(\d[\d,.]*)\s*(?:sq\.?\s*ft|sqft|sft)?)""", RegexOption.IGNORE_CASE)
-        val builtUpRegex = Regex("""(?:(\d[\d,.]*)\s*(?:sq\.?\s*ft|sqft|sft)?\s*(?:built[\- ]?up|bua|super\s*built[\- ]?up|chargeable)|(?:built[\- ]?up|bua|chargeable)(?:\s*area)?\s*[:\-]?\s*(\d[\d,.]*)\s*(?:sq\.?\s*ft|sqft|sft)?)""", RegexOption.IGNORE_CASE)
-        val genericAreaRegex = Regex("""(\d[\d,.]*)\s*(?:sq\.?\s*ft|sqft|sft)\b""", RegexOption.IGNORE_CASE)
-
-        val builtUp = builtUpRegex.find(text)?.let { m ->
-            (m.groupValues[1].ifBlank { m.groupValues[2] }).replace(",", "").toDoubleOrNull()
-        }
-        val carpetExplicit = carpetRegex.find(text)?.let { m ->
-            (m.groupValues[1].ifBlank { m.groupValues[2] }).replace(",", "").toDoubleOrNull()
-        }
-        val carpet = carpetExplicit ?: genericAreaRegex.findAll(text).firstNotNullOfOrNull { m ->
-            val v = m.groupValues[1].replace(",", "").toDoubleOrNull()
-            if (v != null && v != builtUp) v else null
-        } ?: 0.0
-
-        var rentVal: Double? = null
-        var saleVal: Double? = null
-        var depositVal: Double? = null
-
-        fun parseScaledRupees(numStr: String, unitStr: String): Double? {
-            val base = numStr.replace(",", "").toDoubleOrNull() ?: return null
-            if (base <= 0.0) return null
-            return when (unitStr.lowercase().trim()) {
-                "cr", "crore", "crores" -> base * 10_000_000.0
-                "lac", "lakh", "lakhs", "lacs", "l" -> base * 100_000.0
-                "k", "thousand" -> base * 1_000.0
-                else -> base
-            }
-        }
-
-        // Tagged rent extraction first
-        Regex("""(?im)\b(?:rent|lease)\s*[:\-@]?\s*(?:₹|rs\.?|inr)?\s*(\d[\d,.]*)\s*(cr|crore|crores|lac|lakh|lakhs|lacs|k|thousand)?\b""").find(text)?.let { m ->
-            rentVal = parseScaledRupees(m.groupValues[1], m.groupValues[2])
-        }
-        // Tagged sale price extraction
-        Regex("""(?im)\b(?:sale|price|ask|asking|quote|budget|outright)\s*[:\-@]?\s*(?:₹|rs\.?|inr)?\s*(\d[\d,.]*)\s*(cr|crore|crores|lac|lakh|lakhs|lacs|k|thousand)?\b""").find(text)?.let { m ->
-            val parsed = parseScaledRupees(m.groupValues[1], m.groupValues[2])
-            if (parsed != null && parsed > 0.0) {
-                if (tab.isRental && parsed < 1_000_000.0 && rentVal == null) rentVal = parsed
-                else saleVal = parsed
-            }
-        }
-        // Untyped Cr/Lac/k fallback
-        if (rentVal == null && saleVal == null) {
-            Regex("""(?:₹|rs\.?|inr)?\s*(\d+(?:\.\d+)?)\s*(cr|crore|crores)\b""", RegexOption.IGNORE_CASE).find(text)?.let { m ->
-                val v = parseScaledRupees(m.groupValues[1], m.groupValues[2])
-                if (tab.isRental) rentVal = v else saleVal = v
-            } ?: Regex("""(?:₹|rs\.?|inr)?\s*(\d+(?:\.\d+)?)\s*(lac|lakh|lakhs|lacs)\b""", RegexOption.IGNORE_CASE).find(text)?.let { m ->
-                val v = parseScaledRupees(m.groupValues[1], m.groupValues[2])
-                if (tab.isRental) rentVal = v else saleVal = v
-            } ?: Regex("""(?:₹|rs\.?|inr)?\s*(\d+(?:\.\d+)?)\s*(k|thousand)\b""", RegexOption.IGNORE_CASE).find(text)?.let { m ->
-                val v = parseScaledRupees(m.groupValues[1], m.groupValues[2])
-                if (tab.isRental) rentVal = v else saleVal = v
-            }
-        }
-
-        // Security deposit extraction (INR amount or N months)
-        Regex("""(?im)\b(?:sec(?:urity)?\.?\s*dep(?:osit)?|deposit)\s*[:\-]?\s*(?:₹|rs\.?|inr)?\s*(\d[\d,.]*)\s*(cr|crore|lac|lakh|lacs|k|months?)?\b""").find(text)?.let { m ->
-            val unit = m.groupValues[2].lowercase()
-            if (unit.startsWith("month")) {
-                val months = m.groupValues[1].toDoubleOrNull() ?: 0.0
-                if (months > 0.0 && (rentVal ?: 0.0) > 0.0) {
-                    depositVal = months * (rentVal ?: 0.0)
-                }
-            } else {
-                depositVal = parseScaledRupees(m.groupValues[1], unit)
-            }
-        }
-
-        val primaryPrice = if (tab.isRental) (rentVal ?: 0.0) else (saleVal ?: 0.0)
-
-        val phone = Regex("""(?:\+91[\-\s]?)?([6-9]\d{9})\b""").find(text)?.groupValues?.get(1).orEmpty()
-        val contactName = Regex("""(?im)\b(?:contact|owner|poc|call)\s*[:\-]\s*([A-Za-z][A-Za-z\s\.]{1,30})""").find(text)?.groupValues?.get(1)?.trim()
-            ?.takeIf { !it.all { c -> c.isDigit() } }.orEmpty()
-
-        val workstations = Regex("""(\d+)\s*(?:workstations?|seats?|ws\b)""", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toIntOrNull()
-        val cabins = Regex("""(\d+)\s*cabins?""", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toIntOrNull()
-        val bhkConfig = Regex("""(\d(?:\.5)?\s*BHK)""", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.uppercase()?.replace(Regex("\\s+"), " ").orEmpty()
-        val parking = Regex("""(?im)(\d+\s*(?:covered|open|car)?\s*park(?:ing)?s?)""").find(text)?.groupValues?.get(1)?.trim().orEmpty()
-
-        val hasExplicitFurn = lower.contains("fully furnished") || lower.contains("semi furnished") ||
-            lower.contains("semi-furnished") || lower.contains("warm shell") ||
-            lower.contains("bare shell") || lower.contains("unfurnished")
-        val furnishing = when {
-            lower.contains("fully furnished") -> FurnishingType.FULLY_FURNISHED
-            lower.contains("semi furnished") || lower.contains("semi-furnished") -> FurnishingType.SEMI_FURNISHED
-            lower.contains("warm shell") -> FurnishingType.WARM_SHELL
-            lower.contains("bare shell") -> FurnishingType.BARE_SHELL
-            else -> FurnishingType.UNFURNISHED
-        }
-
-        val propType = when {
-            tab == InventoryTab.SHOP_LEASE || tab == InventoryTab.SHOP_OUT -> if (lower.contains("showroom")) "Showroom" else "Retail Shop"
-            tab.isCommercial -> "Office"
-            bhkConfig.isNotBlank() -> "Apartment"
-            lower.contains("villa") -> "Villa"
-            lower.contains("bungalow") -> "Bungalow"
-            else -> if (tab.isCommercial) "Office" else "Apartment"
-        }
-
-        val draft = ExtractedPropertyDraft(
-            tab = tab,
-            propertyType = propType,
-            projectName = projectName,
-            location = location,
-            microMarket = location,
-            unitNumber = unitNumber,
-            floor = floor,
-            bhkConfiguration = bhkConfig,
-            carpetAreaSqFt = carpet,
-            builtUpAreaSqFt = builtUp,
-            priceOrRent = primaryPrice,
-            priceSale = saleVal,
-            rent = rentVal,
-            deposit = depositVal,
-            furnishing = furnishing,
-            possession = when {
-                lower.contains("immediate") || lower.contains("ready to move") -> "Immediate"
-                else -> Regex("""(?im)possession\s*[:\-]\s*([^\n,|]{2,25})""").find(text)?.groupValues?.get(1)?.trim().orEmpty()
-            },
-            parking = parking,
-            workstations = workstations,
-            cabins = cabins,
-            contactName = contactName,
-            contactPhone = phone,
-            remarks = text.trim(),
-            confidenceNotes = "Parsed via Pune Smart Fallback Engine",
-            rawSnippet = text.trim(),
-            hasExplicitFurnishing = hasExplicitFurn
-        )
-        return draft.copy(missingFields = computeDraftMissingFields(draft))
+    fun fallbackParseProperty(rawText: String): ExtractedPropertyDraft {
+        val res = SafeWhatsAppExtractor.extractOffline(rawText)
+        return res.drafts.firstOrNull()
+            ?: SafeWhatsAppExtractor.parseIsolatedSegment(rawText)
     }
 
     /**
@@ -1709,27 +1508,34 @@ Pasted text:
     }
 
     /**
-     * Batch 22: On-demand parser for WhatsApp Follow-up messages detected with inventory signals.
-     * Uses Gemini Flash when online/configured and seamlessly falls back to regex parser otherwise.
+     * Batch 22 + Build 01: On-demand parser for WhatsApp Follow-up messages detected with inventory signals.
+     * Preserves sender details strictly as Source/Broker (NEVER assumes sender is Property Owner).
      */
     suspend fun parseWhatsAppInventoryMessage(
         rawText: String,
         senderName: String,
         senderPhone: String
     ): ExtractedPropertyDraft = withContext(Dispatchers.IO) {
-        val draft = parsePropertyMessage(rawText)
-        val mergedName = draft.contactName.ifBlank { senderName.trim() }
-        val cleanPhone10 = senderPhone.filter { it.isDigit() }.let {
-            if (it.length >= 10) it.takeLast(10) else it
-        }
-        val mergedPhone = draft.contactPhone.ifBlank { cleanPhone10 }
-        val mergedRemarks = draft.remarks.ifBlank { rawText.trim().take(240) }
-        draft.copy(
-            contactName = mergedName,
-            contactPhone = mergedPhone,
-            remarks = mergedRemarks
+        val result = extractWhatsAppSafely(
+            rawText = rawText,
+            senderName = senderName,
+            senderPhone = senderPhone
+        )
+        result.drafts.firstOrNull() ?: ExtractedPropertyDraft(
+            sourceBrokerName = senderName.trim(),
+            sourceBrokerPhone = SafeWhatsAppExtractor.normalizeIndianPhone(senderPhone),
+            contactName = senderName.trim(),
+            contactPhone = SafeWhatsAppExtractor.normalizeIndianPhone(senderPhone),
+            remarks = rawText.trim().take(240),
+            rawSnippet = rawText.trim()
         )
     }
+
+    private fun sanitizeExtractedString(value: String?): String =
+        SafeWhatsAppExtractor.sanitizeExtractedString(value)
+
+    private fun normalizeIndianPhone(raw: String?): String =
+        SafeWhatsAppExtractor.normalizeIndianPhone(raw)
 }
 
 

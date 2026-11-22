@@ -42,6 +42,7 @@ import com.example.crm.*
 import com.example.inventory.InventoryQuality
 import com.example.model.*
 import com.example.ui.components.WhatsAppIntentRouter
+import com.example.ui.components.WhatsAppShareDialog
 import com.example.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -69,12 +70,14 @@ fun WhatsAppFollowUpsScreen(
     var brokerContacts by remember { mutableStateOf<Map<String, BrokerContactEntry>>(emptyMap()) }
     var pocLinks by remember { mutableStateOf<Map<String, ProjectPocEntry>>(emptyMap()) }
     var hasNotifAccess by remember { mutableStateOf(CrmCallManager.isNotificationListenerGranted(context)) }
-    var selectedFilter by remember { mutableStateOf("Unread") }
+    var selectedFilter by remember { mutableStateOf("AI Inbox") }
     var refreshTick by remember { mutableIntStateOf(0) }
+    var isScanningAi by remember { mutableStateOf(false) }
 
     var activeCrmCaptureCluster by remember { mutableStateOf<WhatsAppThreadCluster?>(null) }
     var activeInventoryCaptureCluster by remember { mutableStateOf<WhatsAppThreadCluster?>(null) }
     var activeSwipeChoiceCluster by remember { mutableStateOf<WhatsAppThreadCluster?>(null) }
+    var activeShareMatchesDialog by remember { mutableStateOf<Pair<WhatsAppThreadCluster, List<PropertyItem>>?>(null) }
 
     LaunchedEffect(refreshTick) {
         hasNotifAccess = CrmCallManager.isNotificationListenerGranted(context)
@@ -89,23 +92,67 @@ fun WhatsAppFollowUpsScreen(
         leads = loaded.second
         brokerContacts = loaded.third.first
         pocLinks = loaded.third.second
+
+        // Auto-analyze any pending real-estate messages in the background for the AI Inbox
+        val pendingForAi = loaded.first
+            .filter { !it.reviewed && !it.skipped && (it.aiStatus == "PENDING" || (it.aiStatus.isBlank() && WhatsAppFollowUpStore.hasRealEstateKeyword(it.messageText))) }
+            .take(8)
+        if (pendingForAi.isNotEmpty() && !isScanningAi) {
+            isScanningAi = true
+            try {
+                val aiSvc = GeminiRealEstateService()
+                withContext(Dispatchers.IO) {
+                    pendingForAi.forEach { msg ->
+                        WhatsAppFollowUpStore.analyzeMessageForAiInbox(context, msg, aiSvc)
+                    }
+                }
+                messages = withContext(Dispatchers.IO) { WhatsAppFollowUpStore.getMessages(context) }
+            } finally {
+                isScanningAi = false
+            }
+        }
     }
 
+    var aiInboxClusters by remember { mutableStateOf<List<WhatsAppThreadCluster>>(emptyList()) }
     var unreadClusters by remember { mutableStateOf<List<WhatsAppThreadCluster>>(emptyList()) }
     var keywordClusters by remember { mutableStateOf<List<WhatsAppThreadCluster>>(emptyList()) }
     var hideGroupClusters by remember { mutableStateOf<List<WhatsAppThreadCluster>>(emptyList()) }
     var allClusters by remember { mutableStateOf<List<WhatsAppThreadCluster>>(emptyList()) }
     var skippedClusters by remember { mutableStateOf<List<WhatsAppThreadCluster>>(emptyList()) }
     var reviewedClusters by remember { mutableStateOf<List<WhatsAppThreadCluster>>(emptyList()) }
+    var autoMatchesByThreadKey by remember { mutableStateOf<Map<String, List<PropertyItem>>>(emptyMap()) }
 
     LaunchedEffect(messages, leads, inventory, brokerContacts, pocLinks) {
         withContext(Dispatchers.Default) {
+            val aiBuilt = WhatsAppFollowUpStore.buildCompiledThreads(messages, "AI Inbox", leads, inventory, brokerContacts, pocLinks)
+            aiInboxClusters = aiBuilt
             unreadClusters = WhatsAppFollowUpStore.buildCompiledThreads(messages, "Unread", leads, inventory, brokerContacts, pocLinks)
             keywordClusters = WhatsAppFollowUpStore.buildCompiledThreads(messages, "Keywords", leads, inventory, brokerContacts, pocLinks)
             hideGroupClusters = WhatsAppFollowUpStore.buildCompiledThreads(messages, "Hide Group Chats", leads, inventory, brokerContacts, pocLinks)
             allClusters = WhatsAppFollowUpStore.buildCompiledThreads(messages, "All", leads, inventory, brokerContacts, pocLinks)
             skippedClusters = WhatsAppFollowUpStore.buildCompiledThreads(messages, "Skipped", leads, inventory, brokerContacts, pocLinks)
             reviewedClusters = WhatsAppFollowUpStore.buildCompiledThreads(messages, "Reviewed", leads, inventory, brokerContacts, pocLinks)
+
+            val liveAvail = inventory.filter {
+                it.status == AvailabilityStatus.AVAILABLE && it.archiveStatus != ArchiveStatus.ARCHIVED
+            }
+            val matchMap = LinkedHashMap<String, List<PropertyItem>>()
+            if (liveAvail.isNotEmpty()) {
+                val candidateThreads = (aiBuilt + unreadClusters).distinctBy { it.threadKey }
+                candidateThreads.forEach { cluster ->
+                    val isReq = cluster.aiIntent.equals("CLIENT_REQUIREMENT", ignoreCase = true) ||
+                        (!cluster.hasInventorySignal && WhatsAppFollowUpStore.hasRealEstateKeyword(cluster.combinedText) &&
+                            Regex("\\b(looking|need|required|requirement|client|want|search|budget|site\\s*visit)\\b", RegexOption.IGNORE_CASE)
+                                .containsMatchIn(cluster.combinedText))
+                    if (isReq) {
+                        val matches = matchRequirementThreadToLiveInventory(cluster.combinedText, liveAvail)
+                        if (matches.isNotEmpty()) {
+                            matchMap[cluster.threadKey] = matches
+                        }
+                    }
+                }
+            }
+            autoMatchesByThreadKey = matchMap
         }
     }
 
@@ -113,6 +160,7 @@ fun WhatsAppFollowUpsScreen(
 
     val filteredClusters = remember(
         selectedFilter,
+        aiInboxClusters,
         unreadClusters,
         keywordClusters,
         hideGroupClusters,
@@ -121,6 +169,7 @@ fun WhatsAppFollowUpsScreen(
         reviewedClusters
     ) {
         when (selectedFilter) {
+            "AI Inbox" -> aiInboxClusters
             "Unread" -> unreadClusters
             "Keywords" -> keywordClusters
             "Hide Group Chats" -> hideGroupClusters
@@ -166,25 +215,34 @@ fun WhatsAppFollowUpsScreen(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "WhatsApp Replies & Follow-ups",
+                    text = "WhatsApp AI Inbox & Follow-ups",
                     color = TextPrimaryDark,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Compiled by thread • Swipe right to Capture, left to Skip",
+                    text = "Gemini auto-tags listings & client requirements • 1-tap approve",
                     color = TextSecondaryDark,
                     fontSize = 11.5.sp
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (isScanningAi) {
+                    CircularProgressIndicator(
+                        color = BrandGold,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .size(18.dp)
+                    )
+                }
                 IconButton(
                     onClick = { refreshTick++ },
                     modifier = Modifier
                         .size(48.dp)
                         .testTag("wa_refresh_btn")
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh messages", tint = BrandGold)
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh and scan AI Inbox", tint = BrandGold)
                 }
                 if (messages.any { it.reviewed }) {
                     TextButton(
@@ -259,6 +317,7 @@ fun WhatsAppFollowUpsScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             listOf(
+                "AI Inbox" to aiInboxClusters.size,
                 "Unread" to unreadClusters.size,
                 "Keywords" to keywordClusters.size,
                 "Hide Group Chats" to hideGroupClusters.size,
@@ -266,9 +325,20 @@ fun WhatsAppFollowUpsScreen(
                 "Skipped" to skippedClusters.size,
                 "Reviewed" to reviewedClusters.size
             ).forEach { (tab, count) ->
+                val isAiTab = tab == "AI Inbox"
                 FilterChip(
                     selected = selectedFilter == tab,
                     onClick = { selectedFilter = tab },
+                    leadingIcon = if (isAiTab) {
+                        {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = if (selectedFilter == tab) BrandGold else PrimaryActionOrange,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    } else null,
                     label = { Text("$tab ($count)", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold) },
                     modifier = Modifier.testTag("wa_filter_${tab.lowercase(Locale.ENGLISH).replace(" ", "_")}")
                 )
@@ -288,13 +358,14 @@ fun WhatsAppFollowUpsScreen(
                     modifier = Modifier.padding(24.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.MarkChatRead,
+                        imageVector = if (selectedFilter == "AI Inbox") Icons.Default.AutoAwesome else Icons.Default.MarkChatRead,
                         contentDescription = null,
-                        tint = TextSecondaryDark,
+                        tint = if (selectedFilter == "AI Inbox") BrandGold else TextSecondaryDark,
                         modifier = Modifier.size(44.dp)
                     )
                     Text(
                         text = when (selectedFilter) {
+                            "AI Inbox" -> "AI Inbox is all caught up"
                             "Unread" -> "All WhatsApp follow-ups reviewed"
                             "Skipped" -> "No skipped WhatsApp threads"
                             "Reviewed" -> "No reviewed threads yet"
@@ -305,7 +376,11 @@ fun WhatsAppFollowUpsScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Consecutive messages from the same sender or group compile into a single card. Swipe right to Capture to CRM/Inventory or swipe left to Skip.",
+                        text = if (selectedFilter == "AI Inbox") {
+                            "Incoming WhatsApp & WA Business notifications with real-estate keywords are scanned silently by Gemini and queued here for 1-tap approval. Personal chats stay untouched."
+                        } else {
+                            "Consecutive messages from the same sender or group compile into a single card. Swipe right to Capture to CRM/Inventory or swipe left to Skip."
+                        },
                         color = TextSecondaryDark,
                         fontSize = 12.sp
                     )
@@ -385,8 +460,13 @@ fun WhatsAppFollowUpsScreen(
                             }
                         }
                     ) {
+                        val matchedInventory = autoMatchesByThreadKey[cluster.threadKey].orEmpty()
                         WhatsAppThreadClusterCard(
                             cluster = cluster,
+                            matchedProperties = matchedInventory,
+                            onShareMatches = if (matchedInventory.isNotEmpty()) {
+                                { activeShareMatchesDialog = cluster to matchedInventory }
+                            } else null,
                             onOpenEntity = {
                                 if (cluster.bestMatch.matchedLead != null) {
                                     onOpenLeadInCrm?.invoke(cluster.bestMatch.matchedLead)
@@ -586,11 +666,88 @@ fun WhatsAppFollowUpsScreen(
             }
         )
     }
+
+    // 1-Tap Share Live Inventory Matches for AI Inbox Client Requirements
+    activeShareMatchesDialog?.let { (cluster, matchedProps) ->
+        WhatsAppShareDialog(
+            properties = matchedProps,
+            recipientPhone = cluster.bestMatch.phone.takeIf { it.isNotBlank() },
+            senderName = employeeName,
+            onDismiss = { activeShareMatchesDialog = null }
+        )
+    }
+}
+
+private fun matchRequirementThreadToLiveInventory(
+    rawText: String,
+    availableInventory: List<PropertyItem>,
+    maxMatches: Int = 3
+): List<PropertyItem> {
+    val lower = rawText.lowercase(Locale.ENGLISH)
+    val wantsCommercial = Regex("\\b(office|shop|showroom|commercial|warehouse|workstation|cabin|retail|pre[\\s-]?leased|it\\s*park|floor\\s*plate)\\b")
+        .containsMatchIn(lower)
+    val wantsResidential = Regex("\\b(1\\s*bhk|2\\s*bhk|3\\s*bhk|4\\s*bhk|5\\s*bhk|flat|apartment|villa|bungalow|penthouse|residential|duplex)\\b")
+        .containsMatchIn(lower)
+    val wantsRent = Regex("\\b(rent|lease|leasing|monthly|per\\s*month|/mo)\\b").containsMatchIn(lower)
+    val wantsSale = Regex("\\b(buy|sale|purchase|outright|resale|invest|pre[\\s-]?leased)\\b").containsMatchIn(lower)
+    val bhkMatch = Regex("\\b([1-5])\\s*bhk\\b").find(lower)?.groupValues?.getOrNull(1)
+
+    val matchedLocalities = WhatsAppFollowUpStore.PUNE_REAL_ESTATE_LOCALITIES.filter { loc ->
+        lower.contains(loc)
+    }
+
+    val areaMatch = Regex("\\b(\\d{3,5})\\s*(sq\\.?\\s*ft|sqft|sft|carpet|ca)\\b").find(lower)
+        ?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+
+    val scored = availableInventory.mapNotNull { prop ->
+        var score = 0
+        val propLoc = prop.location.lowercase(Locale.ENGLISH)
+        val propProject = prop.projectName.lowercase(Locale.ENGLISH)
+
+        if (matchedLocalities.isNotEmpty()) {
+            if (matchedLocalities.any { loc -> propLoc.contains(loc) || propProject.contains(loc) }) {
+                score += 45
+            } else {
+                return@mapNotNull null // Keep matches geographically relevant when location is stated
+            }
+        }
+
+        if (wantsCommercial && !wantsResidential) {
+            if (prop.isCommercial()) score += 20 else return@mapNotNull null
+        } else if (wantsResidential && !wantsCommercial) {
+            if (!prop.isCommercial()) score += 20 else return@mapNotNull null
+        }
+
+        if (wantsRent && !wantsSale) {
+            if (prop.tab.isRental) score += 20 else return@mapNotNull null
+        } else if (wantsSale && !wantsRent) {
+            if (!prop.tab.isRental || prop.tab == InventoryTab.PRE_LEASED) score += 20 else return@mapNotNull null
+        }
+
+        if (!bhkMatch.isNullOrBlank()) {
+            val propBhk = prop.bhk.orEmpty().lowercase(Locale.ENGLISH)
+            if (propBhk.contains(bhkMatch)) score += 25 else if (!prop.isCommercial()) score -= 15
+        }
+
+        if (areaMatch != null && prop.carpetAreaSqFt > 0.0) {
+            val ratio = prop.carpetAreaSqFt / areaMatch
+            if (ratio in 0.70..1.35) score += 18 else if (ratio in 0.55..1.60) score += 6
+        }
+
+        if (score >= 35) prop to score else null
+    }
+
+    return scored
+        .sortedByDescending { it.second }
+        .take(maxMatches)
+        .map { it.first }
 }
 
 @Composable
 private fun WhatsAppThreadClusterCard(
     cluster: WhatsAppThreadCluster,
+    matchedProperties: List<PropertyItem> = emptyList(),
+    onShareMatches: (() -> Unit)? = null,
     onOpenEntity: () -> Unit,
     onLogToCrm: () -> Unit,
     onCaptureInventory: () -> Unit,
@@ -766,6 +923,145 @@ private fun WhatsAppThreadClusterCard(
                 }
             }
 
+            // Gemini AI Intent Banner (when classified or pending AI analysis)
+            if (cluster.aiStatus.isNotBlank() && cluster.aiStatus != "NONE") {
+                val (aiBadgeLabel, aiBadgeColor, aiBadgeBg) = when {
+                    cluster.aiStatus == "PENDING" -> Triple("Gemini Analyzing...", PrimaryNavy, Color(0xFFE0E7FF))
+                    cluster.aiIntent == "PROPERTY_LISTING" -> Triple("AI: Property Listing", Color(0xFF0F766E), Color(0xFFCCFBF1))
+                    cluster.aiIntent == "CLIENT_REQUIREMENT" -> Triple("AI: Client Requirement", PrimaryActionOrange, Color(0xFFFFEDD5))
+                    cluster.aiIntent == "EXISTING_PROPERTY_UPDATE" -> Triple("AI: Listing Update", Color(0xFF7C3AED), Color(0xFFF3E8FF))
+                    else -> Triple("AI: Review Needed", Color(0xFF475569), Color(0xFFF1F5F9))
+                }
+                Surface(
+                    color = aiBadgeBg,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(0.8.dp, aiBadgeColor.copy(alpha = 0.4f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("wa_ai_intent_banner_${cluster.threadKey}")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = aiBadgeColor,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = aiBadgeLabel,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = aiBadgeColor
+                                )
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (cluster.aiConfidence > 0) {
+                                    Text(
+                                        text = "${cluster.aiConfidence}% match",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = aiBadgeColor
+                                    )
+                                }
+                                if (cluster.aiReviewFlagCount > 0) {
+                                    Text(
+                                        text = "⚠ ${cluster.aiReviewFlagCount} verify",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFB45309)
+                                    )
+                                }
+                            }
+                        }
+                        if (cluster.aiSummary.isNotBlank()) {
+                            Text(
+                                text = cluster.aiSummary,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Live Inventory Auto-Match Strip for Client Requirements
+            if (matchedProperties.isNotEmpty()) {
+                Surface(
+                    color = Color(0xFFECFDF5),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, StatusSuccessGreen.copy(alpha = 0.45f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("wa_auto_matches_banner_${cluster.threadKey}")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "${matchedProperties.size} Live Inventory ${if (matchedProperties.size == 1) "Match" else "Matches"} Found",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF065F46)
+                            )
+                            Text(
+                                text = matchedProperties.joinToString(" • ") {
+                                    it.projectName.ifBlank { it.propertyCode }
+                                },
+                                fontSize = 11.sp,
+                                color = TextPrimary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (onShareMatches != null) {
+                            Spacer(Modifier.width(8.dp))
+                            Button(
+                                onClick = onShareMatches,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = StatusSuccessGreen,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("wa_share_matches_btn")
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Share", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Compiled Message Text
             Surface(
                 color = SurfaceMuted,
@@ -818,7 +1114,10 @@ private fun WhatsAppThreadClusterCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (cluster.hasInventorySignal) {
+                val isPropertyApprovalPrimary = cluster.aiIntent == "PROPERTY_LISTING" ||
+                    cluster.aiIntent == "EXISTING_PROPERTY_UPDATE" ||
+                    cluster.hasInventorySignal
+                if (isPropertyApprovalPrimary) {
                     Button(
                         onClick = onCaptureInventory,
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E), contentColor = Color.White),
@@ -830,7 +1129,7 @@ private fun WhatsAppThreadClusterCard(
                     ) {
                         Icon(Icons.Default.Apartment, contentDescription = null, modifier = Modifier.size(15.dp))
                         Spacer(Modifier.width(5.dp))
-                        Text("Capture to Inventory", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                        Text("Approve to Inventory", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     }
 
                     OutlinedButton(
@@ -842,7 +1141,7 @@ private fun WhatsAppThreadClusterCard(
                             .heightIn(min = 48.dp)
                             .testTag("wa_log_crm_btn")
                     ) {
-                        Text("Log to CRM Lead", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = PrimaryActionOrange, maxLines = 1, softWrap = false)
+                        Text("Approve to CRM", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = PrimaryActionOrange, maxLines = 1, softWrap = false)
                     }
                 } else {
                     Button(
@@ -856,7 +1155,7 @@ private fun WhatsAppThreadClusterCard(
                     ) {
                         Icon(Icons.Default.EventNote, contentDescription = null, modifier = Modifier.size(15.dp))
                         Spacer(Modifier.width(5.dp))
-                        Text("Log to CRM Lead", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                        Text("Approve to CRM Lead", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     }
 
                     OutlinedButton(

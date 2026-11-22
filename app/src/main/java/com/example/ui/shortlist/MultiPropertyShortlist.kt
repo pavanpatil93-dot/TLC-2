@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -18,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -37,6 +39,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
+import com.example.ai.AiPitchTone
+import com.example.ai.GeminiProductivityEngine
 import com.example.model.AvailabilityStatus
 import com.example.model.CalculationUtils
 import com.example.model.PropertyItem
@@ -46,6 +50,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.util.Locale
@@ -541,9 +546,13 @@ fun ShortlistReviewBottomSheet(
     onResetPreviewText: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var copiedConfirmed by remember(state.previewText) { mutableStateOf(false) }
     var isEditingDraft by remember { mutableStateOf(false) }
+    var selectedAiTone by remember { mutableStateOf(AiPitchTone.EXECUTIVE) }
+    var isDraftingAi by remember { mutableStateOf(false) }
+    var aiStatusNote by remember { mutableStateOf<String?>(null) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -621,6 +630,91 @@ fun ShortlistReviewBottomSheet(
                         } else null,
                         onRemove = { onRemoveProperty(prop.id) }
                     )
+                }
+            }
+
+            if (onUpdatePreviewText != null && state.selectedProperties.isNotEmpty()) {
+                Surface(
+                    color = SurfaceWhite,
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.65f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("shortlist_ai_tone_bar")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    tint = BrandGold,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "Gemini Shortlist Tone",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = TextPrimary
+                                )
+                            }
+                            if (isDraftingAi) {
+                                CircularProgressIndicator(
+                                    color = PrimaryActionOrange,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            AiPitchTone.entries.forEach { tone ->
+                                FilterChip(
+                                    selected = selectedAiTone == tone,
+                                    onClick = {
+                                        selectedAiTone = tone
+                                        if (!isDraftingAi) {
+                                            isDraftingAi = true
+                                            aiStatusNote = null
+                                            coroutineScope.launch {
+                                                val draft = GeminiProductivityEngine.draftPropertySharePitch(
+                                                    properties = state.selectedProperties,
+                                                    tone = tone,
+                                                    audienceLabel = "Client"
+                                                )
+                                                onUpdatePreviewText(draft.text)
+                                                aiStatusNote = draft.statusNote
+                                                isDraftingAi = false
+                                            }
+                                        }
+                                    },
+                                    label = { Text(tone.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                                    modifier = Modifier.testTag("shortlist_tone_${tone.name.lowercase(java.util.Locale.ENGLISH)}")
+                                )
+                            }
+                        }
+                        if (!aiStatusNote.isNullOrBlank()) {
+                            Text(
+                                text = aiStatusNote.orEmpty(),
+                                fontSize = 10.sp,
+                                color = SecondaryText
+                            )
+                        }
+                    }
                 }
             }
 

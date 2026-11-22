@@ -1,7 +1,13 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,7 +35,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ai.ExtractedPropertyDraft
+import com.example.ai.GeminiProductivityEngine
 import com.example.ai.GeminiRealEstateService
+import com.example.ai.WhatsAppExtractionBatchResult
 import com.example.data.SheetsRepository
 import com.example.data.projects.DirectoryProject
 import com.example.data.projects.ProjectDirectoryStore
@@ -42,6 +51,7 @@ import com.example.model.*
 import com.example.ui.components.CompactDropdownField
 import com.example.ui.components.PocTypeChipSelector
 import com.example.ui.components.PropertyMediaUploadSection
+import com.example.ui.components.SafeWhatsAppReviewPanel
 import com.example.ui.components.SearchableDropdownField
 import com.example.ui.theme.*
 import kotlinx.coroutines.Dispatchers
@@ -87,7 +97,8 @@ fun AddPropertyScreen(
     initialOwnerPhone: String = "",
     initialRemarks: String = "",
     initialPocType: String = "Property Owner",
-    fromCallIntelligence: Boolean = false
+    fromCallIntelligence: Boolean = false,
+    onRouteClientRequirementToCrm: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -191,9 +202,96 @@ fun AddPropertyScreen(
     var formVideoUrl by remember { mutableStateOf<String?>(null) }
     var formFloorPlanUrl by remember { mutableStateOf<String?>(null) }
 
-    // AI Smart Paste
+    // AI Smart Paste + Vision Brochure Scanner + Voice Fill (Build 01 Safe Two-Step Review)
     var rawInputText by remember { mutableStateOf("") }
     var isExtracting by remember { mutableStateOf(false) }
+    var isScanningBrochure by remember { mutableStateOf(false) }
+    var extractionBatchResult by remember { mutableStateOf<WhatsAppExtractionBatchResult?>(null) }
+    var extractionErrorText by remember { mutableStateOf<String?>(null) }
+
+    val brochurePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        selectedMode = 1
+        isScanningBrochure = true
+        extractionErrorText = null
+        coroutineScope.launch {
+            try {
+                val jpegBytes = GeminiProductivityEngine.compressUriToJpegBytes(context, uri)
+                if (jpegBytes == null || jpegBytes.isEmpty()) {
+                    extractionErrorText = "Could not read selected brochure/screenshot image."
+                } else {
+                    val result = GeminiProductivityEngine.extractPropertyFromImageBytes(
+                        imageBytes = jpegBytes,
+                        mimeType = "image/jpeg",
+                        extraCaption = rawInputText.trim()
+                    )
+                    extractionBatchResult = result
+                    if (!result.errorMessage.isNullOrBlank()) {
+                        extractionErrorText = result.errorMessage
+                    } else {
+                        Toast.makeText(
+                            context,
+                            "Brochure scanned (${result.drafts.size} option${if (result.drafts.size == 1) "" else "s"} detected) — review before filling.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            } catch (e: Exception) {
+                extractionErrorText = "Brochure scan failed (${e.localizedMessage ?: "error"})."
+            } finally {
+                isScanningBrochure = false
+            }
+        }
+    }
+
+    val voiceFillLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        if (res.resultCode == Activity.RESULT_OK) {
+            val spoken = res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()?.trim().orEmpty()
+            if (spoken.isNotBlank()) {
+                rawInputText = spoken
+                selectedMode = 1
+                isExtracting = true
+                extractionErrorText = null
+                coroutineScope.launch {
+                    try {
+                        extractionBatchResult = aiService.extractWhatsAppSafely(spoken)
+                    } catch (e: Exception) {
+                        extractionErrorText = "Voice parsing failed (${e.localizedMessage ?: "offline"})."
+                    } finally {
+                        isExtracting = false
+                    }
+                }
+            }
+        }
+    }
+
+    fun triggerBrochureScan() {
+        runCatching {
+            brochurePickerLauncher.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            )
+        }.onFailure {
+            Toast.makeText(context, "Photo Picker unavailable on this device.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun triggerVoiceFill() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak property details (e.g., 1200 sqft office in Kharadi for lease at 95k)")
+        }
+        runCatching {
+            voiceFillLauncher.launch(intent)
+        }.onFailure {
+            Toast.makeText(context, "Voice dictation not available on this device.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     val projectLookupMap = remember(directoryProjects, masterCommercialProjects, masterLocations) {
         val locById = masterLocations.associate { it.id to it.name.trim() }
@@ -629,6 +727,51 @@ fun AddPropertyScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             if (selectedMode == 0) {
+                // ── QUICK GEMINI AI ASSIST STRIP (BROCHURE SCAN + VOICE FILL) ──
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { triggerBrochureScan() },
+                        enabled = !isScanningBrochure && !isExtracting,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, PrimaryNavy.copy(alpha = 0.55f)),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = SurfaceWhite,
+                            contentColor = PrimaryNavy
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("add_scan_brochure_btn")
+                    ) {
+                        Icon(Icons.Default.DocumentScanner, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("Scan Brochure", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+                    OutlinedButton(
+                        onClick = { triggerVoiceFill() },
+                        enabled = !isScanningBrochure && !isExtracting,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, PrimaryActionOrange.copy(alpha = 0.7f)),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = SelectedSurfaceContainer,
+                            contentColor = PrimaryActionOrange
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("add_voice_fill_btn")
+                    ) {
+                        Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("Voice Fill AI", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    }
+                }
+
                 // ── DUPLICATE WARNING BANNER ──
                 if (potentialDuplicates.isNotEmpty()) {
                     Surface(
@@ -1231,7 +1374,7 @@ fun AddPropertyScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
             } else {
-                // ── MODE 1: AI SMART PASTE ──
+                // ── MODE 1: BUILD 01 SAFE WHATSAPP AI EXTRACTION ──
                 Surface(
                     color = SurfaceWhite,
                     shape = RoundedCornerShape(12.dp),
@@ -1243,22 +1386,81 @@ fun AddPropertyScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
-                            text = "Paste WhatsApp / Broker Message",
+                            text = "Safe WhatsApp, Brochure & Voice AI Extraction",
                             color = TextPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Extracts available fields into the unified form without inventing missing numbers.",
+                            text = "Paste a WhatsApp listing, scan a brochure/screenshot, or dictate by voice. Gemini flags uncertain fields with evidence and never invents missing numbers.",
                             color = SecondaryText,
                             fontSize = 12.sp
                         )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { triggerBrochureScan() },
+                                enabled = !isScanningBrochure && !isExtracting,
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, PrimaryNavy),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = Color(0xFFF1F5F9),
+                                    contentColor = PrimaryNavy
+                                ),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .testTag("ai_mode_scan_brochure_btn")
+                            ) {
+                                if (isScanningBrochure) {
+                                    CircularProgressIndicator(
+                                        color = PrimaryNavy,
+                                        strokeWidth = 2.dp,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                } else {
+                                    Icon(Icons.Default.DocumentScanner, contentDescription = null, modifier = Modifier.size(16.dp))
+                                }
+                                Spacer(Modifier.width(5.dp))
+                                Text(
+                                    text = if (isScanningBrochure) "Scanning..." else "Scan Brochure",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { triggerVoiceFill() },
+                                enabled = !isScanningBrochure && !isExtracting,
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, PrimaryActionOrange),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = SelectedSurfaceContainer,
+                                    contentColor = PrimaryActionOrange
+                                ),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                                    .testTag("ai_mode_voice_fill_btn")
+                            ) {
+                                Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(5.dp))
+                                Text("Voice Dictate", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                            }
+                        }
                         OutlinedTextField(
                             value = rawInputText,
-                            onValueChange = { rawInputText = it },
+                            onValueChange = {
+                                rawInputText = it
+                                extractionErrorText = null
+                            },
                             placeholder = {
                                 Text(
-                                    "e.g., Office for lease at Gera Imperium Alpha, Kharadi, 1100 sq.ft carpet, rent 80000...",
+                                    "Paste 1 or multiple properties from WhatsApp (e.g., Office for lease at Gera Imperium Alpha, Kharadi, 1100 sqft CA, 25 WS, rent 80k...)",
                                     fontSize = 12.sp
                                 )
                             },
@@ -1268,32 +1470,33 @@ fun AddPropertyScreen(
                                 .testTag("ai_raw_input_field")
                         )
 
+                        if (!extractionErrorText.isNullOrBlank()) {
+                            Surface(
+                                color = Color(0xFFFEF2F2),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.4f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = extractionErrorText.orEmpty(),
+                                    color = ErrorRed,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
+                        }
+
                         Button(
                             onClick = {
                                 if (rawInputText.isBlank()) return@Button
                                 isExtracting = true
+                                extractionErrorText = null
                                 coroutineScope.launch {
                                     try {
-                                        val draft = aiService.parsePropertyMessage(rawInputText)
-                                        if (draft.projectName.isNotBlank()) formProject = draft.projectName
-                                        if (draft.location.isNotBlank()) formLocation = draft.location
-                                        if (draft.unitNumber.isNotBlank()) formUnitNo = draft.unitNumber
-                                        if (draft.floor.isNotBlank()) formFloor = draft.floor
-                                        if (draft.carpetAreaSqFt > 0.0) {
-                                            formCarpetArea = draft.carpetAreaSqFt.toInt().toString()
-                                        }
-                                        draft.rent?.takeIf { it > 0.0 }?.let { formRent = it.toLong().toString() }
-                                        draft.priceSale?.takeIf { it > 0.0 }?.let { formPriceSale = it.toLong().toString() }
-                                        draft.deposit?.takeIf { it > 0.0 }?.let { formDeposit = it.toLong().toString() }
-                                        formFurnishing = draft.furnishing
-                                        draft.contactName?.takeIf { it.isNotBlank() }?.let { formOwnerName = it }
-                                        draft.contactPhone?.takeIf { it.isNotBlank() }?.let { formOwnerContact = it }
-                                        draft.remarks?.takeIf { it.isNotBlank() }?.let { formRemarks = it }
-                                        selectedTab = draft.tab
-                                        selectedMode = 0
-                                        Toast.makeText(context, "Populated form from message", Toast.LENGTH_SHORT).show()
+                                        extractionBatchResult = aiService.extractWhatsAppSafely(rawInputText)
                                     } catch (e: Exception) {
-                                        Toast.makeText(context, "Extraction error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        extractionErrorText = "Extraction error (${e.localizedMessage ?: "offline"}). You can switch to Manual Entry anytime."
+                                        extractionBatchResult = null
                                     } finally {
                                         isExtracting = false
                                     }
@@ -1310,12 +1513,103 @@ fun AddPropertyScreen(
                             ),
                             shape = RoundedCornerShape(10.dp)
                         ) {
+                            if (isExtracting) {
+                                CircularProgressIndicator(
+                                    color = OnPrimaryActionColor,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
                             Text(
-                                text = if (isExtracting) "Extracting Fields..." else "Extract into Unified Form",
+                                text = if (isExtracting) "Analyzing & Classifying..." else "Analyze & Review Before Filling",
                                 fontWeight = FontWeight.Bold
                             )
                         }
                     }
+                }
+
+                extractionBatchResult?.let { batchResult ->
+                    Spacer(modifier = Modifier.height(10.dp))
+                    SafeWhatsAppReviewPanel(
+                        result = batchResult,
+                        onCheckDuplicates = onCheckDuplicates,
+                        onConfirmApplyDraft = { draft: ExtractedPropertyDraft ->
+                            // Populate strictly from confirmed draft — clear unmentioned defaults so zero values are fabricated
+                            selectedTab = draft.tab
+                            if (draft.propertyType.isNotBlank()) formPropertyType = draft.propertyType
+                            formProject = draft.projectName
+                            val matchedDir = directoryProjects.firstOrNull {
+                                draft.projectName.isNotBlank() && it.name.equals(draft.projectName, ignoreCase = true)
+                            }
+                            formProjectId = matchedDir?.id.orEmpty()
+                            formLocation = draft.location.ifBlank { matchedDir?.location.orEmpty() }
+                            formDeveloper = draft.builderName.ifBlank { matchedDir?.developer.orEmpty() }
+                            formUnitNo = draft.unitNumber
+                            formFloor = draft.floor
+                            formPossession = draft.possession
+                            formParking = draft.parking
+                            formLockInPeriod = draft.lockInMonths
+                            formEscalation = draft.escalationTerms
+                            formBhkConfig = draft.bhkConfiguration
+                            formFurnishing = if (draft.hasExplicitFurnishing) draft.furnishing else FurnishingType.UNFURNISHED
+
+                            formCarpetArea = if (draft.carpetAreaSqFt > 0.0) {
+                                draft.carpetAreaSqFt.toInt().toString()
+                            } else ""
+                            formBuiltUpArea = draft.builtUpAreaSqFt?.takeIf { it > 0.0 }?.toInt()?.toString().orEmpty()
+                            formRent = draft.rent?.takeIf { it > 0.0 }?.toLong()?.toString().orEmpty()
+                            formPriceSale = draft.priceSale?.takeIf { it > 0.0 }?.toLong()?.toString().orEmpty()
+                            formDeposit = draft.deposit?.takeIf { it > 0.0 }?.toLong()?.toString().orEmpty()
+                            formDepositPreset = ""
+                            formRoi = draft.roiPercent?.takeIf { it > 0.0 }?.toString().orEmpty()
+                            formWorkstations = draft.workstations?.toString().orEmpty()
+                            formCabins = draft.cabins?.toString().orEmpty()
+
+                            // Separate Owner vs Source/Broker — never assume sender/broker is Owner
+                            if (draft.ownerPhone.isNotBlank() || draft.ownerName.isNotBlank()) {
+                                formPocType = "Property Owner"
+                                formSourceType = "Direct Owner / Landlord"
+                                formOwnerName = draft.ownerName
+                                formOwnerContact = draft.ownerPhone
+                            } else if (draft.sourceBrokerPhone.isNotBlank() || draft.sourceBrokerName.isNotBlank()) {
+                                formPocType = "Broker"
+                                formSourceType = "Broker / Channel Partner"
+                                formOwnerName = draft.sourceBrokerName
+                                formOwnerContact = draft.sourceBrokerPhone
+                            } else {
+                                formOwnerName = ""
+                                formOwnerContact = ""
+                            }
+
+                            val extraNotes = buildList {
+                                if (draft.saleableAreaSqFt != null && draft.saleableAreaSqFt > 0.0) {
+                                    add("SBA: ${draft.saleableAreaSqFt.toInt()} sq.ft")
+                                }
+                                if (draft.landAreaValue != null && draft.landAreaUnit.isNotBlank()) {
+                                    add("Land Area: ${draft.landAreaValue} ${draft.landAreaUnit}")
+                                }
+                                if (draft.isSevenTwelveClear == true) add("7/12 Extract mentioned")
+                                if (draft.conferenceRooms != null) add("Conf Rooms: ${draft.conferenceRooms}")
+                                if (draft.maintenanceTerms.isNotBlank()) add("CAM: ${draft.maintenanceTerms}")
+                                if (draft.tenantName.isNotBlank()) add("Tenant: ${draft.tenantName}")
+                                if (draft.additionalPhones.isNotEmpty()) {
+                                    add("Other Phones: ${draft.additionalPhones.joinToString(", ")}")
+                                }
+                                if (draft.remarks.isNotBlank()) add(draft.remarks)
+                            }.distinct().joinToString("\n")
+                            formRemarks = extraNotes
+
+                            selectedMode = 0
+                            Toast.makeText(
+                                context,
+                                "Confirmed draft populated — review & tap Save when ready.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        onRouteClientRequirementToCrm = onRouteClientRequirementToCrm,
+                        onSwitchToManualEntry = { selectedMode = 0 }
+                    )
                 }
             }
         }
@@ -1541,7 +1835,7 @@ internal fun CompactFormInputField(
                 } else null,
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                 container = {
-                    OutlinedTextFieldDefaults.ContainerBox(
+                    OutlinedTextFieldDefaults.Container(
                         enabled = true,
                         isError = false,
                         interactionSource = interactionSource,

@@ -26,6 +26,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,6 +46,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ai.AiPitchTone
+import com.example.ai.GeminiProductivityEngine
 import com.example.data.UserSettingsManager
 import com.example.model.*
 import com.example.ui.theme.*
@@ -196,6 +199,9 @@ fun WhatsAppShareDialog(
     var copiedConfirmed by remember { mutableStateOf(false) }
     var feedbackError by remember { mutableStateOf<String?>(null) }
     var isGeneratingPdf by remember { mutableStateOf(false) }
+    var selectedAiTone by remember { mutableStateOf(AiPitchTone.EXECUTIVE) }
+    var isDraftingAiPitch by remember { mutableStateOf(false) }
+    var aiPitchStatusNote by remember { mutableStateOf<String?>(null) }
 
     // Live Leak Guard: check if shareText contains any sensitive owner/broker info from normalizedProperties
     val hasSensitiveLeak = remember(shareText, normalizedProperties) {
@@ -471,6 +477,134 @@ fun WhatsAppShareDialog(
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+
+                // Switchable 3-Tone Gemini AI Pitch Composer
+                if (normalizedProperties.isNotEmpty()) {
+                    Surface(
+                        color = SurfaceWhite,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, BrandGold.copy(alpha = 0.65f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("whatsapp_share_ai_tone_bar")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = BrandGold,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = "Gemini AI Pitch Tone",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = TextPrimary
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        if (isDraftingAiPitch) return@TextButton
+                                        isDraftingAiPitch = true
+                                        aiPitchStatusNote = null
+                                        coroutineScope.launch {
+                                            val draft = GeminiProductivityEngine.draftPropertySharePitch(
+                                                properties = normalizedProperties,
+                                                tone = selectedAiTone,
+                                                audienceLabel = audienceMode.label,
+                                                employeeName = employeeName,
+                                                employeeMobile = employeeMobile
+                                            )
+                                            shareText = draft.text
+                                            aiPitchStatusNote = draft.statusNote
+                                            copiedConfirmed = false
+                                            isDraftingAiPitch = false
+                                        }
+                                    },
+                                    enabled = !isDraftingAiPitch,
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                    modifier = Modifier
+                                        .heightIn(min = 34.dp)
+                                        .testTag("whatsapp_share_draft_ai_btn")
+                                ) {
+                                    if (isDraftingAiPitch) {
+                                        CircularProgressIndicator(
+                                            color = PrimaryActionOrange,
+                                            strokeWidth = 2.dp,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Spacer(Modifier.width(5.dp))
+                                        Text("Drafting...", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PrimaryActionOrange)
+                                    } else {
+                                        Text("✨ Redraft", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = PrimaryActionOrange)
+                                    }
+                                }
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                AiPitchTone.entries.forEach { tone ->
+                                    FilterChip(
+                                        selected = selectedAiTone == tone,
+                                        onClick = {
+                                            selectedAiTone = tone
+                                            if (!isDraftingAiPitch) {
+                                                isDraftingAiPitch = true
+                                                aiPitchStatusNote = null
+                                                coroutineScope.launch {
+                                                    val draft = GeminiProductivityEngine.draftPropertySharePitch(
+                                                        properties = normalizedProperties,
+                                                        tone = tone,
+                                                        audienceLabel = audienceMode.label,
+                                                        employeeName = employeeName,
+                                                        employeeMobile = employeeMobile
+                                                    )
+                                                    shareText = draft.text
+                                                    aiPitchStatusNote = draft.statusNote
+                                                    copiedConfirmed = false
+                                                    isDraftingAiPitch = false
+                                                }
+                                            }
+                                        },
+                                        label = {
+                                            Text(
+                                                text = tone.label,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1
+                                            )
+                                        },
+                                        modifier = Modifier.testTag("share_tone_${tone.name.lowercase(Locale.ENGLISH)}")
+                                    )
+                                }
+                            }
+                            if (!aiPitchStatusNote.isNullOrBlank()) {
+                                Text(
+                                    text = aiPitchStatusNote.orEmpty(),
+                                    fontSize = 10.sp,
+                                    color = SecondaryText,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
                         }
                     }
                     Spacer(Modifier.height(6.dp))

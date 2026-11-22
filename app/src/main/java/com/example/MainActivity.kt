@@ -1655,6 +1655,7 @@ fun MainAppPortal(
                                         currentDestination = DrawerDestination.SEARCH_PROPERTIES
                                     },
                                     onNavigateToCalls = { currentDestination = DrawerDestination.CRM_CALLS },
+                                    onNavigateToWhatsAppInbox = { currentDestination = DrawerDestination.WHATSAPP_FOLLOWUPS },
                                     onNavigateToCommercialInventory = {
                                         selectedBrand = Brand.COMMERCIAL
                                         currentDestination = DrawerDestination.COMMERCIAL
@@ -1925,7 +1926,32 @@ fun MainAppPortal(
                                     initialOwnerPhone = pendingAddPropertyPhone,
                                     initialRemarks = pendingAddPropertyNote,
                                     initialPocType = pendingAddPropertyPocType,
-                                    fromCallIntelligence = pendingAddPropertyFromCall || pendingAddPropertyPhone.isNotBlank()
+                                    fromCallIntelligence = pendingAddPropertyFromCall || pendingAddPropertyPhone.isNotBlank(),
+                                    onRouteClientRequirementToCrm = { rawRequirement ->
+                                        val phone = com.example.ai.SafeWhatsAppExtractor.normalizeIndianPhone(
+                                            Regex("""(?:\+?91[\-\s]?)?[6-9]\d{9}""").find(rawRequirement)?.value
+                                        )
+                                        val inferredSegment = if (Regex("""\b(\d\s*bhk|flat|apartment|villa|row\s*house|residential|resi)\b""", RegexOption.IGNORE_CASE).containsMatchIn(rawRequirement)) {
+                                            "Residential"
+                                        } else {
+                                            "Commercial"
+                                        }
+                                        pendingCrmPrefillLead = CrmLead(
+                                            id = "",
+                                            name = "WhatsApp Requirement",
+                                            phone = phone,
+                                            segment = inferredSegment,
+                                            requirement = rawRequirement.trim().take(280),
+                                            location = "",
+                                            budget = "",
+                                            status = "New Lead",
+                                            verificationStatus = "Pending",
+                                            nextFollowUp = "",
+                                            notes = rawRequirement.trim()
+                                        )
+                                        crmExternalRefreshTick++
+                                        currentDestination = DrawerDestination.CRM_WORKSPACE
+                                    }
                                 )
                             }
 
@@ -2992,7 +3018,7 @@ fun EmployeeLoginScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Sign in with your Employee ID or Mobile & Password",
+                        text = "Sign in with your User ID (EMP-001), Email Address, or Phone Number",
                         color = TextPrimary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
@@ -3004,11 +3030,11 @@ fun EmployeeLoginScreen(
                             loginIdInput = it
                             errorMessage = null
                         },
-                        label = { Text("Login ID / Mobile", fontSize = 12.sp) },
+                        label = { Text("User ID (EMP-001), Email, or Phone", fontSize = 12.sp) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Badge,
-                                contentDescription = "Login ID",
+                                contentDescription = "User ID, Email, or Phone",
                                 tint = SecondaryText
                             )
                         },
@@ -3024,7 +3050,7 @@ fun EmployeeLoginScreen(
                             passwordInput = it
                             errorMessage = null
                         },
-                        label = { Text("Password", fontSize = 12.sp) },
+                        label = { Text("Password (Optional)", fontSize = 12.sp) },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Lock,

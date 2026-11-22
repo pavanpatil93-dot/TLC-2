@@ -213,10 +213,11 @@ class SheetsRepository(
     }
 
     companion object {
-        const val DEFAULT_MASTER_SHEET_URL = "https://script.google.com/macros/s/AKfycbxLZh3AEON1wweJc3jBWjjWOTPltAmGIgVqRtFCqX9kmzz7JEeMoilTMG8u9X3RiU8_/exec"
+        const val DEFAULT_MASTER_SHEET_URL = TlcSchemaV2Api.BASE_WEB_APP_URL
         const val AUTO_SYNC_INTERVAL_MS = 15L * 60L * 1000L
         const val FOREGROUND_SYNC_INTERVAL_MS = 3L * 60L * 1000L
         private const val LAST_SYNC_AT_MILLIS_KEY = "last_successful_sync_millis"
+        private const val FILE_V2_BOOTSTRAP_CACHE = "tlc_v2_bootstrap_cache.json"
         val DEFAULT_SYNCED_TABS = listOf(
             "Commercial Inventory",
             "Residential Inventory",
@@ -546,6 +547,19 @@ class SheetsRepository(
     )
     val brokersVendors: StateFlow<List<BrokerVendorRecord>> = _brokersVendors.asStateFlow()
 
+    // Schema v2 reactive state (bootstrap dropdowns, team directory, visits, dashboard KPIs)
+    private val _masterDropdowns = MutableStateFlow(TlcMasterDropdowns())
+    val masterDropdowns: StateFlow<TlcMasterDropdowns> = _masterDropdowns.asStateFlow()
+
+    private val _bootstrapTeam = MutableStateFlow<List<TlcTeamMember>>(emptyList())
+    val bootstrapTeam: StateFlow<List<TlcTeamMember>> = _bootstrapTeam.asStateFlow()
+
+    private val _siteVisits = MutableStateFlow<List<TlcSiteVisitRecord>>(emptyList())
+    val siteVisits: StateFlow<List<TlcSiteVisitRecord>> = _siteVisits.asStateFlow()
+
+    private val _dashboardKpis = MutableStateFlow<TlcDashboardKpis?>(null)
+    val dashboardKpis: StateFlow<TlcDashboardKpis?> = _dashboardKpis.asStateFlow()
+
     private val _lastSyncAtMillis = MutableStateFlow(
         if (context != null && !deferInitialDiskLoad) {
             context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).getLong(LAST_SYNC_AT_MILLIS_KEY, 0L)
@@ -590,13 +604,70 @@ class SheetsRepository(
         activeComparisonKey = initialCompKey
         _comparisonIds.value = loadSavedComparisonIds(initialCompKey)
         val rawSavedUrl = prefs.getString("google_sheet_url", "")?.trim().orEmpty()
-        val savedUrl = if (rawSavedUrl.isNotBlank()) rawSavedUrl else DEFAULT_MASTER_SHEET_URL
+        val savedUrl = TlcSchemaV2Api.resolveEndpointUrl(rawSavedUrl)
+        if (rawSavedUrl.contains(TlcSchemaV2Api.DEPRECATED_V1_SCRIPT_ID, ignoreCase = true) || rawSavedUrl.isBlank()) {
+            prefs.edit().putString("google_sheet_url", savedUrl).apply()
+        }
         _sheetsScriptUrl.value = savedUrl
         _isLiveConnected.value = false
-        _connectionStatus.value = if (savedUrl.isNotBlank()) "Sheet URL saved - connection not yet verified" else "Not Connected - Ready for Google Sheet Setup"
+        _connectionStatus.value = if (savedUrl.isNotBlank()) "TLC Master Sheet (Schema v2) ready" else "Not Connected - Ready for Google Sheet Setup"
+        loadCachedBootstrapPayload(startupContext)
         sanitizeShiftedInventoryRecords(startupContext)
         if (_properties.value.isNotEmpty()) {
             runCatching { OfflineDiskCache.saveInventorySplits(startupContext, _properties.value) }
+        }
+    }
+
+    private fun loadCachedBootstrapPayload(appContext: Context) {
+        runCatching {
+            val file = java.io.File(appContext.filesDir, FILE_V2_BOOTSTRAP_CACHE)
+            if (!file.exists()) return
+            val parsed = TlcBootstrapPayload.fromJson(JSONObject(file.readText()))
+            _masterDropdowns.value = parsed.dropdowns
+            _bootstrapTeam.value = parsed.team
+        }
+    }
+
+    private fun saveCachedBootstrapPayload(appContext: Context, payload: TlcBootstrapPayload) {
+        _masterDropdowns.value = payload.dropdowns
+        _bootstrapTeam.value = payload.team
+        runCatching {
+            val file = java.io.File(appContext.filesDir, FILE_V2_BOOTSTRAP_CACHE)
+            val tmp = java.io.File(appContext.filesDir, "$FILE_V2_BOOTSTRAP_CACHE.tmp")
+            tmp.writeText(payload.toJson().toString())
+            if (!tmp.renameTo(file)) {
+                file.writeText(payload.toJson().toString())
+                tmp.delete()
+            }
+        }
+        if (payload.team.isNotEmpty()) {
+            val cachedEmployees = payload.team.map { member ->
+                OfflineDiskCache.CachedEmployeeMember(
+                    id = member.userId.ifBlank { member.fullName },
+                    name = member.fullName,
+                    mobile = member.phoneNumber,
+                    division = member.division,
+                    teamId = "",
+                    role = member.appRole,
+                    status = member.activeStatus,
+                    managerId = "",
+                    loginId = member.userId.ifBlank { member.emailAddress.ifBlank { member.phoneNumber } },
+                    password = "",
+                    updatedAt = java.time.Instant.now().toString()
+                )
+            }
+            OfflineDiskCache.saveEmployeeDirectory(appContext, cachedEmployees)
+            com.example.crm.IgnoredNumbersManager.syncInternalEmployeeNumbers(
+                appContext,
+                cachedEmployees.map { it.mobile }.filter { it.isNotBlank() }
+            )
+            val namesArr = JSONArray().apply {
+                payload.team.filter { it.isActive() }.forEach { put(it.fullName) }
+            }
+            appContext.getSharedPreferences(SYNCED_EMPLOYEES_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putString("active_names", namesArr.toString())
+                .apply()
         }
     }
 
@@ -691,10 +762,10 @@ class SheetsRepository(
     }
 
     fun setGoogleSheetUrl(url: String) {
-        val trimmed = url.trim()
+        val trimmed = TlcSchemaV2Api.resolveEndpointUrl(url)
         _sheetsScriptUrl.value = trimmed
         _isLiveConnected.value = false
-        _connectionStatus.value = if (trimmed.isBlank()) "Not Connected - Ready for Google Sheet Setup" else "Sheet URL saved - verifying connection"
+        _connectionStatus.value = "TLC Master Sheet (Schema v2) URL saved - verifying connection"
         val settingsContext = context
         if (settingsContext != null) {
             val prefs = settingsContext.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
@@ -734,53 +805,43 @@ class SheetsRepository(
 
         try {
             if (rawUrl.contains("script.google.com")) {
-                val responseText = fetchUrlText(rawUrl)
+                val endpoint = TlcSchemaV2Api.resolveEndpointUrl(rawUrl)
+                val bootstrapRes = TlcSchemaV2Api.fetchBootstrap(endpoint)
+                val currentRole = context?.let { UserSettingsManager.readCurrentApiRole(it) } ?: "RM"
+                val invRes = TlcSchemaV2Api.fetchInventoryRaw(endpoint, role = currentRole)
                 val latency = System.currentTimeMillis() - startTime
-                val trimmed = responseText.trim()
-                if (trimmed.startsWith("<!DOCTYPE", ignoreCase = true) || trimmed.startsWith("<html", ignoreCase = true)) {
+
+                if (bootstrapRes.isFailure && invRes.isFailure) {
+                    val err = bootstrapRes.exceptionOrNull()?.message
+                        ?: invRes.exceptionOrNull()?.message
+                        ?: "Unable to connect to TLC Master Sheet (Schema v2) API."
                     val result = ConnectionDiagnostic(
                         isSuccess = false,
-                        readStatus = "Error: Endpoint returned HTML",
-                        writeStatus = "Access restricted",
+                        readStatus = "Schema v2 API Failed",
+                        writeStatus = "Not tested",
                         latencyMs = latency,
                         recordsCount = 0,
-                        message = "The endpoint requires authentication. Keep owner and CRM data private; configure an authenticated integration rather than enabling anonymous access.",
+                        message = err,
                         checkedAt = timestamp
                     )
                     _lastDiagnostic.value = result
                     return@withContext result
                 }
 
-                if (!AppsScriptSyncProtocol.hasInventoryResponse(responseText)) {
-                    throw java.io.IOException("Endpoint did not return inventory data; connection unverified")
+                val teamCount = bootstrapRes.getOrNull()?.team?.size ?: 0
+                bootstrapRes.getOrNull()?.let { payload ->
+                    context?.let { saveCachedBootstrapPayload(it, payload) }
                 }
-                val parsedRows = parseAppsScriptJsonData(responseText)
-                readSuccess = parsedRows.any { it.isValid }
+                val parsedRows = invRes.getOrNull()?.let { parseAppsScriptJsonData(it.toString()) }.orEmpty()
+                readSuccess = bootstrapRes.isSuccess || invRes.isSuccess
+                writeSuccess = readSuccess
                 recordsParsed = parsedRows.size
-
-                try {
-                    val pingPayload = JSONObject().apply {
-                        put("action", "DIAGNOSTIC_PING")
-                        put("timestamp", timestamp)
-                        put("appBrand", "Real Estate Inventory")
-                    }
-                    val (postSuccess, postResp) = sendAppsScriptPost(rawUrl, pingPayload)
-                    val postLatency = System.currentTimeMillis() - startTime
-                    writeSuccess = postSuccess
-                    diagnosticMessage = if (postSuccess) {
-                        "Read request succeeded ($recordsParsed parsed records). Diagnostic POST acknowledged (${postLatency}ms); actual property write, authentication, and conflict-safe bidirectional sync remain unverified."
-                    } else {
-                        "Read access verified ($recordsParsed records found), but write ping reported: $postResp."
-                    }
-                } catch (we: Exception) {
-                    writeSuccess = false
-                    diagnosticMessage = "Read access verified ($recordsParsed records), but write ping reported: ${we.localizedMessage ?: "timeout"}."
-                }
+                diagnosticMessage = "Schema v2 connected (${latency}ms): $teamCount team members from bootstrap, $recordsParsed inventory records (role=$currentRole)."
 
                 val finalResult = ConnectionDiagnostic(
                     isSuccess = readSuccess,
-                    readStatus = if (readSuccess) "Verified (GET OK)" else "Read Failed",
-                    writeStatus = if (writeSuccess) "Diagnostic POST acknowledged; data writes unverified" else "Write unverified",
+                    readStatus = if (readSuccess) "Verified (Schema v2 GET OK)" else "Read Failed",
+                    writeStatus = if (writeSuccess) "Ready (Schema v2 API Key Configured)" else "API Key Required",
                     latencyMs = latency,
                     recordsCount = recordsParsed,
                     message = diagnosticMessage,
@@ -887,83 +948,14 @@ class SheetsRepository(
             return@withContext Result.failure(IllegalArgumentException("Missing key value for permanent delete"))
         }
         runCatching {
-            val configured = _sheetsScriptUrl.value.trim()
-            val endpoint = if (configured.startsWith("https://") && configured.contains("script.google.com", ignoreCase = true)) {
-                configured
-            } else {
-                DEFAULT_MASTER_SHEET_URL
-            }
+            val endpoint = TlcSchemaV2Api.resolveEndpointUrl(_sheetsScriptUrl.value)
             val payload = JSONObject().apply {
                 put("action", "DELETE")
                 put("tabName", tabName)
                 put("keyHeader", keyHeader)
                 put("keyValue", cleanKey)
             }
-            var url = java.net.URL(endpoint)
-            val origin = url
-            var method = "POST"
-            val bodyBytes = payload.toString().toByteArray(Charsets.UTF_8)
-            var succeeded = false
-            var lastError: String? = null
-
-            for (hop in 0 until 5) {
-                var conn: java.net.HttpURLConnection? = null
-                try {
-                    conn = url.openConnection() as java.net.HttpURLConnection
-                    conn.instanceFollowRedirects = false
-                    conn.connectTimeout = 15000
-                    conn.readTimeout = 15000
-                    conn.requestMethod = method
-                    conn.setRequestProperty("User-Agent", "TLC-1")
-                    if (method == "POST") {
-                        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                        conn.doOutput = true
-                        conn.outputStream.use { os -> os.write(bodyBytes) }
-                    }
-                    val responseCode = conn.responseCode
-                    if (responseCode in 200..299) {
-                        val responseText = runCatching {
-                            conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }.trim()
-                        }.getOrDefault("")
-                        val parsed = runCatching { JSONObject(responseText) }.getOrNull()
-                        if (parsed != null) {
-                            val statusStr = parsed.optString("status", "").trim().lowercase(Locale.ENGLISH)
-                            val okFlag = if (parsed.has("ok")) parsed.optBoolean("ok", true)
-                                else if (parsed.has("success")) parsed.optBoolean("success", true)
-                                else statusStr != "error" && statusStr != "failed"
-                            if (statusStr == "error" || statusStr == "failed" || !okFlag) {
-                                lastError = parsed.optString("message", parsed.optString("error", "Delete failed on Master Sheet"))
-                                break
-                            }
-                        }
-                        succeeded = true
-                        break
-                    } else if (responseCode == 301 || responseCode == 302 || responseCode == 303) {
-                        val location = conn.getHeaderField("Location")
-                            ?: throw Exception("Redirect missing Location header from Apps Script")
-                        val next = java.net.URL(url, location)
-                        val sameOrigin = next.protocol == origin.protocol &&
-                            next.host == origin.host && next.port == origin.port
-                        val googleResult = origin.protocol == "https" &&
-                            origin.host == "script.google.com" &&
-                            next.protocol == "https" &&
-                            next.host == "script.googleusercontent.com"
-                        if (!sameOrigin && !googleResult) {
-                            throw Exception("Blocked unexpected Apps Script redirect")
-                        }
-                        url = next
-                        method = "GET"
-                    } else {
-                        lastError = "HTTP $responseCode from Apps Script"
-                        break
-                    }
-                } finally {
-                    conn?.disconnect()
-                }
-            }
-            if (!succeeded) {
-                throw Exception(lastError ?: "Delete request did not complete on Apps Script")
-            }
+            TlcSchemaV2Api.postAction(endpoint, payload).getOrThrow()
             logSyncEvent(
                 direction = "APP_TO_SHEET",
                 status = "SUCCESS",
@@ -992,22 +984,71 @@ class SheetsRepository(
 
             if (rawUrl.isNotBlank()) {
                 if (rawUrl.contains("script.google.com")) {
-                    // Google Apps Script JSON Endpoint
-                    val jsonText = fetchUrlText(rawUrl)
-                    val trimmed = jsonText.trim()
-                    if (trimmed.startsWith("<!DOCTYPE", ignoreCase = true) || trimmed.startsWith("<html", ignoreCase = true)) {
-                        _isLiveConnected.value = false
-                        _connectionStatus.value = "Error: Endpoint returned HTML page"
-                        val err = "Sync Failed: Google Apps Script URL returned HTML instead of JSON.\n\n" +
-                                "Fix: Verify the Apps Script deployment URL and authenticated access. Do not publish private inventory or owner contacts to Anyone."
-                        logSyncEvent("SHEET_TO_APP", "FAILED", 0, err, "Google Sheet Sync")
-                        return@withContext err
+                    // TLC Master Sheet (Schema v2) GET API Sync
+                    val endpoint = TlcSchemaV2Api.resolveEndpointUrl(rawUrl)
+                    val appCtx = context
+                    val currentApiRole = appCtx?.let { UserSettingsManager.readCurrentApiRole(it) } ?: "RM"
+                    val currentFullName = appCtx?.let { UserSettingsManager.readCurrentFullName(it) }.orEmpty()
+                    val rmFilter = if (currentApiRole.equals("Admin", ignoreCase = true)) null else currentFullName.takeIf { it.isNotBlank() }
+
+                    // 1. Bootstrap (dropdowns + team directory)
+                    val bootstrapResult = TlcSchemaV2Api.fetchBootstrap(endpoint)
+                    bootstrapResult.onSuccess { payload ->
+                        if (appCtx != null) saveCachedBootstrapPayload(appCtx, payload)
+                        lastNonInventorySyncedCount += payload.team.size
+                    }.onFailure { err ->
+                        if (err.message?.contains("TLC_API_KEY", ignoreCase = true) == true) {
+                            throw err
+                        }
                     }
-                    if (!AppsScriptSyncProtocol.hasInventoryResponse(jsonText)) {
-                        throw java.io.IOException("Endpoint did not return inventory data; sync unverified")
-                    }
-                    val parsedRows = parseAppsScriptJsonData(jsonText)
+
+                    // 2. Available inventory across all 5 tabs (includes WhatsApp Pitch; owner contacts gated by role=Admin|RM)
+                    val inventoryJson = TlcSchemaV2Api.fetchInventoryRaw(
+                        baseUrl = endpoint,
+                        role = currentApiRole
+                    ).getOrThrow()
+                    val parsedRows = parseAppsScriptJsonData(inventoryJson.toString())
                     allImportRows.addAll(parsedRows)
+
+                    // 3. Active CRM Leads (commercial + residential)
+                    for (vertical in listOf("commercial", "residential")) {
+                        runCatching {
+                            val leadsJson = TlcSchemaV2Api.fetchLeadsRaw(
+                                baseUrl = endpoint,
+                                vertical = vertical,
+                                assignedRm = rmFilter
+                            ).getOrNull()
+                            if (leadsJson != null) {
+                                val arr = TlcSchemaV2Api.extractPrimaryArray(leadsJson, "leads", "CRM", "data", "records")
+                                if (arr != null && arr.length() > 0) {
+                                    val rows = convertJsonArrayToRows(arr)
+                                    if (rows.size > 1) {
+                                        lastNonInventorySyncedCount += mergeCrmSheetRowsIntoPrefs(rows)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 4. Site Visits
+                    runCatching {
+                        val visits = TlcSchemaV2Api.fetchVisits(
+                            baseUrl = endpoint,
+                            assignedRm = rmFilter
+                        ).getOrNull()
+                        if (visits != null) {
+                            _siteVisits.value = visits
+                            lastNonInventorySyncedCount += visits.size
+                        }
+                    }
+
+                    // 5. Live Dashboard KPIs
+                    runCatching {
+                        val kpis = TlcSchemaV2Api.fetchDashboard(endpoint).getOrNull()
+                        if (kpis != null) {
+                            _dashboardKpis.value = kpis
+                        }
+                    }
                 } else {
                     // Google Sheet URL or Spreadsheet ID
                     val sheetId = extractSpreadsheetId(rawUrl)
@@ -1239,59 +1280,113 @@ class SheetsRepository(
                         _availableAppUpdate.value = updateInfo
                     }
                 }
-                val dataObj = root.optJSONObject("data") ?: root.optJSONObject("properties") ?: root
+                val dataObj = root.optJSONObject("data")
+                    ?: root.optJSONObject("tabs")
+                    ?: root.optJSONObject("properties")
+                    ?: root
+
+                // Helper to group flat inventory arrays by their per-item Tab/Sheet column when present
+                fun parseInventoryJsonArray(defaultTabName: String, arr: org.json.JSONArray) {
+                    val tabKeys = listOf("Tab", "tab", "Source Tab", "Inventory Tab", "Sheet", "sheet", "_tab", "source_tab")
+                    val grouped = linkedMapOf<String, MutableList<org.json.JSONObject>>()
+                    var hasObjectItems = false
+                    for (i in 0 until arr.length()) {
+                        val obj = arr.optJSONObject(i) ?: continue
+                        hasObjectItems = true
+                        val itemTab = tabKeys.firstNotNullOfOrNull { k ->
+                            obj.optString(k, "").trim().takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+                        } ?: defaultTabName
+                        grouped.getOrPut(itemTab) { mutableListOf() }.add(obj)
+                    }
+                    if (hasObjectItems && grouped.isNotEmpty()) {
+                        grouped.forEach { (tabName, objs) ->
+                            val subArr = org.json.JSONArray()
+                            objs.forEach { subArr.put(it) }
+                            val rows = convertJsonArrayToRows(subArr)
+                            if (rows.isNotEmpty()) {
+                                results.addAll(parseWorksheets(listOf(ParsedWorksheet(sheetName = tabName, rows = rows))))
+                            }
+                        }
+                    } else {
+                        val parsedRows = convertJsonArrayToRows(arr)
+                        if (parsedRows.isNotEmpty()) {
+                            results.addAll(parseWorksheets(listOf(ParsedWorksheet(sheetName = defaultTabName, rows = parsedRows))))
+                        }
+                    }
+                }
+
                 val keys = dataObj.keys()
                 while (keys.hasNext()) {
                     val key = keys.next()
                     val sheetArray = dataObj.optJSONArray(key)
                     if (sheetArray != null) {
-                        val parsedRows = convertJsonArrayToRows(sheetArray)
-                        if (parsedRows.isNotEmpty()) {
-                            if (key.equals("CRM", ignoreCase = true) ||
-                                key.equals("CRM Leads", ignoreCase = true) ||
-                                key.equals("Leads", ignoreCase = true)
-                            ) {
+                        val firstObj = sheetArray.optJSONObject(0)
+                        val looksLikeLeadArray = key.equals("CRM", ignoreCase = true) ||
+                            key.equals("CRM Leads", ignoreCase = true) ||
+                            key.equals("Leads", ignoreCase = true) ||
+                            (key.equals("data", ignoreCase = true) && firstObj != null && (firstObj.has("Lead ID") || firstObj.has("lead_id")))
+                        if (looksLikeLeadArray) {
+                            val parsedRows = convertJsonArrayToRows(sheetArray)
+                            if (parsedRows.isNotEmpty()) {
                                 lastNonInventorySyncedCount += mergeCrmSheetRowsIntoPrefs(parsedRows)
-                            } else if (key.equals("Employees", ignoreCase = true) ||
-                                key.equals("Team", ignoreCase = true) ||
-                                key.equals("Staff", ignoreCase = true)
-                            ) {
-                                lastNonInventorySyncedCount += mergeEmployeesSheetRowsIntoPrefs(parsedRows)
-                            } else if (key.equals("Call Logs", ignoreCase = true) ||
-                                key.equals("CallLogs", ignoreCase = true) ||
-                                key.equals("Calls", ignoreCase = true)
-                            ) {
-                                lastNonInventorySyncedCount += mergeCallLogsSheetRowsIntoPrefs(parsedRows)
-                            } else if (key.equals("Commercial Projects", ignoreCase = true) ||
-                                key.equals("Residential Projects", ignoreCase = true)
-                            ) {
-                                if (context != null) {
-                                    lastNonInventorySyncedCount += ProjectDirectoryStore.mergeSyncedProjectRows(context, key, parsedRows)
-                                    _syncRevision.value++
-                                }
-                            } else if (key.equals("Daily Reports", ignoreCase = true)) {
-                                lastNonInventorySyncedCount += mergeDailyReportRowsIntoCache(parsedRows)
-                            } else if (key.equals("Tenants", ignoreCase = true) ||
-                                key.equals("Tenant", ignoreCase = true) ||
-                                key.equals("Tenant Directory", ignoreCase = true)
-                            ) {
-                                lastNonInventorySyncedCount += mergeTenantsSheetRowsIntoCache(parsedRows)
-                            } else if (key.equals("Brokers & Vendors", ignoreCase = true) ||
-                                key.equals("Brokers and Vendors", ignoreCase = true) ||
-                                key.equals("Brokers", ignoreCase = true) ||
-                                key.equals("Vendors", ignoreCase = true)
-                            ) {
-                                lastNonInventorySyncedCount += mergeBrokersVendorsSheetRowsIntoCache(parsedRows)
-                            } else if (key.contains("Projects", ignoreCase = true) ||
-                                key.equals("SETTINGS", ignoreCase = true) ||
-                                key.equals("SYNC_LOG", ignoreCase = true) ||
-                                key.equals("DATA_REVIEW", ignoreCase = true)
-                            ) {
-                                // Skip other project & system tabs when parsing Property Inventory
-                            } else {
-                                val worksheet = ParsedWorksheet(sheetName = key, rows = parsedRows)
-                                results.addAll(parseWorksheets(listOf(worksheet)))
                             }
+                        } else if (key.equals("Employees", ignoreCase = true) ||
+                            key.equals("Team", ignoreCase = true) ||
+                            key.equals("Staff", ignoreCase = true)
+                        ) {
+                            val parsedRows = convertJsonArrayToRows(sheetArray)
+                            if (parsedRows.isNotEmpty()) {
+                                lastNonInventorySyncedCount += mergeEmployeesSheetRowsIntoPrefs(parsedRows)
+                            }
+                        } else if (key.equals("Call Logs", ignoreCase = true) ||
+                            key.equals("CallLogs", ignoreCase = true) ||
+                            key.equals("Calls", ignoreCase = true)
+                        ) {
+                            val parsedRows = convertJsonArrayToRows(sheetArray)
+                            if (parsedRows.isNotEmpty()) {
+                                lastNonInventorySyncedCount += mergeCallLogsSheetRowsIntoPrefs(parsedRows)
+                            }
+                        } else if (key.equals("Commercial Projects", ignoreCase = true) ||
+                            key.equals("Residential Projects", ignoreCase = true)
+                        ) {
+                            val parsedRows = convertJsonArrayToRows(sheetArray)
+                            if (parsedRows.isNotEmpty() && context != null) {
+                                lastNonInventorySyncedCount += ProjectDirectoryStore.mergeSyncedProjectRows(context, key, parsedRows)
+                                _syncRevision.value++
+                            }
+                        } else if (key.equals("Daily Reports", ignoreCase = true)) {
+                            val parsedRows = convertJsonArrayToRows(sheetArray)
+                            if (parsedRows.isNotEmpty()) {
+                                lastNonInventorySyncedCount += mergeDailyReportRowsIntoCache(parsedRows)
+                            }
+                        } else if (key.equals("Tenants", ignoreCase = true) ||
+                            key.equals("Tenant", ignoreCase = true) ||
+                            key.equals("Tenant Directory", ignoreCase = true)
+                        ) {
+                            val parsedRows = convertJsonArrayToRows(sheetArray)
+                            if (parsedRows.isNotEmpty()) {
+                                lastNonInventorySyncedCount += mergeTenantsSheetRowsIntoCache(parsedRows)
+                            }
+                        } else if (key.equals("Brokers & Vendors", ignoreCase = true) ||
+                            key.equals("Brokers and Vendors", ignoreCase = true) ||
+                            key.equals("Brokers", ignoreCase = true) ||
+                            key.equals("Vendors", ignoreCase = true)
+                        ) {
+                            val parsedRows = convertJsonArrayToRows(sheetArray)
+                            if (parsedRows.isNotEmpty()) {
+                                lastNonInventorySyncedCount += mergeBrokersVendorsSheetRowsIntoCache(parsedRows)
+                            }
+                        } else if (key.contains("Projects", ignoreCase = true) ||
+                            key.equals("SETTINGS", ignoreCase = true) ||
+                            key.equals("SYNC_LOG", ignoreCase = true) ||
+                            key.equals("DATA_REVIEW", ignoreCase = true) ||
+                            key.equals("visits", ignoreCase = true) ||
+                            key.equals("locations", ignoreCase = true) ||
+                            key.equals("puneZones", ignoreCase = true)
+                        ) {
+                            // Skip non-inventory metadata/project/system tabs when parsing Property Inventory
+                        } else {
+                            parseInventoryJsonArray(key, sheetArray)
                         }
                     }
                 }
@@ -3568,18 +3663,18 @@ class SheetsRepository(
         val residential = when {
             division.contains("residential") || division.contains("aurea") -> true
             division.contains("commercial") || division.contains("ascend") -> false
-            source == "residential inventory" -> true
-            source == "commercial inventory" -> false
+            source.contains("residential") -> true
+            source.contains("commercial") || source.contains("pre-leased") || source.contains("pre leased") -> false
             else -> listOf("apartment", "flat", "villa", "bungalow", "residential",
                 "bhk", "resi", "und const", "under const").any { type.contains(it) || subtype.contains(it) }
         }
-        if (listOf("pre-leased", "pre leased", "pre - leased").any { subtype.contains(it) || tx.contains(it) }) {
+        if (listOf("pre-leased", "pre leased", "pre - leased").any { subtype.contains(it) || tx.contains(it) || source.contains(it) }) {
             return if (residential) null else InventoryTab.PRE_LEASED
         }
-        if (residential && (subtype.contains("under const") || subtype.contains("und const"))) {
+        if (residential && (subtype.contains("under const") || subtype.contains("und const") || source.contains("under const"))) {
             return InventoryTab.UND_CONST
         }
-        val evidence = "$subtype $tx"
+        val evidence = "$subtype $tx $source"
         val lease = evidence.contains("lease") || evidence.contains("rent")
         val purchase = evidence.contains("sale") || evidence.contains("buy") ||
             evidence.contains("purchase") || evidence.contains("outright") || evidence.contains("off out") ||
@@ -3607,13 +3702,13 @@ class SheetsRepository(
     private fun inferTab(text: String, code: String): InventoryTab {
         val combined = "$text $code".uppercase()
         return when {
-            combined.contains("OFF LEASE") || combined.contains("OFFICE LEASE") || combined.startsWith("OL-") || combined.contains(" OL ") -> InventoryTab.OFF_LEASE
-            combined.contains("OFF OUT") || combined.contains("OFFICE SALE") || combined.startsWith("OO-") || combined.contains(" OO ") -> InventoryTab.OFF_OUT
+            combined.contains("PRE - LEASED") || combined.contains("PRE-LEASED") || combined.contains("PRE LEASED") || combined.startsWith("PL-") -> InventoryTab.PRE_LEASED
+            combined.contains("COMMERCIAL LEASE") || combined.contains("OFF LEASE") || combined.contains("OFFICE LEASE") || combined.startsWith("OL-") || combined.contains(" OL ") -> InventoryTab.OFF_LEASE
+            combined.contains("COMMERCIAL SALE") || combined.contains("OFF OUT") || combined.contains("OFFICE SALE") || combined.startsWith("OO-") || combined.contains(" OO ") -> InventoryTab.OFF_OUT
             combined.contains("SHOP LEASE") || combined.contains("RETAIL LEASE") || combined.startsWith("SL-") || combined.contains(" SL ") -> InventoryTab.SHOP_LEASE
             combined.contains("SHOP OUT") || combined.contains("RETAIL SALE") || combined.startsWith("SO-") || combined.contains(" SO ") -> InventoryTab.SHOP_OUT
-            combined.contains("PRE - LEASED") || combined.contains("PRE-LEASED") || combined.contains("PRE LEASED") || combined.startsWith("PL-") -> InventoryTab.PRE_LEASED
-            combined.contains("RESI RENT") || combined.contains("RESIDENTIAL RENT") || combined.startsWith("RR-") || combined.contains(" RR ") -> InventoryTab.RESI_RENT
-            combined.contains("RESI RESALE") || combined.contains("RESIDENTIAL RESALE") || combined.startsWith("RS-") || combined.contains(" RS ") -> InventoryTab.RESI_RESALE
+            combined.contains("RESIDENTIAL LEASE") || combined.contains("RESI RENT") || combined.contains("RESIDENTIAL RENT") || combined.startsWith("RR-") || combined.contains(" RR ") -> InventoryTab.RESI_RENT
+            combined.contains("RESIDENTIAL SALE") || combined.contains("RESI RESALE") || combined.contains("RESIDENTIAL RESALE") || combined.startsWith("RS-") || combined.contains(" RS ") -> InventoryTab.RESI_RESALE
             combined.contains("UND CONST") || combined.contains("UNDER CONST") || combined.startsWith("UC-") || combined.contains(" UC ") -> InventoryTab.UND_CONST
             else -> InventoryTab.OFF_LEASE
         }
@@ -5482,72 +5577,33 @@ function handleWriteRequest(e) {
         return true
     }
 
-    private fun resolveAuthScriptUrl(overrideScriptUrl: String?): String? {
+    private fun resolveAuthScriptUrl(overrideScriptUrl: String?): String {
         val candidate = overrideScriptUrl?.trim()?.takeIf { it.isNotBlank() } ?: _sheetsScriptUrl.value.trim()
-        if (candidate.isBlank()) return null
-        val uri = runCatching { java.net.URI(candidate) }.getOrNull() ?: return null
-        if (uri.scheme != "https") return null
-        if (!candidate.contains("script.google.com", ignoreCase = true)) return null
-        return candidate
+        return TlcSchemaV2Api.resolveEndpointUrl(candidate)
     }
 
     private fun postAppsScriptJsonRequest(targetUrl: String, request: JSONObject): Result<JSONObject> {
-        var url = java.net.URL(targetUrl.trim())
-        val origin = url
-        var method = "POST"
-        val payload = request.toString().toByteArray(Charsets.UTF_8)
-
-        repeat(5) {
-            var connection: java.net.HttpURLConnection? = null
-            try {
-                connection = url.openConnection() as java.net.HttpURLConnection
-                connection.instanceFollowRedirects = false
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
-                connection.requestMethod = method
-                connection.setRequestProperty("User-Agent", "TLC-1")
-                if (method == "POST") {
-                    connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                    connection.doOutput = true
-                    connection.outputStream.use { it.write(payload) }
-                }
-                val code = connection.responseCode
-                if (code in 200..299) {
-                    val responseText = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }.trim()
-                    if (responseText.startsWith("<!DOCTYPE", ignoreCase = true) || responseText.startsWith("<html", ignoreCase = true)) {
-                        return Result.failure(IllegalStateException("Apps Script endpoint returned HTML instead of JSON. Check Web App access deployment."))
-                    }
-                    val parsed = runCatching { JSONObject(responseText) }.getOrNull()
-                        ?: return Result.failure(IllegalStateException("Invalid JSON response from employee authentication endpoint."))
-                    return Result.success(parsed)
-                }
-                if (code == 301 || code == 302 || code == 303) {
-                    val location = connection.getHeaderField("Location")
-                        ?: return Result.failure(IllegalStateException("Apps Script redirect missing Location header."))
-                    val next = java.net.URL(url, location)
-                    val sameOrigin = next.protocol == origin.protocol &&
-                        next.host == origin.host && next.port == origin.port
-                    val googleResult = origin.protocol == "https" &&
-                        origin.host == "script.google.com" &&
-                        next.protocol == "https" &&
-                        next.host == "script.googleusercontent.com"
-                    if (!sameOrigin && !googleResult) {
-                        return Result.failure(IllegalStateException("Blocked unexpected Apps Script redirect."))
-                    }
-                    url = next
-                    method = "GET"
-                } else {
-                    return Result.failure(IllegalStateException("Server returned HTTP $code during employee authentication."))
-                }
-            } catch (e: Exception) {
-                return Result.failure(e)
-            } finally {
-                connection?.disconnect()
-            }
+        val apiKey = TlcSchemaV2Api.resolveApiKey()
+        if (apiKey.isBlank()) {
+            return Result.failure(
+                IllegalStateException("TLC_API_KEY is not configured. Please set TLC_API_KEY in the AI Studio Secrets panel.")
+            )
         }
-        return Result.failure(IllegalStateException("Too many redirects from Apps Script endpoint."))
+        val signedPayload = JSONObject(request.toString()).apply {
+            put("api_key", apiKey)
+        }
+        return TlcSchemaV2Api.executePostWithGasRedirect(
+            TlcSchemaV2Api.resolveEndpointUrl(targetUrl),
+            signedPayload
+        )
     }
 
+    /**
+     * Schema v2 Employee Login:
+     * Calls `GET ?action=bootstrap&api_key=...`, caches Master Settings dropdowns & `team` array,
+     * matches the user by `User ID` (e.g., EMP-001), `Email Address`, or `Phone Number`,
+     * verifies `Active Status == "Active"`, and stores `Full Name` + `App Role`.
+     */
     suspend fun authenticateEmployee(
         loginId: String,
         password: String,
@@ -5556,125 +5612,96 @@ function handleWriteRequest(e) {
         val cleanLoginId = loginId.trim()
         val cleanPassword = password.trim()
         if (cleanLoginId.isBlank()) {
-            return@withContext Result.failure(Exception("Enter your Login ID or Mobile Number."))
-        }
-        if (cleanPassword.isBlank()) {
-            return@withContext Result.failure(Exception("Enter your Password."))
+            return@withContext Result.failure(Exception("Enter your User ID (e.g., EMP-001), Email Address, or Phone Number."))
         }
 
         val endpoint = resolveAuthScriptUrl(overrideScriptUrl)
+        val bootstrap = TlcSchemaV2Api.fetchBootstrap(endpoint).getOrElse { err ->
+            return@withContext Result.failure(
+                Exception(err.message?.takeIf { it.isNotBlank() } ?: "Unable to reach TLC Master Sheet (Schema v2) bootstrap API.")
+            )
+        }
+
+        context?.let { saveCachedBootstrapPayload(it, bootstrap) }
+
+        if (bootstrap.team.isEmpty()) {
+            return@withContext Result.failure(
+                Exception("No team members returned by bootstrap API. Verify the Team tab in TLC Master sheet.")
+            )
+        }
+
+        val matchedMember = bootstrap.team.firstOrNull { it.matchesLoginIdentifier(cleanLoginId) }
             ?: return@withContext Result.failure(
-                Exception("Configure your Google Apps Script Web App URL (script.google.com/macros/s/.../exec) to sign in.")
+                Exception("No matching team member found for \"$cleanLoginId\". Check your User ID (e.g., EMP-001), Email Address, or Phone Number.")
             )
 
-        val requestBodyJson = JSONObject().apply {
-            put("action", "LOGIN_EMPLOYEE")
-            put("loginId", cleanLoginId)
-            put("password", cleanPassword)
+        if (!matchedMember.isActive()) {
+            return@withContext Result.failure(
+                Exception("Account for ${matchedMember.fullName.ifBlank { matchedMember.userId }} is ${matchedMember.activeStatus}. Contact Super Admin.")
+            )
         }
 
-        val client = OkHttpClient.Builder()
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .connectTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
-            .build()
+        if (matchedMember.passwordHashOrPlain.isNotBlank() && cleanPassword.isNotBlank() &&
+            matchedMember.passwordHashOrPlain != cleanPassword
+        ) {
+            return@withContext Result.failure(Exception("Incorrect password for ${matchedMember.fullName}."))
+        }
 
-        val request = Request.Builder()
-            .url(endpoint)
-            .post(requestBodyJson.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
-            .header("User-Agent", "TLC-1")
-            .build()
+        if (!overrideScriptUrl.isNullOrBlank() && endpoint != _sheetsScriptUrl.value.trim()) {
+            setGoogleSheetUrl(endpoint)
+        }
 
-        try {
-            client.newCall(request).execute().use { response ->
-                val responseCode = response.code
-                val bodyText = response.body?.string()?.trim().orEmpty()
+        val profile = matchedMember.toUserProfile()
+        logSyncEvent(
+            direction = "EMPLOYEE_AUTH",
+            status = "SUCCESS",
+            recordCount = 1,
+            details = "Schema v2 bootstrap login: ${profile.username} (${profile.employeeId}, App Role=${profile.appRole}, API Role=${profile.apiRoleParam})",
+            triggeredBy = profile.username
+        )
+        Result.success(profile)
+    }
 
-                if (bodyText.startsWith("<!DOCTYPE", ignoreCase = true) || bodyText.startsWith("<html", ignoreCase = true)) {
-                    return@withContext Result.failure(Exception("Apps Script Web App returned HTML (HTTP $responseCode). Check deployment sharing permissions ('Anyone')."))
-                }
+    /** Schema v2 explicit endpoint wrappers for UI screens & dashboards. */
+    suspend fun fetchSchemaV2Bootstrap(): Result<TlcBootstrapPayload> = withContext(Dispatchers.IO) {
+        val endpoint = TlcSchemaV2Api.resolveEndpointUrl(_sheetsScriptUrl.value)
+        TlcSchemaV2Api.fetchBootstrap(endpoint).onSuccess { payload ->
+            context?.let { saveCachedBootstrapPayload(it, payload) }
+        }
+    }
 
-                val root = runCatching { JSONObject(bodyText) }.getOrNull()
-                if (root == null) {
-                    val msg = if (bodyText.isNotBlank()) bodyText else "Server error: HTTP $responseCode"
-                    return@withContext Result.failure(Exception(msg))
-                }
-
-                val isOk = root.optString("status", "").equals("OK", true) ||
-                    root.optString("status", "").equals("success", true) ||
-                    root.optBoolean("success", false) ||
-                    root.optBoolean("ok", false)
-
-                if (!isOk) {
-                    val serverMsg = root.optString("message", "").ifBlank {
-                        root.optString("error", "").ifBlank { "Server error: HTTP $responseCode" }
-                    }
-                    return@withContext Result.failure(Exception(serverMsg))
-                }
-
-                val empObj = root.optJSONObject("employee")
-                    ?: root.optJSONObject("user")
-                    ?: root.optJSONObject("data")
-                    ?: root
-
-                val empId = empObj.optString("employeeId", empObj.optString("id", cleanLoginId)).trim().ifBlank { cleanLoginId }
-                val username = empObj.optString("name", empObj.optString("employeeName", empObj.optString("username", empObj.optString("fullName", "")))).trim()
-                if (username.isBlank()) {
-                    val msg = root.optString("message", "").ifBlank { "Employee profile not found in server response." }
-                    return@withContext Result.failure(Exception(msg))
-                }
-
-                val mobile = empObj.optString("mobile", empObj.optString("mobileNumber", empObj.optString("phone", ""))).trim()
-                val email = empObj.optString("email", "").trim()
-                val division = empObj.optString("division", empObj.optString("department", "Commercial + Residential")).trim().ifBlank {
-                    "Commercial + Residential"
-                }
-                val rawRole = empObj.optString("role", "Sales Executive").trim()
-                val parsedRole = when {
-                    username.equals("Pawan Patil", ignoreCase = true) ||
-                        rawRole.contains("Super Admin", ignoreCase = true) -> UserRole.ADMIN
-                    rawRole.equals("Admin", ignoreCase = true) -> UserRole.ADMIN
-                    rawRole.contains("Commercial", ignoreCase = true) -> UserRole.COMMERCIAL_MANAGER
-                    rawRole.contains("Residential", ignoreCase = true) -> UserRole.RESIDENTIAL_MANAGER
-                    rawRole.contains("Inventory", ignoreCase = true) -> UserRole.INVENTORY_MANAGER
-                    rawRole.contains("Read", ignoreCase = true) -> UserRole.READ_ONLY
-                    else -> UserRole.fromString(rawRole)
-                }
-                val accountStatus = empObj.optString("accountStatus", empObj.optString("status", "Active")).trim().ifBlank { "Active" }
-                if (accountStatus.equals("Suspended", ignoreCase = true) ||
-                    accountStatus.equals("Inactive", ignoreCase = true) ||
-                    accountStatus.equals("Disabled", ignoreCase = true)
-                ) {
-                    return@withContext Result.failure(Exception("Account is $accountStatus. Contact Admin."))
-                }
-
-                if (!overrideScriptUrl.isNullOrBlank() && overrideScriptUrl.trim() != _sheetsScriptUrl.value.trim()) {
-                    setGoogleSheetUrl(endpoint)
-                }
-
-                val profile = UserProfile(
-                    username = username,
-                    mobileNumber = mobile,
-                    email = email,
-                    role = parsedRole,
-                    profilePhotoUri = null,
-                    employeeId = empId,
-                    division = division,
-                    accountStatus = accountStatus
-                )
-                logSyncEvent(
-                    direction = "EMPLOYEE_AUTH",
-                    status = "SUCCESS",
-                    recordCount = 1,
-                    details = "Authenticated $username ($empId, $division, $accountStatus)",
-                    triggeredBy = username
-                )
-                Result.success(profile)
+    suspend fun fetchSchemaV2Visits(assignedRm: String? = null): Result<List<TlcSiteVisitRecord>> =
+        withContext(Dispatchers.IO) {
+            val endpoint = TlcSchemaV2Api.resolveEndpointUrl(_sheetsScriptUrl.value)
+            TlcSchemaV2Api.fetchVisits(endpoint, assignedRm).onSuccess { visits ->
+                _siteVisits.value = visits
             }
-        } catch (e: Exception) {
-            Result.failure(Exception(e.message?.takeIf { it.isNotBlank() } ?: "Network connection failed during authentication."))
         }
+
+    suspend fun fetchSchemaV2Dashboard(): Result<TlcDashboardKpis> = withContext(Dispatchers.IO) {
+        val endpoint = TlcSchemaV2Api.resolveEndpointUrl(_sheetsScriptUrl.value)
+        TlcSchemaV2Api.fetchDashboard(endpoint).onSuccess { kpis ->
+            _dashboardKpis.value = kpis
+        }
+    }
+
+    suspend fun logSiteVisitToMasterSheet(visit: TlcSiteVisitRecord): Result<Unit> = withContext(Dispatchers.IO) {
+        val endpoint = TlcSchemaV2Api.resolveEndpointUrl(_sheetsScriptUrl.value)
+        val stamped = if (visit.assignedRm.isBlank()) visit.copy(assignedRm = actor()) else visit
+        val res = TlcSchemaV2Api.logVisit(endpoint, stamped.toPostRecordJson())
+        res.fold(
+            onSuccess = {
+                _siteVisits.value = listOf(stamped) + _siteVisits.value.filterNot {
+                    stamped.visitId.isNotBlank() && it.visitId == stamped.visitId
+                }
+                logSyncEvent("SITE_VISIT_SYNC", "SUCCESS", 1, "Logged visit for ${stamped.clientName.ifBlank { stamped.leadId }}", actor())
+                Result.success(Unit)
+            },
+            onFailure = { err ->
+                logSyncEvent("SITE_VISIT_SYNC", "FAILED", 0, "Visit log failed: ${err.message}", actor())
+                Result.failure(err)
+            }
+        )
     }
 
     suspend fun updateEmployeePassword(
@@ -5690,9 +5717,6 @@ function handleWriteRequest(e) {
             return@withContext Result.failure(IllegalArgumentException("New password must be at least 4 characters."))
         }
         val endpoint = resolveAuthScriptUrl(overrideScriptUrl)
-            ?: return@withContext Result.failure(
-                IllegalStateException("Configure your Google Apps Script Web App URL (script.google.com/macros/s/.../exec) first.")
-            )
 
         val request = JSONObject().apply {
             put("action", "CHANGE_PASSWORD")
@@ -5894,28 +5918,12 @@ function handleWriteRequest(e) {
             }
         }
 
-        val targetTabName = if (isCommercial) "Commercial Inventory" else "Residential Inventory"
+        val targetTabName = TlcInventoryTabV2.resolveTabName(property)
         val request = JSONObject().apply {
-            put("action", "UPSERT")
-            put("tabName", targetTabName)
-            put("keyHeader", "Property ID")
-            put("keyValue", permId)
-            put("isCommercial", isCommercial)
-            put("propertyId", permId)
-            put("propertyCode", property.propertyCode)
+            put("action", "submit_inventory")
+            put("tab", targetTabName)
+            put("submitted_by", actor())
             put("record", record)
-            if (property.images.isNotEmpty()) {
-                put("photos", JSONArray(property.images))
-            }
-            if (property.attachments.isNotEmpty()) {
-                put("attachments", JSONArray(property.attachments.map { att ->
-                    JSONObject().apply {
-                        put("name", att.name)
-                        put("type", att.type.name)
-                        put("url", att.localUriOrPath)
-                    }
-                }))
-            }
         }
 
         val response = postAppsScriptJsonRequest(endpoint, request).getOrElse { err ->
@@ -6496,9 +6504,10 @@ function handleWriteRequest(e) {
             put("Duplicate Phone Check", lead.duplicatePhoneCheck)
         }
 
+        val targetVertical = if (lead.segment.contains("res", ignoreCase = true)) "residential" else "commercial"
         val request = JSONObject().apply {
-            put("action", "UPSERT_CRM_LEAD")
-            put("leadId", lead.id)
+            put("action", "upsert_lead")
+            put("vertical", targetVertical)
             put("record", record)
         }
 
@@ -6967,8 +6976,7 @@ function handleWriteRequest(e) {
         }
 
         val request = JSONObject().apply {
-            put("action", "UPSERT_DAILY_REPORT")
-            put("reportId", report.reportId)
+            put("action", "submit_daily_report")
             put("record", record)
         }
 
@@ -7205,11 +7213,12 @@ function handleWriteRequest(e) {
             put("handoverAssignedTo", call.handoverAssignedTo)
             put("handedOverAt", call.handedOverAt)
             put("handoverCallbackAt", call.handoverCallbackAt)
+            // Schema v2 required Lead ID link
+            put("Lead ID", call.linkedOpportunityId.orEmpty())
         }
 
         val request = JSONObject().apply {
-            put("action", "UPSERT_CALL_LOG")
-            put("callId", call.id)
+            put("action", "log_call")
             put("record", record)
         }
 

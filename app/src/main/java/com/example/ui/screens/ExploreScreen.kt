@@ -787,7 +787,7 @@ fun ExploreScreen(
                                 } else null,
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                 container = {
-                                    OutlinedTextFieldDefaults.ContainerBox(
+                                    OutlinedTextFieldDefaults.Container(
                                         enabled = true,
                                         isError = false,
                                         interactionSource = searchInteractionSource,
