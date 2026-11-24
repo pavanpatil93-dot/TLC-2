@@ -1,7 +1,8 @@
 import {NextResponse} from "next/server";
-import {resolveVerifiedPrincipal,hasPermission,privateNoStore} from "../../../../../lib/server/authorization";
+import {resolveVerifiedPrincipal,hasPermission,privateNoStore,withSubjectTransaction} from "../../../../../lib/server/authorization";
 import {readPublicationPreview} from "../../../../../lib/approved-sheets";
 import {approvedPublicationKeys} from "../../../../../lib/public-inventory";
+import {publicPayloadDigest} from "../../../../../lib/publication-approval";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export async function POST(request:Request){
@@ -14,6 +15,8 @@ export async function POST(request:Request){
  if(typeof key!=="string"||! /^(Commercial Inventory|Residential Inventory):[A-Za-z0-9_-]{1,64}$/.test(key))return reply({error:"INVALID_PROPERTY_KEY"},422);
  try{
  const listings=await readPublicationPreview(new Set([key]));
- return reply({listing:listings[0]??null,configuredApproval:approvedPublicationKeys(process.env.TLC_PUBLIC_APPROVED_IDS).has(key),publicationChanged:false});
+ const registryEnabled=process.env.TLC_MASTER_APPROVAL_WRITES==="enabled";
+ const registry=registryEnabled?await withSubjectTransaction(p.subject,async db=>{const q=await db.query("SELECT version,expires_at,revoked_at FROM tlc.master_publication_approvals WHERE property_key=$1",[key]);return q.rows[0]??null;}):null;
+ return reply({registryEnabled,registry,reviewedDigest:listings[0]?publicPayloadDigest(listings[0]):null,listing:listings[0]??null,configuredApproval:approvedPublicationKeys(process.env.TLC_PUBLIC_APPROVED_IDS).has(key),publicationChanged:false});
  }catch{return reply({error:"SERVICE_UNAVAILABLE"},503);}
 }
