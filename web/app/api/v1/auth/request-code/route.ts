@@ -8,8 +8,11 @@ const allowed=new Set(["employee","owner","developer","broker","client"]);
 export async function POST(req:Request){
  if(!validMutationOrigin(req))return NextResponse.json({error:"BAD_ORIGIN"},{status:403,headers:privateNoStore});
  if(!authConfigured())return NextResponse.json({error:"SIGN_IN_NOT_CONFIGURED"},{status:503,headers:privateNoStore});
+ const bytes=Number(req.headers.get("content-length")||"0");
+ if(!Number.isFinite(bytes)||bytes>4096)return NextResponse.json({error:"REQUEST_TOO_LARGE"},{status:413,headers:privateNoStore});
  let payload:unknown;
  try{payload=await req.json()}catch{return NextResponse.json({error:"INVALID_REQUEST"},{status:400,headers:privateNoStore})}
+ if(!payload||typeof payload!=="object"||Array.isArray(payload))return NextResponse.json({error:"INVALID_REQUEST"},{status:400,headers:privateNoStore});
  const input=payload as {email?:unknown;accountType?:unknown};
  const email=typeof input.email==="string"?input.email.trim().toLowerCase():"";
  if(email.length>254||!(/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)))return NextResponse.json({error:"INVALID_EMAIL"},{status:400,headers:privateNoStore});
@@ -19,6 +22,6 @@ export async function POST(req:Request){
  // authenticate, but NO app role is assigned until admin approval.
  const delivered=await sendLoginCode(email,requested!=="employee");
  return NextResponse.json(delivered?{status:"CHECK_EMAIL"}:{error:"REQUEST_UNAVAILABLE"},{
-  status:delivered?200:429,headers:privateNoStore
+  status:delivered?200:503,headers:privateNoStore
  });
 }
