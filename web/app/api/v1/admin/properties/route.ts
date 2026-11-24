@@ -1,5 +1,5 @@
 import {NextResponse} from "next/server";
-import {resolveVerifiedPrincipal,hasPermission,privateNoStore} from "../../../../lib/server/authorization";
+import {resolveVerifiedPrincipal,hasPermission,privateNoStore} from "../../../../../lib/server/authorization";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 /** Fail-closed private property endpoint. Real authenticated writes must be added in later batches. */
