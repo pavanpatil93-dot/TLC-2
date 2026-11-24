@@ -1,5 +1,5 @@
 import {NextResponse} from "next/server";
-import {checkDatabaseConnectivity,databaseConfigured} from "../../../../lib/server/database";
+import {checkDatabaseConnectivity,databaseConfigured} from "../../../../../lib/server/database";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 /** Non-sensitive staging readiness: no secrets, IDs, data or SQL errors exposed. */
