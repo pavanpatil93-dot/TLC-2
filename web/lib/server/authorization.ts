@@ -8,9 +8,9 @@ export type Permission =
 const ALL:Permission[]=["property:read_private","property:create","property:edit","property:archive","property:publish","project:manage","submission:review","account:manage"];
 const grants:Record<AccountRole,Permission[]>={
  admin:ALL,
- commercial_manager:["property:read_private","property:create","property:edit","property:publish","project:manage","submission:review"],
- residential_manager:["property:read_private","property:create","property:edit","property:publish","project:manage","submission:review"],
- inventory_manager:["property:read_private","property:create","property:edit","property:archive","project:manage"],
+ commercial_manager:["property:read_private","property:create","property:edit","project:manage","submission:review"],
+ residential_manager:["property:read_private","property:create","property:edit","project:manage","submission:review"],
+ inventory_manager:["property:read_private","property:create","property:edit","project:manage"],
  sales_executive:["property:read_private","property:create"],
  read_only:["property:read_private"],
  owner:[],developer:[],broker:[],client:[],tenant:[]
