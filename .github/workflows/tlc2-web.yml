@@ -1,0 +1,33 @@
+name: TLC-2 Web MVP Validation
+
+on:
+  push:
+    branches:
+      - feature/tlc2-web-mvp
+    paths:
+      - 'web/**'
+      - '.github/workflows/tlc2-web.yml'
+  pull_request:
+    paths:
+      - 'web/**'
+      - '.github/workflows/tlc2-web.yml'
+
+jobs:
+  validate-web:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Check TypeScript
+        run: npm run typecheck
+      - name: Build production website
+        run: npm run build
