@@ -20,6 +20,9 @@ export type PublicListing = {
   currentRentInr?: number | null;
   isPreLeased?: boolean;
   yieldPct?: number | null;
+  isUnderConstruction?: boolean;
+  constructionStatus?: string;
+  targetPossessionDate?: string;
 };
 
 export const INVENTORY_TABS = [
@@ -89,8 +92,11 @@ export function toPublicListings(
     const rawYield = text(row, "Current ROI / Yield (%)").replace("%","").trim();
     const parsedYield = Number(rawYield);
     const yieldPct = isPreLeased && rawYield && Number.isFinite(parsedYield) && parsedYield > 0 && parsedYield < 100 ? parsedYield : null;
+    const constructionStatus = sheet === "Commercial Resale Inventory" ? text(row, "OC / Construction Status").slice(0,80) : "";
+    const isUnderConstruction = /^(under[ -]?construction|construction[ -]?in[ -]?progress|under development|work in progress|ongoing construction)$/i.test(constructionStatus);
+    const targetPossessionDate = sheet === "Commercial Resale Inventory" ? text(row, "Target Possession Date").slice(0,50) : "";
     output.push({id:sheet + ":" + id,title,location,type,areaSqFt,priceInr,
-      transaction:isLease ? "lease" : "sale",description,projectName:project,assetType:configuration,floor,builtUpSqFt,furnishing:condition,currentRentInr,isPreLeased,yieldPct});
+      transaction:isLease ? "lease" : "sale",description,projectName:project,assetType:configuration,floor,builtUpSqFt,furnishing:condition,currentRentInr,isPreLeased,yieldPct,isUnderConstruction,constructionStatus,targetPossessionDate});
   }
   return output;
 }
