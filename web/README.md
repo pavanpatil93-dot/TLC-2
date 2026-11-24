@@ -31,3 +31,18 @@ Create a **new** Vercel project pointing to `pavanpatil93-dot/TLC-2` and set **R
 3. Verify duplicate resolution, availability, owner privacy and public publishing approval.
 4. Add broker/team authentication and server-side RBAC in later phases.
 5. Deploy a preview, test, then separately configure Hostinger DNS and Vercel domains.
+
+## Auto-batch staging branch (04–10)
+
+The `feature/tlc2-auto-batches-04-10` branch contains account/portal UI previews, read-only property draft validation, staging SQL contract extensions, a CSV reconciliation tool, and fail-closed endpoints. It does **not** contain a working live login, owner submission service, Android sync, or CRM writes. Review [implementation status](docs/IMPLEMENTATION_STATUS.md) and [launch gate](docs/LAUNCH_CHECKLIST.md).
+
+```bash
+cd web
+npm test
+npm run typecheck
+npm run build
+# Read-only input audit; NEVER writes to master Sheets:
+node scripts/reconcile-inventory.mjs path/to/export.csv
+```
+
+No production databases, Android apps or Google Sheets are changed by these files.
