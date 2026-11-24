@@ -10,7 +10,11 @@ const SHEET_ID = process.env.TLC_MASTER_SHEET_ID;
  * Permission to read does NOT authorize publication of raw records.
  */
 export async function readApprovedPublicListings(): Promise<PublicListing[]> {
-  const approved = approvedPublicationKeys(process.env.TLC_PUBLIC_APPROVED_IDS);
+  return readPublicationPreview(approvedPublicationKeys(process.env.TLC_PUBLIC_APPROVED_IDS));
+}
+
+// Server-only; callers must authenticate before supplying preview keys.
+export async function readPublicationPreview(approved: ReadonlySet<string>): Promise<PublicListing[]> {
   if (approved.size === 0) return [];
   const email = process.env.TLC_GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const key = process.env.TLC_GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
