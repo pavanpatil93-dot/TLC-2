@@ -1,7 +1,7 @@
 -- Batch 03 DBA review checks; execute in staging as migration owner.
 -- Expected values for each query are annotated.
-SELECT count(*) AS expected_10_tables FROM information_schema.tables WHERE table_schema='tlc' AND table_type='BASE TABLE';
--- Expected: 10 (accounts, account_roles, parties, projects, properties,
+SELECT count(*) AS expected_11_tables FROM information_schema.tables WHERE table_schema='tlc' AND table_type='BASE TABLE';
+-- Expected: 11 (accounts, account_roles, parties, projects, properties,
 -- legacy_identifiers, property_submissions, property_media,
 -- audit_events, change_outbox, idempotency_keys) => 11; see count below.
 SELECT tablename, rowsecurity FROM pg_tables WHERE schemaname='tlc' ORDER BY tablename;
