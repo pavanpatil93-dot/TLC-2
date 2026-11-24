@@ -161,3 +161,23 @@ body{font-family:Arial,Helvetica,sans-serif;background:#F8F7F4;color:#202629;fon
 .project-search-form .btn{min-height:49px}.project-search-form input:focus-visible,.project-search-form select:focus-visible{outline:2px solid #A33B13;outline-offset:1px}
 @media(max-width:1000px){.project-search-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:720px){.project-search-form{grid-template-columns:1fr;padding:15px}.project-search-form .btn{width:100%}.search-tabs{gap:9px}.search-tabs button{font-size:12px;padding-left:3px;padding-right:3px}}
+
+
+/* Reusable multi-property selector and clean project possession controls. */
+.multi-type{position:relative;min-width:0;z-index:7}
+.multi-type-trigger{height:50px;border:1px solid #D7DCD9;border-radius:8px;background:#fff;color:#202629;padding:0 13px;width:100%;display:flex;align-items:center;justify-content:space-between;text-align:left;font-size:13px}
+.multi-type-trigger:focus-visible{outline:2px solid #A33B13;outline-offset:1px}
+.multi-type-options{position:absolute;top:calc(100% + 5px);left:0;right:0;min-width:220px;z-index:15;background:#fff;border:1px solid #D7DCD9;border-radius:10px;box-shadow:0 10px 25px rgba(32,38,41,.16);padding:9px}
+.multi-type-option{display:flex!important;gap:9px;align-items:center;text-transform:none!important;letter-spacing:normal!important;font-size:13px!important;font-weight:500!important;color:#202629!important;cursor:pointer;padding:9px!important;margin:0!important;border-radius:6px}
+.multi-type-option:hover{background:#F8F7F4}.multi-type-option input{width:17px!important;height:17px!important;min-width:17px!important;flex:none!important;accent-color:#E96932}
+.multi-type-done{display:block;width:100%;height:36px;border:0;background:#FCE8DF;color:#202629;border-radius:6px;font-weight:700;margin-top:7px}
+.project-search-form{grid-template-columns:1.25fr 1.35fr 1fr auto}
+.project-types-field{border:0;padding:0;margin:0;min-width:0}
+.project-types-field legend{color:#566168;font-size:11px;font-weight:700;margin-bottom:9px;letter-spacing:.04em}
+.project-type-options{display:flex;flex-wrap:wrap;gap:6px}
+.project-type-option{display:inline-flex;gap:5px;align-items:center;cursor:pointer;border:1px solid #D7DCD9;background:#fff;border-radius:7px;padding:8px 9px;color:#202629;font-size:12px}
+.project-type-option:has(input:checked){background:#FCE8DF;border-color:#E96932}
+.project-type-option input{accent-color:#E96932}
+.project-types-field small{display:block;margin-top:5px;color:#566168;font-size:10px}
+@media(max-width:1000px){.project-search-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:720px){.project-search-form{grid-template-columns:1fr}.multi-type-options{min-width:0}}
