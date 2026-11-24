@@ -14,7 +14,7 @@ export async function readApprovedPublicListings(): Promise<PublicListing[]> {
   if (approved.size === 0) return [];
   const email = process.env.TLC_GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const key = process.env.TLC_GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
-  if (!email || !key) return [];
+  if (!email || !key) throw new Error("PUBLIC_INVENTORY_NOT_CONFIGURED");
   const auth = new google.auth.JWT({
     email, key, scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]
   });
@@ -23,7 +23,7 @@ export async function readApprovedPublicListings(): Promise<PublicListing[]> {
   for (const tab of INVENTORY_TABS) {
     // Tab can be treated as public only when each record passes explicit approval
     // AND verification AND availability gates.
-    const range = "'" + tab.replaceAll("'", "''") + "'!A1:AZ10000";
+    const range = "'" + tab.replaceAll("'", "''") + "'";
     const {data} = await sheets.spreadsheets.values.get({
       spreadsheetId:SHEET_ID,range,valueRenderOption:"FORMATTED_VALUE"
     });
