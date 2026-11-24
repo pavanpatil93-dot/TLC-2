@@ -1,15 +1,36 @@
 import "server-only";
-/** Batch 03 fail-closed identity/authorization contract.
- * Batch 04 must integrate a real, verified auth provider.
- * Do not trust X-User-Id, client-supplied role names, name/mobile, or UI state.
- */
+import {readCookieHeader,ACCESS_COOKIE} from "./auth-cookies";
+import {verifyAccessToken} from "./auth-provider";
+import {resolveAccountProfile,type AccountRole} from "./account-profile";
 export type Permission =
  "property:read_private"|"property:create"|"property:edit"|"property:archive"|
  "property:publish"|"project:manage"|"submission:review"|"account:manage";
-export type VerifiedPrincipal={accountId:string;subject:string;permissions:ReadonlySet<Permission>};
-export async function resolveVerifiedPrincipal(_request:Request):Promise<VerifiedPrincipal|null>{
- // Deliberately deny: no cryptographic identity/session verifier is configured yet.
- return null;
+const ALL:Permission[]=["property:read_private","property:create","property:edit","property:archive","property:publish","project:manage","submission:review","account:manage"];
+const grants:Record<AccountRole,Permission[]>={
+ admin:ALL,
+ commercial_manager:["property:read_private","property:create","property:edit","property:publish","project:manage","submission:review"],
+ residential_manager:["property:read_private","property:create","property:edit","property:publish","project:manage","submission:review"],
+ inventory_manager:["property:read_private","property:create","property:edit","property:archive","project:manage"],
+ sales_executive:["property:read_private","property:create"],
+ read_only:["property:read_private"],
+ owner:[],developer:[],broker:[],client:[]
+};
+export type VerifiedPrincipal={
+ accountId:string;subject:string;roles:readonly AccountRole[];
+ displayName:string;accountKind:string;permissions:ReadonlySet<Permission>;
+};
+/** Cryptographic identity is verified with the external provider before any DB role lookup.
+ * No X-Role, user ID headers, login role selector, or browser-supplied permissions accepted.
+ */
+export async function resolveVerifiedPrincipal(request:Request):Promise<VerifiedPrincipal|null>{
+ const token=readCookieHeader(request,ACCESS_COOKIE);
+ if(!token)return null;
+ const verified=await verifyAccessToken(token);
+ if(!verified)return null;
+ const account=await resolveAccountProfile(verified.id);
+ if(!account||account.roles.length===0)return null;
+ const permissions=new Set(account.roles.flatMap(role=>grants[role]));
+ return {accountId:account.id,subject:verified.id,roles:account.roles,displayName:account.displayName,accountKind:account.accountKind,permissions};
 }
 export function hasPermission(principal:VerifiedPrincipal|null,permission:Permission):boolean{
  return !!principal&&principal.permissions.has(permission);
