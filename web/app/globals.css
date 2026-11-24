@@ -181,3 +181,41 @@ body{font-family:Arial,Helvetica,sans-serif;background:#F8F7F4;color:#202629;fon
 .project-types-field small{display:block;margin-top:5px;color:#566168;font-size:10px}
 @media(max-width:1000px){.project-search-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:720px){.project-search-form{grid-template-columns:1fr}.multi-type-options{min-width:0}}
+
+
+/* Clean Search Experience — screenshot review, 24 Nov 2026 */
+.search-hero{padding:28px 0 42px!important}
+.search-intro{margin-bottom:20px!important}
+.search-intro .kicker{letter-spacing:.095em;font-size:10px}
+.search-intro h1{font-family:Arial,Helvetica,sans-serif;font-size:clamp(27px,3vw,38px);letter-spacing:-.025em;margin:8px 0!important;line-height:1.18}
+.search-intro p{font-size:14px;line-height:1.45}
+.direct-search .searchbox{display:grid;grid-template-columns:minmax(0,1fr) 184px;column-gap:15px;row-gap:20px;padding:0 23px 23px;align-items:end;border-radius:12px;box-shadow:0 5px 20px rgba(32,38,41,.045)}
+.direct-search .search-tabs{grid-column:1/-1;margin:0;border-bottom:1px solid #D7DCD9;gap:24px}
+.direct-search .search-tabs button{padding:17px 6px 13px;font-size:13px}
+.direct-search .search-fields{grid-column:1;display:grid;grid-template-columns:minmax(220px,1.7fr) minmax(150px,1fr) minmax(145px,1fr) minmax(125px,.85fr);gap:12px;align-items:end}
+.direct-search .search-fields-projects{grid-template-columns:minmax(240px,1.8fr) minmax(180px,1.15fr) minmax(160px,1fr)}
+.direct-search .field{min-width:0}
+.direct-search .field label{display:block;white-space:nowrap;font-size:10px;line-height:15px;color:#566168;letter-spacing:.05em;margin:0 0 7px;font-weight:700;text-transform:uppercase}
+.direct-search .field input,.direct-search .field select,.direct-search .multi-type-trigger{height:47px;min-height:47px;font-size:13px;border-color:#D7DCD9}
+.direct-search .search-actions{grid-column:2;display:flex;align-items:stretch;margin:0;padding:0}
+.direct-search .search-actions .btn{height:47px;min-height:47px;width:100%;padding:0 10px;font-size:13px;white-space:nowrap;box-shadow:none}
+.direct-search .multi-type-trigger{padding:0 12px}
+@media(max-width:1100px){
+.direct-search .searchbox{grid-template-columns:1fr;row-gap:16px}
+.direct-search .search-fields{grid-column:1;grid-template-columns:repeat(2,minmax(0,1fr))}
+.direct-search .search-fields-projects{grid-template-columns:repeat(3,minmax(0,1fr))}
+.direct-search .search-actions{grid-column:1;justify-content:flex-end}
+.direct-search .search-actions .btn{width:auto;min-width:205px}
+}
+@media(max-width:720px){
+.search-hero{padding:20px 0 28px!important}
+.search-intro h1{font-size:28px!important}
+.search-intro p{font-size:13px}
+.direct-search .searchbox{padding:0 15px 16px;row-gap:13px}
+.direct-search .search-tabs{gap:13px;overflow-x:auto}
+.direct-search .search-tabs button{font-size:12px;padding:15px 3px 12px}
+.direct-search .search-fields,.direct-search .search-fields-projects{grid-template-columns:1fr;gap:11px}
+.direct-search .search-actions{width:100%}
+.direct-search .search-actions .btn{width:100%}
+.direct-search .field label{margin-bottom:5px}
+}
