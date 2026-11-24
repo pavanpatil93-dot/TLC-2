@@ -219,3 +219,20 @@ body{font-family:Arial,Helvetica,sans-serif;background:#F8F7F4;color:#202629;fon
 .direct-search .search-actions .btn{width:100%}
 .direct-search .field label{margin-bottom:5px}
 }
+
+/* Batches 04–06: secure-login preview and verified property draft interface */
+.portal-page{padding-top:52px;padding-bottom:85px;min-height:60vh}
+.portal-heading{max-width:750px;margin-bottom:26px}.portal-heading h1{font-size:clamp(26px,3.2vw,39px);margin:10px 0 13px;letter-spacing:-.025em}.portal-heading p{font-size:14px;line-height:1.7;color:#566168}
+.portal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+.portal-tile{padding:22px;background:#fff;border:1px solid #D7DCD9;border-radius:12px;display:flex;align-items:center;justify-content:space-between;gap:17px;min-height:115px}
+a.portal-tile:hover{border-color:#E96932;box-shadow:0 8px 22px rgba(32,38,41,.05)}.portal-tile strong{font-size:16px;color:#202629}.portal-tile p{font-size:12px;color:#566168;line-height:1.6;margin:8px 0 0}.portal-tile>span:last-child{color:#A33B13;font-size:18px}
+.portal-notice{background:#FCE8DF;border:1px solid #F2BC9E;padding:15px 19px;border-radius:9px;color:#63321f;font-size:13px;line-height:1.65;margin:20px 0 26px}
+.portal-footnote{font-size:12px;color:#566168;line-height:1.7;margin-top:25px}.locked-label{color:#63321f!important;background:#FCE8DF;border-radius:5px;padding:7px;font-size:10px!important;font-weight:800}
+.inventory-overview{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:25px 0}
+.inventory-overview>div{background:#fff;border:1px solid #D7DCD9;border-radius:10px;padding:21px}.inventory-overview strong{display:block;font-size:15px}.inventory-overview span{display:block;color:#566168;font-size:12px;margin-top:8px}
+.draft-form-layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:22px;align-items:start}.draft-form,.draft-preview{padding:24px;background:#fff;border:1px solid #D7DCD9;border-radius:12px}
+.draft-form .portal-notice{margin:0 0 22px}.draft-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.draft-fields label{display:flex;flex-direction:column;gap:7px;color:#566168;font-size:12px;font-weight:700}.draft-fields input,.draft-fields select,.draft-fields textarea{font:inherit;color:#202629;padding:12px;border-radius:8px;border:1px solid #D7DCD9;background:#fff;min-height:46px;min-width:0}.draft-fields textarea{resize:vertical;font-weight:400}
+.draft-fields .draft-full{grid-column:1/-1}.draft-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}.draft-preview h2{font-size:19px;margin:0 0 15px}.draft-preview p,.draft-preview li{font-size:13px;color:#566168;line-height:1.7}.draft-preview pre{font-size:11px;white-space:pre-wrap;word-break:break-word;max-height:320px;overflow:auto;background:#F8F7F4;border-radius:7px;padding:12px}
+@media(max-width:950px){.draft-form-layout{grid-template-columns:1fr}.draft-preview{position:static}}
+@media(max-width:700px){.portal-page{padding-top:25px;padding-bottom:55px}.portal-grid{grid-template-columns:1fr}.inventory-overview{grid-template-columns:1fr}.draft-form,.draft-preview{padding:17px}.draft-fields{grid-template-columns:1fr}}
