@@ -25,100 +25,47 @@ export type PublicListing = {
   targetPossessionDate?: string;
 };
 
-export const INVENTORY_TABS = [
-  "Commercial Lease Inventory",
-  "Commercial Resale Inventory",
-  "Residential Under Construction",
-  "Residential Resale",
-  "Residential Rentals"
-] as const;
+export const INVENTORY_TABS = ["Commercial Inventory", "Residential Inventory"] as const;
 export type InventoryTab = (typeof INVENTORY_TABS)[number];
-
-type RawRow = Record<string, string>;
-const text = (row: RawRow, key: string): string => (row[key] ?? "").trim();
-const first = (row: RawRow, keys: string[]): string =>
-  keys.map((k) => text(row, k)).find(Boolean) ?? "";
-
-function amount(s: string): number | null {
-  // Do not turn ambiguous monetary expressions into fake numbers.
-  const value = s.replaceAll(",", "").replaceAll("₹", "").trim();
-  if (!/^\d+(?:\.\d+)?$/.test(value)) return null;
-  const number = Number(value);
-  return Number.isSafeInteger(number) || (Number.isFinite(number) && number > 0)
-    ? number > 0 ? number : null
-    : null;
+const norm = (s: string) => s.trim().toLowerCase();
+const amount = (s: string): number | null => {
+ const v=s.replace(/[,₹]/g,"").trim();
+ if(!/^\d+(\.\d+)?$/.test(v))return null;
+ const n=Number(v);return Number.isFinite(n)&&n>0&&n<=Number.MAX_SAFE_INTEGER?n:null;
+};
+// Reject contact-like content even in otherwise public text columns.
+const safe = (s:string) => s.length<=100 && !/[@<>\r\n]|https?:|www\.|(?:\d[\s()+.-]*){10,}/i.test(s) ? s.trim() : "";
+export function approvedPublicationKeys(value:string|undefined):ReadonlySet<string>{
+ try {const a:unknown=JSON.parse(value??"[]");return new Set(Array.isArray(a)?a.filter((v):v is string=>typeof v==="string"&&INVENTORY_TABS.some(t=>v.startsWith(t+":"))):[]);}catch{return new Set();}
 }
-
-function eligible(row: RawRow): boolean {
-  const status = text(row, "Inventory Status").toLowerCase();
-  const verification = text(row, "Verification Status").toLowerCase();
-  return status === "available" &&
-    (verification === "verified" || verification === "verified confirmed");
+export function toPublicListings(sheet:InventoryTab,values:string[][],approved:ReadonlySet<string>):PublicListing[]{
+ const [raw,...rows]=values;if(!raw)return [];
+ const h=raw.map(s=>s.trim());
+ const required=["Property ID","Project / Building","Location","Property Type","Transaction Type","Carpet SqFt","Built-up SqFt","Sale Price INR","Rent INR/Month","Availability Status","Verification Status","Record Status"];
+ if(new Set(h).size!==h.length||required.some(k=>!h.includes(k)))return [];
+ const get=(r:string[],k:string)=>(r[h.indexOf(k)]??"").trim();
+ const counts=new Map<string,number>();
+ for(const r of rows){const id=get(r,"Property ID");counts.set(id,(counts.get(id)??0)+1);}
+ const out:PublicListing[]=[];
+ for(const r of rows){
+  const id=get(r,"Property ID"), key=sheet+":"+id;
+  if(!/^[A-Za-z0-9_-]{1,64}$/.test(id)||counts.get(id)!==1||!approved.has(key))continue;
+  if(norm(get(r,"Record Status"))!=="active"||!["verified","verified confirmed"].includes(norm(get(r,"Verification Status")))||!["available","available - pre-leased"].includes(norm(get(r,"Availability Status"))))continue;
+  const tx=norm(get(r,"Transaction Type"));
+  const pre=["pre-leased","preleased","pre-leased sale"].includes(tx)||norm(get(r,"Availability Status"))==="available - pre-leased";
+  const lease=["lease","rent","rental"].includes(tx);
+  if(!lease&&!pre&&!["sale","resale","outright"].includes(tx))continue;
+  if(lease&&pre)continue;
+  const project=safe(get(r,"Project / Building")),location=safe(get(r,"Location")),assetType=safe(get(r,"Property Type"));
+  const areaSqFt=amount(get(r,"Carpet SqFt")),priceInr=amount(get(r,lease?"Rent INR/Month":"Sale Price INR"));
+  if(!project||!location||!assetType||!areaSqFt||!priceInr)continue;
+  const furnishing=safe(get(r,"Furnishing"));
+  const rent=pre?amount(get(r,"Rent INR/Month")):null;
+  out.push({id:key,title:project,projectName:project,location,assetType,type:sheet==="Residential Inventory"?"residential":lease?"lease":"resale",transaction:lease?"lease":"sale",areaSqFt,priceInr,builtUpSqFt:amount(get(r,"Built-up SqFt")),furnishing,description:"",isPreLeased:pre,currentRentInr:rent,yieldPct:rent?rent*1200/priceInr:null});
+ }
+ return out;
 }
-
-export function toPublicListings(
-  sheet: InventoryTab,
-  values: string[][],
-  approvedKeys: ReadonlySet<string>
-): PublicListing[] {
-  const [headers, ...data] = values;
-  if (!headers?.includes("Unit ID") ||
-      !headers.includes("Inventory Status") ||
-      !headers.includes("Verification Status")) return [];
-  const output: PublicListing[] = [];
-  for (const cells of data) {
-    const row = Object.fromEntries(headers.map((header, index) => [header.trim(), cells[index] ?? ""])) as RawRow;
-    const id = text(row, "Unit ID");
-    if (!id || !approvedKeys.has(sheet + ":" + id) || !eligible(row)) continue;
-    const project = first(row, ["Project / Building Name", "Project Name", "Society / Project Name"]);
-    const location = first(row, ["Micro-Market", "Location"]);
-    if (!project || !location) continue;
-    const unit = first(row, ["Unit Number", "Tower / Wing & Unit No", "Tower / Wing & Flat No"]);
-    const title = project + (unit ? " · " + unit : "");
-    const areaSqFt = amount(first(row, ["Total Carpet Area (Sq Ft)", "Carpet Area (Sq Ft)"]));
-    const isLease = sheet === "Commercial Lease Inventory" || sheet === "Residential Rentals";
-    const type: PublicListing["type"] = sheet === "Commercial Lease Inventory" ? "lease" :
-      sheet === "Commercial Resale Inventory" ? "resale" : "residential";
-    const priceInr = amount(first(row, isLease ?
-      ["Asking Rent / Month (₹)"] :
-      ["Base / Agreement Value (₹)", "Agreement Value (₹)", "Asking Price (₹)"]));
-    const configuration = first(row, ["Configuration", "Asset Type"]);
-    const condition = first(row, ["Condition / Fit-out", "Condition & Furnishing"]);
-    const description = [configuration, condition].filter(Boolean).join(" · ").slice(0, 160);
-    const builtUpSqFt = amount(first(row, ["Total Built-Up Area (Sq Ft)"]));
-    const floor = first(row, ["Floor Number"]).slice(0, 40);
-    const currentRentInr = sheet === "Commercial Resale Inventory" ? amount(text(row, "Current Monthly Rent (₹)")) : null;
-    const isPreLeased = sheet === "Commercial Resale Inventory" && /^yes|pre[ -]?leased|leased$/i.test(text(row, "Pre-Leased Status"));
-    const rawYield = text(row, "Current ROI / Yield (%)").replace("%","").trim();
-    const parsedYield = Number(rawYield);
-    const yieldPct = isPreLeased && rawYield && Number.isFinite(parsedYield) && parsedYield > 0 && parsedYield < 100 ? parsedYield : null;
-    const constructionStatus = sheet === "Commercial Resale Inventory" ? text(row, "OC / Construction Status").slice(0,80) : "";
-    const isUnderConstruction = /^(under[ -]?construction|construction[ -]?in[ -]?progress|under development|work in progress|ongoing construction)$/i.test(constructionStatus);
-    const targetPossessionDate = sheet === "Commercial Resale Inventory" ? text(row, "Target Possession Date").slice(0,50) : "";
-    output.push({id:sheet + ":" + id,title,location,type,areaSqFt,priceInr,
-      transaction:isLease ? "lease" : "sale",description,projectName:project,assetType:configuration,floor,builtUpSqFt,furnishing:condition,currentRentInr,isPreLeased,yieldPct,isUnderConstruction,constructionStatus,targetPossessionDate});
-  }
-  return output;
-}
-
-export function approvedPublicationKeys(value: string | undefined): ReadonlySet<string> {
-  if (!value) return new Set();
-  // Example: ["Commercial Lease Inventory:COM-123", "Residential Resale:RES-125"]
-  try {
-    const entries: unknown = JSON.parse(value);
-    if (!Array.isArray(entries)) return new Set();
-    return new Set(entries.filter((v):v is string => typeof v === "string" &&
-      INVENTORY_TABS.some((tab) => v.startsWith(tab + ":"))));
-  } catch { return new Set(); }
-}
-
-export function deduplicate(listings: PublicListing[]): PublicListing[] {
-  const seen = new Set<string>();
-  return listings.filter((item) => {
-    // A repeated physical unit is not shown twice, even with different source IDs.
-    const key = [item.title, item.location, item.transaction].join("|").toLowerCase().replace(/\s+/g, " ");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+export function deduplicate(listings:PublicListing[]):PublicListing[]{
+ const counts=new Map<string,number>();for(const p of listings)counts.set(p.id,(counts.get(p.id)??0)+1);
+ return listings.filter(p=>counts.get(p.id)===1);
 }
