@@ -1,6 +1,6 @@
 import "server-only";
 import {databaseConfigured,databasePool} from "./database";
-export const ROLE_NAMES=["admin","commercial_manager","residential_manager","inventory_manager","sales_executive","read_only","owner","developer","broker","client"] as const;
+export const ROLE_NAMES=["admin","commercial_manager","residential_manager","inventory_manager","sales_executive","read_only","owner","developer","broker","client","tenant"] as const;
 export type AccountRole=typeof ROLE_NAMES[number];
 export type AccountProfile={
  id:string;displayName:string;accountKind:string;roles:AccountRole[];
