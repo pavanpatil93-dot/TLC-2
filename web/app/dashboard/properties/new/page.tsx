@@ -1,0 +1,2 @@
+import SiteHeader from "../../../../components/site-header";import SiteFooter from "../../../../components/site-footer";import InventoryEditor from "../../../../components/inventory-editor";
+export default function AddProperty(){return <><SiteHeader/><main className="container workspace"><span className="kicker">EMPLOYEE INVENTORY</span><h1>Add a property</h1><p className="section-lede">Internal staging only. The listing will not appear on the public website until independently approved.</p><InventoryEditor/></main><SiteFooter/></>}
