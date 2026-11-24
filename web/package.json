@@ -4,10 +4,11 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "next dev",
-    "build": "npm run security:batch04 && next build",
+    "build": "npm run security:batch04 && npm run security:login && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "security:batch04": "node scripts/verify-batch04.mjs"
+    "security:batch04": "node scripts/verify-batch04.mjs",
+    "security:login": "node scripts/verify-login-flow.mjs"
   },
   "dependencies": {
     "next": "^15.5.0",
