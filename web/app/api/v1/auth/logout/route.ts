@@ -1,5 +1,6 @@
 import {NextResponse} from "next/server";
-import {clearAuthCookies,validMutationOrigin} from "../../../../../lib/server/auth-cookies";
+import {clearAuthCookies,validMutationOrigin,readCookieHeader,ACCESS_COOKIE} from "../../../../../lib/server/auth-cookies";
+import {revokeProviderSession} from "../../../../../lib/server/auth-provider";
 import {privateNoStore} from "../../../../../lib/server/authorization";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 export async function POST(req:Request){
