@@ -67,3 +67,15 @@ export async function verifyAccessToken(token:string):Promise<{id:string;email:s
   return {id:v.id,email:typeof v.email==="string"?v.email:null};
  }catch{return null;}
 }
+
+/** Best-effort server-side provider sign-out. Cookie deletion always happens. */
+export async function revokeProviderSession(accessToken:string):Promise<boolean>{
+ const c=config();if(!c||!accessToken||accessToken.length>8192)return false;
+ try{
+  const r=await fetch(c.base+"/auth/v1/logout",{
+   method:"POST",headers:{"apikey":c.key,"Authorization":"Bearer "+accessToken},
+   cache:"no-store",signal:timeout()
+  });
+  return r.ok;
+ }catch{return false}
+}
