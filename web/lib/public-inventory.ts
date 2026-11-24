@@ -50,7 +50,7 @@ export function toPublicListings(sheet:InventoryTab,values:string[][],approved:R
  for(const r of rows){
   const id=get(r,"Property ID"), key=sheet+":"+id;
   if(!/^[A-Za-z0-9_-]{1,64}$/.test(id)||counts.get(id)!==1||!approved.has(key))continue;
-  if(norm(get(r,"Record Status"))!=="active"||!["verified","verified confirmed"].includes(norm(get(r,"Verification Status")))||!["available","available - pre-leased"].includes(norm(get(r,"Availability Status"))))continue;
+  if(norm(get(r,"Record Status"))!=="active"||!["verified","verified confirmed"].includes(norm(get(r,"Verification Status")))||!["available","available - verified","available - pre-leased"].includes(norm(get(r,"Availability Status"))))continue;
   const tx=norm(get(r,"Transaction Type"));
   const pre=["pre-leased","preleased","pre-leased sale"].includes(tx)||norm(get(r,"Availability Status"))==="available - pre-leased";
   const lease=["lease","rent","rental"].includes(tx);
