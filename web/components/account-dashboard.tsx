@@ -5,7 +5,7 @@ import {useRouter} from "next/navigation";
 import AccountRolePicker from "./account-role-picker";
 type Me={authenticated?:boolean;status?:string;email?:string;active?:boolean;requestedAccountType?:string|null;
  account?:{displayName:string;kind:string;roles:string[];email:string|null;requestedAccountType?:string|null};permissions?:string[]};
-const roleLabels:Record<string,string>={admin:"Administrator",commercial_manager:"Commercial Manager",residential_manager:"Residential Manager",inventory_manager:"Inventory Manager",sales_executive:"Sales Executive",read_only:"Read-Only Employee",owner:"Property Owner",developer:"Developer",broker:"Broker / Partner",client:"Client"};
+const roleLabels:Record<string,string>={admin:"Administrator",commercial_manager:"Commercial Manager",residential_manager:"Residential Manager",inventory_manager:"Inventory Manager",sales_executive:"Sales Executive",read_only:"Read-Only Employee",owner:"Property Owner",developer:"Developer",broker:"Broker / Partner",client:"Client",tenant:"Tenant"};
 export default function AccountDashboard(){
  const router=useRouter(),[profile,setProfile]=useState<Me|null>(null),[loading,setLoading]=useState(true);
  async function load(){
