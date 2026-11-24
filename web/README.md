@@ -31,3 +31,9 @@ Create a **new** Vercel project pointing to `pavanpatil93-dot/TLC-2` and set **R
 3. Verify duplicate resolution, availability, owner privacy and public publishing approval.
 4. Add broker/team authentication and server-side RBAC in later phases.
 5. Deploy a preview, test, then separately configure Hostinger DNS and Vercel domains.
+
+## Batch 04 — Login preview
+- Open /login and /dashboard; login is intentionally disabled until staging Auth and DB are provisioned.
+- The server validates one-time email codes, issues HttpOnly cookies and resolves database roles only after verified identity.
+- Private /api/v1/admin/properties remains fail-closed, even for verified users, until Batch 05.
+- See BATCH_04_AUTH_SETUP.md for provider, database, RLS and security-test prerequisites.
