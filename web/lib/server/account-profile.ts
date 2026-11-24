@@ -1,5 +1,5 @@
 import "server-only";
-import {databaseConfigured,databasePool} from "./database";
+import {databaseConfigured,databasePool,assertRestrictedConnection} from "./database";
 export const ROLE_NAMES=["admin","commercial_manager","residential_manager","inventory_manager","sales_executive","read_only","owner","developer","broker","client","tenant"] as const;
 export type AccountRole=typeof ROLE_NAMES[number];
 export type AccountProfile={
@@ -9,8 +9,10 @@ export type AccountProfile={
 const VALID=new Set<string>(ROLE_NAMES);
 export async function resolveAccountProfile(verifiedSubject:string):Promise<AccountProfile|null>{
  if(!databaseConfigured()||!/^[0-9a-f-]{36}$/i.test(verifiedSubject))return null;
- const client=await databasePool().connect();
+ const client=await databasePool().connect().catch(()=>null);
+ if(!client)return null;
  try{
+  await assertRestrictedConnection(client);
   await client.query("BEGIN READ ONLY");
   await client.query("SELECT set_config('tlc.auth_subject',$1,true)",[verifiedSubject]);
   const r=await client.query<{
