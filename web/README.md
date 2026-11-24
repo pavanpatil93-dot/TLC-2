@@ -37,3 +37,15 @@ Create a **new** Vercel project pointing to `pavanpatil93-dot/TLC-2` and set **R
 - The server validates one-time email codes, issues HttpOnly cookies and resolves database roles only after verified identity.
 - Private /api/v1/admin/properties remains fail-closed, even for verified users, until Batch 05.
 - See BATCH_04_AUTH_SETUP.md for provider, database, RLS and security-test prerequisites.
+
+## Updated login workflow (staging)
+
+- The public /login screen asks **only for Email and Password**. No account type is requested before sign-in.
+- A successful password sign-in verifies credentials against Supabase Auth, creates HttpOnly SameSite=Lax cookies, and opens /dashboard.
+- Only after a verified sign-in can the user choose **Broker, Owner, Client, Tenant, or Developer**.
+- This choice is saved as a *self-declared onboarding preference* in Supabase Auth user_metadata, not as an approved tlc.account_roles entry. It must never be used to grant property management permissions.
+- Existing approved TLC employees continue to receive server-authorized employee roles; picking an onboarding type never changes them.
+- Tenant is included in the restricted staging database account-kind and role constraints via migration 003.
+- If the staging Postgres role remains NOLOGIN or TLC_DATABASE_URL is unset, approved TLC data access remains blocked. Identity sign-in and onboarding preference can be used without enabling private inventory.
+- There is no public password registration or password reset flow in this batch; account provisioning must be completed separately.
+- Run npm run security:login, npm run security:batch04, npm run typecheck, npm run build.
