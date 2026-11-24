@@ -12,7 +12,7 @@ export default async function ProjectDetails({params}:Props){
  const {slug}=await params;
  const demo=groupPublicProjects(sampleProperties).find(p=>p.slug===slug);
  let project=demo;
- if(!project){const live=await readApprovedPublicListings().catch(()=>[]);project=groupPublicProjects(live).find(p=>p.slug===slug);}
+ if(!project){const live=await readApprovedPublicListings().catch(()=>[]);project=groupPublicProjects(live.filter(unit=>unit.type!=="residential")).find(p=>p.slug===slug);}
  if(!project)notFound();
  const p=project;
  const lease=p.units.filter(x=>x.transaction==="lease");
