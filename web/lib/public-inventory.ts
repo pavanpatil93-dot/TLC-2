@@ -73,8 +73,7 @@ export function toPublicListings(
     const project = first(row, ["Project / Building Name", "Project Name", "Society / Project Name"]);
     const location = first(row, ["Micro-Market", "Location"]);
     if (!project || !location) continue;
-    const unit = first(row, ["Unit Number", "Tower / Wing & Unit No", "Tower / Wing & Flat No"]);
-    const title = project + (unit ? " · " + unit : "");
+    const title = project; // Exact unit identifiers are internal; public enquiries use the listing reference.
     const areaSqFt = amount(first(row, ["Total Carpet Area (Sq Ft)", "Carpet Area (Sq Ft)"]));
     const isLease = sheet === "Commercial Lease Inventory" || sheet === "Residential Rentals";
     const type: PublicListing["type"] = sheet === "Commercial Lease Inventory" ? "lease" :
@@ -88,13 +87,13 @@ export function toPublicListings(
     const builtUpSqFt = amount(first(row, ["Total Built-Up Area (Sq Ft)"]));
     const floor = first(row, ["Floor Number"]).slice(0, 40);
     const currentRentInr = sheet === "Commercial Resale Inventory" ? amount(text(row, "Current Monthly Rent (₹)")) : null;
-    const isPreLeased = sheet === "Commercial Resale Inventory" && /^yes|pre[ -]?leased|leased$/i.test(text(row, "Pre-Leased Status"));
+    const isPreLeased = sheet === "Commercial Resale Inventory" && /^(yes|pre[ -]?leased|leased)$/i.test(text(row, "Pre-Leased Status"));
     const rawYield = text(row, "Current ROI / Yield (%)").replace("%","").trim();
     const parsedYield = Number(rawYield);
     const yieldPct = isPreLeased && rawYield && Number.isFinite(parsedYield) && parsedYield > 0 && parsedYield < 100 ? parsedYield : null;
-    const constructionStatus = sheet === "Commercial Resale Inventory" ? text(row, "OC / Construction Status").slice(0,80) : "";
+    const constructionStatus = sheet === "Residential Under Construction" ? "Under Construction" : sheet === "Commercial Resale Inventory" ? text(row, "OC / Construction Status").slice(0,80) : "";
     const isUnderConstruction = /^(under[ -]?construction|construction[ -]?in[ -]?progress|under development|work in progress|ongoing construction)$/i.test(constructionStatus);
-    const targetPossessionDate = sheet === "Commercial Resale Inventory" ? text(row, "Target Possession Date").slice(0,50) : "";
+    const targetPossessionDate = (sheet === "Commercial Resale Inventory" || sheet === "Residential Under Construction") ? text(row, "Target Possession Date").slice(0,50) : "";
     output.push({id:sheet + ":" + id,title,location,type,areaSqFt,priceInr,
       transaction:isLease ? "lease" : "sale",description,projectName:project,assetType:configuration,floor,builtUpSqFt,furnishing:condition,currentRentInr,isPreLeased,yieldPct,isUnderConstruction,constructionStatus,targetPossessionDate});
   }
@@ -116,7 +115,7 @@ export function deduplicate(listings: PublicListing[]): PublicListing[] {
   const seen = new Set<string>();
   return listings.filter((item) => {
     // A repeated physical unit is not shown twice, even with different source IDs.
-    const key = [item.title, item.location, item.transaction].join("|").toLowerCase().replace(/\s+/g, " ");
+    const key = item.id; // Distinct approved units in the same project must remain distinct.
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
