@@ -7,7 +7,8 @@ type Body={name?:unknown;phone?:unknown;propertyRef?:unknown;location?:unknown;r
 export async function POST(request:Request){
  const respond=(data:unknown,status=200)=>NextResponse.json(data,{status,headers});
  const secret=process.env.TLC_TURNSTILE_SECRET;
- if(!secret||!process.env.TLC_DATABASE_URL)return respond({error:"ENQUIRY_SERVICE_NOT_ACTIVATED"},503);
+ const configuredHost=process.env.TLC_PUBLIC_HOSTNAME;
+ if(!secret||!process.env.TLC_DATABASE_URL||!configuredHost)return respond({error:"ENQUIRY_SERVICE_NOT_ACTIVATED"},503);
  const length=Number(request.headers.get("content-length")||"0");
  if(length>12000)return respond({error:"PAYLOAD_TOO_LARGE"},413);
  let raw:Body;try{raw=await request.json()}catch{return respond({error:"INVALID_JSON"},400)}
@@ -20,8 +21,7 @@ export async function POST(request:Request){
   const result=await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify",{method:"POST",body,signal:AbortSignal.timeout(5000)});
   const data=await result.json() as {success?:boolean;hostname?:string};
   // A verified token is insufficient if bound to a different host.
-  const configuredHost=process.env.TLC_PUBLIC_HOSTNAME;
-  verified=data.success===true&&(!configuredHost||data.hostname===configuredHost);
+  verified=data.success===true&&data.hostname===configuredHost;
  }catch{return respond({error:"CAPTCHA_UNAVAILABLE"},503)}
  if(!verified)return respond({error:"CAPTCHA_FAILED"},403);
  const db=await databasePool().connect();
