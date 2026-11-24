@@ -1,0 +1,13 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import ts from "typescript";
+import {readFileSync} from "node:fs";
+const source=readFileSync(new URL("../lib/public-inventory.ts",import.meta.url),"utf8");
+const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const {toPublicListings,approvedPublicationKeys}=await import("data:text/javascript;base64,"+Buffer.from(js).toString("base64"));
+const h=["Property ID","Project / Building","Location","Property Type","Transaction Type","Carpet SqFt","Built-up SqFt","Sale Price INR","Rent INR/Month","Availability Status","Verification Status","Record Status","Owner Contact","Unit No","Floor","Remarks"];
+const r=["TEST-1","Example Building","Example Area","Office","Lease","500","750","","45000","Available","Verified","Active","PRIVATE_PHONE","PRIVATE_UNIT","PRIVATE_FLOOR","PRIVATE_REMARK"];
+const tab="Commercial Inventory", approved=approvedPublicationKeys('["Commercial Inventory:TEST-1"]');
+test("approved mapping excludes confidential fields",()=>{const [p]=toPublicListings(tab,[h,r],approved);assert.equal(p.priceInr,45000);assert.equal(p.areaSqFt,500);assert.equal(p.title,"Example Building");assert.doesNotMatch(JSON.stringify(p),/PRIVATE_|floor|owner|remarks/i);});
+test("fail closed on absent approval, duplicate, invalid status or schema",()=>{assert.deepEqual(toPublicListings(tab,[h,r],new Set()),[]);assert.deepEqual(toPublicListings(tab,[h,r,r],approved),[]);const bad=[...r];bad[11]="Archived";assert.deepEqual(toPublicListings(tab,[h,bad],approved),[]);assert.deepEqual(toPublicListings(tab,[h.slice(1),r.slice(1)],approved),[]);});
+test("contact-like public text is rejected",()=>{const bad=[...r];bad[1]="Call 9999999999";assert.deepEqual(toPublicListings(tab,[h,bad],approved),[]);});
