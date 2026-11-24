@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/tlc2-auto-batches-04-10
       - fix/persistence-integrity-20261111
       - fix/master-import-classification-20261111
       - fix/property-storage-fields-20261111
