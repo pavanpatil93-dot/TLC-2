@@ -26,5 +26,11 @@ export async function checkDatabaseConnectivity():Promise<boolean>{
  try {
   const client=await databasePool().connect();
   try {await assertRestrictedConnection(client);return true;} finally {client.release();}
- }catch{return false;}
+ }catch(error){
+  const e=error as {code?:unknown;message?:unknown};
+  const code=typeof e?.code==='string' && /^[A-Z0-9_]{1,40}$/.test(e.code)?e.code:'UNKNOWN';
+  const category=e?.message==='UNSAFE_DATABASE_ROLE'?'UNSAFE_DATABASE_ROLE':typeof e?.message==='string' && /timeout/i.test(e.message)?'TIMEOUT':'CONNECTION_OR_QUERY_FAILURE';
+  console.warn('TLC database health failure',{code,category});
+  return false;
+ }
 }
