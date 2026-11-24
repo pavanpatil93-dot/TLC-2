@@ -1,7 +1,10 @@
 import "server-only";
 import {google} from "googleapis";
-import {approvedPublicationKeys, deduplicate, INVENTORY_TABS, toPublicListings, type PublicListing} from "./public-inventory";
+import {deduplicate, INVENTORY_TABS, toPublicListings, type PublicListing} from "./public-inventory";
 
+import {Pool} from "pg";
+import {approvalAllows,type PublicationApproval} from "./publication-approval";
+let reader:Pool|undefined;
 const SHEET_ID = process.env.TLC_MASTER_SHEET_ID;
 
 /**
@@ -10,7 +13,15 @@ const SHEET_ID = process.env.TLC_MASTER_SHEET_ID;
  * Permission to read does NOT authorize publication of raw records.
  */
 export async function readApprovedPublicListings(): Promise<PublicListing[]> {
-  return readPublicationPreview(approvedPublicationKeys(process.env.TLC_PUBLIC_APPROVED_IDS));
+  if(process.env.TLC_MASTER_PUBLICATION_MODE!=="registry")return [];
+  const url=process.env.TLC_PUBLICATION_READER_URL;
+  if(!url)throw new Error("PUBLICATION_READER_NOT_CONFIGURED");
+  reader??=new Pool({connectionString:url,max:2,connectionTimeoutMillis:2500,statement_timeout:4000});
+  const read=async()=> (await reader!.query<PublicationApproval>("SELECT property_key,payload_sha256,expires_at::text,revoked_at::text FROM tlc.master_publication_approvals WHERE revoked_at IS NULL AND expires_at>now()")).rows;
+  const initial=await read();
+  const listings=await readPublicationPreview(new Set(initial.map(a=>a.property_key)));
+  const current=new Map((await read()).map(a=>[a.property_key,a]));
+  return listings.filter(p=>approvalAllows(p,current.get(p.id)));
 }
 
 // Server-only; callers must authenticate before supplying preview keys.
