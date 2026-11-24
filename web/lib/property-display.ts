@@ -25,6 +25,7 @@ export function groupPublicProjects(listings:PublicListing[]):PublicProject[]{
  return Array.from(groups.values()).sort((a,b)=>a.name.localeCompare(b.name));
 }
 export function propertyCategory(p:PublicListing){
+ if(p.isUnderConstruction)return "Under Construction";
  if(p.isPreLeased)return "Pre-Leased Investment";
  if(p.transaction==="lease")return "For Lease";
  return "Outright Sale";
