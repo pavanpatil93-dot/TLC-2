@@ -1,0 +1,20 @@
+import Link from "next/link";
+import {notFound} from "next/navigation";
+import SiteHeader from "../../../components/site-header";
+import SiteFooter from "../../../components/site-footer";
+import PropertyGallery from "../../../components/property-gallery";
+import {sampleProperties} from "../../../components/property-card";
+import {readApprovedPublicListings} from "../../../lib/approved-sheets";
+import {amountLabel,valueLabel,propertyCategory,projectPath} from "../../../lib/property-display";
+export const dynamic="force-dynamic";
+type Props={params:Promise<{id:string}>};
+export default async function PropertyDetails({params}:Props){
+ const {id}=await params;
+ const demo=sampleProperties.find(p=>p.id===id);
+ let listing=demo;
+ if(!listing){let live;try{live=await readApprovedPublicListings()}catch{notFound()}listing=live.find(p=>p.id===id);}
+ if(!listing)notFound();
+ const p=listing;const project=p.projectName||p.title.split(" · ")[0];const isDemo=!!demo;
+ const whatsapp="https://wa.me/?text="+encodeURIComponent((isDemo?"Example only, not a real listing: ":"")+"I'm interested in "+p.title+" in "+p.location+". Property code: "+p.id.split(":").at(-1));
+ return <><SiteHeader/><main><div className="container details-container"><div className="breadcrumbs"><Link href="/">Home</Link> / <Link href="/properties">Properties</Link> / {p.title}</div><div className="details-head"><div><span className="kicker">{isDemo?"DESIGN SAMPLE":"APPROVED COMMERCIAL LISTING"}</span><h1>{p.title}</h1><p>⌖ {p.location} {p.floor?" · "+p.floor:""}</p></div><div className="details-price"><small>{p.transaction==="lease"?"ASKING MONTHLY RENT":"ASKING PRICE"}</small><strong>{amountLabel(p.priceInr,p.transaction)}</strong></div></div>{isDemo?<p className="demo-label">This is an illustrative design sample, not a real available property. All values and images are examples.</p>:<p className="demo-label">Availability and commercial terms must be reconfirmed. Photographs below are illustrative until approved media are supplied.</p>}<PropertyGallery isDemo={isDemo}/><div className="details-layout"><div><section className="details-panel"><h2>Property overview</h2><div className="details-spec-grid"><div><span>Transaction</span><strong>{propertyCategory(p)}</strong></div><div><span>Property type</span><strong>{p.assetType||"Commercial"}</strong></div><div><span>Carpet area</span><strong>{valueLabel(p.areaSqFt)}</strong></div><div><span>Built-up area</span><strong>{valueLabel(p.builtUpSqFt)}</strong></div><div><span>Floor</span><strong>{p.floor||"To confirm"}</strong></div><div><span>Fit-out</span><strong>{p.furnishing||"To confirm"}</strong></div>{p.isPreLeased?<><div><span>Monthly rental income</span><strong>{p.currentRentInr?"₹"+p.currentRentInr.toLocaleString("en-IN"):"To confirm"}</strong></div><div><span>Gross yield</span><strong>{p.yieldPct?p.yieldPct.toFixed(2)+"%":"To confirm"}</strong></div></>:null}</div>{p.description?<p className="details-description">{p.description}</p>:null}</section><section className="details-panel"><h2>Project</h2><p>Browse units linked to the same building and location.</p><Link className="btn btn-outline" href={projectPath(project,p.location)}>Explore {project} →</Link></section><section className="details-panel"><h2>Images & floor plans</h2><p>Illustrative media are displayed above. Actual listing photographs and floor plans will be displayed only once approved and linked to the property record.</p></section></div><aside className="details-panel details-aside"><span className="kicker">{isDemo?"DESIGN MOCKUP":"PROPERTY ENQUIRY"}</span><h2>Interested in this property?</h2><p>{isDemo?"Explore the interface. This sample is not open for enquiries.":"Share the listing reference. Direct enquiry submission will be available when secure CRM integration is implemented."}</p><a className="btn" href={whatsapp} target="_blank" rel="noopener noreferrer">Share details on WhatsApp ↗</a><Link className="btn btn-outline" href="/properties">Back to search</Link></aside></div></div></main><SiteFooter/></>;
+}
