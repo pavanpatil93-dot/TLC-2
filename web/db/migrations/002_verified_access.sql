@@ -39,6 +39,13 @@ CREATE POLICY submission_submitter_create ON tlc.property_submissions FOR INSERT
  AND EXISTS(SELECT 1 FROM tlc.account_roles r JOIN tlc.accounts a ON a.id=r.account_id
  WHERE a.auth_subject=current_setting('tlc.auth_subject',true) AND a.approval_state='active'
  AND r.role IN('admin','commercial_manager','residential_manager','inventory_manager','sales_executive','owner','broker','developer')));
+CREATE POLICY submission_manager_review ON tlc.property_submissions FOR UPDATE USING(
+ state IN ('submitted','under_review','returned')
+ AND EXISTS(SELECT 1 FROM tlc.account_roles r JOIN tlc.accounts a ON a.id=r.account_id
+ WHERE a.auth_subject=current_setting('tlc.auth_subject',true) AND a.approval_state='active'
+ AND r.role IN('admin','commercial_manager','residential_manager','inventory_manager'))
+) WITH CHECK(state IN ('under_review','returned','approved','rejected')
+ AND reviewed_by IN(SELECT id FROM tlc.accounts WHERE auth_subject=current_setting('tlc.auth_subject',true)));
 CREATE POLICY audit_actor_insert ON tlc.audit_events FOR INSERT WITH CHECK(
  actor_account_id IN(SELECT id FROM tlc.accounts WHERE auth_subject=current_setting('tlc.auth_subject',true)));
 CREATE POLICY outbox_staff_insert ON tlc.change_outbox FOR INSERT WITH CHECK (
@@ -50,6 +57,6 @@ CREATE POLICY outbox_staff_insert ON tlc.change_outbox FOR INSERT WITH CHECK (
 -- GRANT USAGE ON SCHEMA tlc TO tlc_web_runtime;
 -- GRANT SELECT ON tlc.accounts,tlc.account_roles,tlc.projects,tlc.properties,tlc.property_submissions TO tlc_web_runtime;
 -- GRANT INSERT ON tlc.properties,tlc.property_submissions,tlc.audit_events,tlc.change_outbox TO tlc_web_runtime;
--- GRANT UPDATE ON tlc.properties TO tlc_web_runtime;
+-- GRANT UPDATE ON tlc.properties,tlc.property_submissions TO tlc_web_runtime;
 -- GRANT USAGE ON ALL SEQUENCES IN SCHEMA tlc TO tlc_web_runtime;
 COMMIT;
