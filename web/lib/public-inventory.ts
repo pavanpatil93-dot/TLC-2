@@ -12,6 +12,14 @@ export type PublicListing = {
   priceInr: number | null;
   transaction: "lease" | "sale";
   description: string;
+  projectName?: string;
+  assetType?: string;
+  floor?: string;
+  builtUpSqFt?: number | null;
+  furnishing?: string;
+  currentRentInr?: number | null;
+  isPreLeased?: boolean;
+  yieldPct?: number | null;
 };
 
 export const INVENTORY_TABS = [
@@ -74,8 +82,15 @@ export function toPublicListings(
     const configuration = first(row, ["Configuration", "Asset Type"]);
     const condition = first(row, ["Condition / Fit-out", "Condition & Furnishing"]);
     const description = [configuration, condition].filter(Boolean).join(" · ").slice(0, 160);
+    const builtUpSqFt = amount(first(row, ["Total Built-Up Area (Sq Ft)"]));
+    const floor = first(row, ["Floor Number"]).slice(0, 40);
+    const currentRentInr = sheet === "Commercial Resale Inventory" ? amount(text(row, "Current Monthly Rent (₹)")) : null;
+    const isPreLeased = sheet === "Commercial Resale Inventory" && /^yes|pre[ -]?leased|leased$/i.test(text(row, "Pre-Leased Status"));
+    const rawYield = text(row, "Current ROI / Yield (%)").replace("%","").trim();
+    const parsedYield = Number(rawYield);
+    const yieldPct = isPreLeased && rawYield && Number.isFinite(parsedYield) && parsedYield > 0 && parsedYield < 100 ? parsedYield : null;
     output.push({id:sheet + ":" + id,title,location,type,areaSqFt,priceInr,
-      transaction:isLease ? "lease" : "sale",description});
+      transaction:isLease ? "lease" : "sale",description,projectName:project,assetType:configuration,floor,builtUpSqFt,furnishing:condition,currentRentInr,isPreLeased,yieldPct});
   }
   return output;
 }
