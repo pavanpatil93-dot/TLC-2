@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/tlc2-web-mvp
+      - feature/tlc2-auto-batches-04-10-20261124
     paths:
       - 'web/**'
       - '.github/workflows/tlc2-web.yml'
@@ -27,6 +28,8 @@ jobs:
           node-version: '22'
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+      - name: Run safe unit tests
+        run: npm test
       - name: Check TypeScript
         run: npm run typecheck
       - name: Build production website
