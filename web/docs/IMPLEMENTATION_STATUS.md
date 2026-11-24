@@ -8,7 +8,7 @@ This is an implementation ledger, not a declaration that all capabilities are li
 | 04 User login | Role-selection UI, login/access preview | Real email/phone OTP, provider credentials, verified session and admin invitations |
 | 05 Admin inventory | Employee inventory layout/permissions disclosure, fail-closed API | Authenticated create/edit/archive/publish; private data unavailable |
 | 06 Owner/broker/developer posting | Draft form with validation and local review; deny-by-default submission endpoint | Secure uploads/storage, approval queue and real posting API |
-| 07 Android ↔ Web sync | Explicit protocol and 401-gated endpoints, outbox table | Android changes, verified sync sessions, realtime updates, offline testing |
+| 07 Android ↔ Web sync | Explicit protocol, 401-gated endpoints, outbox table, isolated Kotlin mutation/version contract and four Android unit tests | Android changes, verified sync sessions, realtime updates, offline testing |
 | 08 Sheet reconciliation | Read-only CSV reconciliation CLI with tests, import_run/conflict schema | Snapshot exports, approved mapping, staging migration and cutover |
 | 09 Enquiries/CRM | Enquiry table contract with RLS, fail-closed public endpoint | Consent policy, secure lead capture, CRM routing, rate limiting |
 | 10 QA & launch | Branch-preview build validation, noindex preview, privacy-safe guards | Real devices, complete threat model, content approval, DNS and go-live |
