@@ -1,0 +1,6 @@
+import Link from "next/link";
+import SiteHeader from "../../components/site-header";
+import SiteFooter from "../../components/site-footer";
+import {accountKinds,accountMeta} from "../../lib/portal-contract";
+export const metadata={title:"Access Portal | The Leasing Company",robots:{index:false,follow:false}};
+export default function LoginPage(){return <><SiteHeader/><main className="container portal-page"><div className="portal-heading"><span className="kicker">TLC ACCESS PORTAL</span><h1>One portal. The right access for your role.</h1><p>Choose how you work with The Leasing Company. Secure account access will become available after identity verification and database activation.</p></div><div className="portal-grid">{accountKinds.map(k=><Link key={k} href={"/portal?role="+k} className="portal-tile"><div><strong>{accountMeta[k].label}</strong><p>{accountMeta[k].summary}</p></div><span aria-hidden>→</span></Link>)}</div><div className="portal-notice"><strong>Secure login not active yet.</strong> Account creation, OTP login and employee approval are locked until a verified authentication provider and access policies are configured. This page does not accept passwords or activate accounts.</div></main><SiteFooter/></>}
