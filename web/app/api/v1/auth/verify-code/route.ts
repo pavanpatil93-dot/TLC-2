@@ -1,12 +1,13 @@
 import {NextResponse} from "next/server";
 import {authConfigured,verifyLoginCode} from "../../../../../lib/server/auth-provider";
+import {databaseConfigured} from "../../../../../lib/server/database";
 import {setAuthCookies,validMutationOrigin} from "../../../../../lib/server/auth-cookies";
 import {privateNoStore} from "../../../../../lib/server/authorization";
 export const runtime="nodejs";
 export const dynamic="force-dynamic";
 export async function POST(req:Request){
  if(!validMutationOrigin(req))return NextResponse.json({error:"BAD_ORIGIN"},{status:403,headers:privateNoStore});
- if(!authConfigured())return NextResponse.json({error:"SIGN_IN_NOT_CONFIGURED"},{status:503,headers:privateNoStore});
+ if(!authConfigured()||!databaseConfigured())return NextResponse.json({error:"SIGN_IN_NOT_CONFIGURED"},{status:503,headers:privateNoStore});
  const bytes=Number(req.headers.get("content-length")||"0");
  if(!Number.isFinite(bytes)||bytes>4096)return NextResponse.json({error:"REQUEST_TOO_LARGE"},{status:413,headers:privateNoStore});
  let payload:unknown;
