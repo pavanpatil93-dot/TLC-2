@@ -79,3 +79,31 @@ export async function revokeProviderSession(accessToken:string):Promise<boolean>
   return r.ok;
  }catch{return false}
 }
+
+/** Sign in existing user with a password; never creates or elevates a TLC account. */
+export async function signInWithPassword(email:string,password:string):Promise<AuthTokens|null>{
+ const c=config();if(!c)return null;
+ try{
+  const r=await fetch(c.base+"/auth/v1/token?grant_type=password",{
+   method:"POST",headers:{"apikey":c.key,"Content-Type":"application/json"},
+   body:JSON.stringify({email,password}),cache:"no-store",signal:timeout()
+  });
+  return r.ok?tokens(await r.json()):null;
+ }catch{return null;}
+}
+/** Self-declared onboarding preference only; NEVER used for authorization.
+ * Storing it in Supabase user_metadata does not assign TLC database roles.
+ */
+export async function saveRequestedAccountType(accessToken:string,requestedType:string):Promise<boolean>{
+ const c=config();if(!c||!accessToken||accessToken.length>8192)return false;
+ const allowed=new Set(["broker","owner","client","tenant","developer"]);
+ if(!allowed.has(requestedType))return false;
+ try{
+  const r=await fetch(c.base+"/auth/v1/user",{
+   method:"PUT",headers:{"apikey":c.key,"Authorization":"Bearer "+accessToken,"Content-Type":"application/json"},
+   body:JSON.stringify({data:{tlc_requested_account_type:requestedType}}),
+   cache:"no-store",signal:timeout()
+  });
+  return r.ok;
+ }catch{return false;}
+}
