@@ -13,7 +13,7 @@ const grants:Record<AccountRole,Permission[]>={
  inventory_manager:["property:read_private","property:create","property:edit","property:archive","project:manage"],
  sales_executive:["property:read_private","property:create"],
  read_only:["property:read_private"],
- owner:[],developer:[],broker:[],client:[]
+ owner:[],developer:[],broker:[],client:[],tenant:[]
 };
 export type VerifiedPrincipal={
  accountId:string;subject:string;roles:readonly AccountRole[];
