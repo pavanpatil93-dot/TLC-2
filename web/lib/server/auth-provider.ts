@@ -54,7 +54,7 @@ export async function rotateTokens(refreshToken:string):Promise<AuthTokens|null>
   return r.ok?tokens(await r.json()):null;
  }catch{return null;}
 }
-export async function verifyAccessToken(token:string):Promise<{id:string;email:string|null}|null>{
+export async function verifyAccessToken(token:string):Promise<{id:string;email:string|null;requestedAccountType:string|null}|null>{
  const c=config();if(!c||!token||token.length>8192)return null;
  try{
   const r=await fetch(c.base+"/auth/v1/user",{
@@ -62,9 +62,10 @@ export async function verifyAccessToken(token:string):Promise<{id:string;email:s
    cache:"no-store",signal:timeout()
   });
   if(!r.ok)return null;
-  const v=await r.json() as {id?:unknown;email?:unknown};
+  const v=await r.json() as {id?:unknown;email?:unknown;user_metadata?:{tlc_requested_account_type?:unknown}};
   if(typeof v.id!=="string"||!/^[0-9a-f-]{36}$/i.test(v.id))return null;
-  return {id:v.id,email:typeof v.email==="string"?v.email:null};
+  const requested=v.user_metadata?.tlc_requested_account_type;
+  return {id:v.id,email:typeof v.email==="string"?v.email:null,requestedAccountType:typeof requested==="string"&&["broker","owner","client","tenant","developer"].includes(requested)?requested:null};
  }catch{return null;}
 }
 
