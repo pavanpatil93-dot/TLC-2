@@ -7,8 +7,11 @@ export const dynamic="force-dynamic";
 export async function POST(req:Request){
  if(!validMutationOrigin(req))return NextResponse.json({error:"BAD_ORIGIN"},{status:403,headers:privateNoStore});
  if(!authConfigured())return NextResponse.json({error:"SIGN_IN_NOT_CONFIGURED"},{status:503,headers:privateNoStore});
+ const bytes=Number(req.headers.get("content-length")||"0");
+ if(!Number.isFinite(bytes)||bytes>4096)return NextResponse.json({error:"REQUEST_TOO_LARGE"},{status:413,headers:privateNoStore});
  let payload:unknown;
  try{payload=await req.json()}catch{return NextResponse.json({error:"INVALID_REQUEST"},{status:400,headers:privateNoStore})}
+ if(!payload||typeof payload!=="object"||Array.isArray(payload))return NextResponse.json({error:"INVALID_REQUEST"},{status:400,headers:privateNoStore});
  const input=payload as {email?:unknown;code?:unknown};
  const email=typeof input.email==="string"?input.email.trim().toLowerCase():"";
  const code=typeof input.code==="string"?input.code.trim():"";
