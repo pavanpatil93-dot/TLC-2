@@ -12,14 +12,14 @@ export async function GET(req:Request){
  const verified=await verifyAccessToken(token);
  if(!verified)return NextResponse.json({authenticated:false,status:"SESSION_EXPIRED"},{status:401,headers:privateNoStore});
  if(!databaseConfigured())return NextResponse.json({
-  authenticated:true,status:"BACKEND_NOT_CONFIGURED",email:verified.email,active:false
+  authenticated:true,status:"BACKEND_NOT_CONFIGURED",email:verified.email,requestedAccountType:verified.requestedAccountType,active:false
  },{status:503,headers:privateNoStore});
  const principal=await resolveVerifiedPrincipal(req);
  if(!principal)return NextResponse.json({
   authenticated:true,status:"ACCOUNT_PENDING_OR_UNAVAILABLE",email:verified.email,active:false
  },{status:403,headers:privateNoStore});
  return NextResponse.json({
-  authenticated:true,status:"ACTIVE",account:{displayName:principal.displayName,kind:principal.accountKind,roles:principal.roles,email:verified.email},
+  authenticated:true,status:"ACTIVE",account:{displayName:principal.displayName,kind:principal.accountKind,roles:principal.roles,email:verified.email,requestedAccountType:verified.requestedAccountType},
   permissions:Array.from(principal.permissions)
  },{headers:privateNoStore});
 }
