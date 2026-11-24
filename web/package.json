@@ -13,12 +13,14 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "googleapis": "^144.0.0",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "@types/pg": "^8.11.10"
   }
 }
