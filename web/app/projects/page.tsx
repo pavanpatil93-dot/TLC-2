@@ -5,7 +5,7 @@ import {sampleProperties} from "../../components/property-card";
 import {readApprovedPublicListings} from "../../lib/approved-sheets";
 import {groupPublicProjects,projectPath,valueLabel} from "../../lib/property-display";
 import type {PublicListing} from "../../lib/public-inventory";
-import {PROPERTY_TYPES} from "../../components/multi-type-select";
+const PROPERTY_TYPES=[{value:"office",label:"Office"},{value:"shop",label:"Shop"},{value:"showroom",label:"Showroom"},{value:"warehouse",label:"Warehouse"}] as const;
 export const dynamic="force-dynamic";
 const validTypes=new Set<string>(PROPERTY_TYPES.map(t=>t.value));
 const validPossession=new Set(["any","ready","2026","2027","2028","2029plus"]);
