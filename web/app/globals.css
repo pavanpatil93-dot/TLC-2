@@ -261,3 +261,23 @@ body{font-family:Arial,Helvetica,sans-serif;background:#F8F7F4;color:#202629;fon
 .account-action.locked{background:#F8F7F4}
 @media(max-width:950px){.login-layout{grid-template-columns:1fr;gap:26px}.login-intro{padding-top:0}.login-intro h1{max-width:100%}.login-points{margin-top:20px}.login-panel{max-width:650px}}
 @media(max-width:720px){.header-sign-in{padding:10px 4px;font-size:12px}.login-shell{padding:28px 0 50px}.login-intro h1{font-size:31px}.login-intro p{font-size:14px}.login-panel{padding:18px}.login-kind-grid{gap:7px}.login-kind{padding:11px 9px}.login-kind strong{font-size:11px}.login-kind span{font-size:10px}.account-page{padding:29px 0}.account-heading{display:block}.account-heading .btn{margin-top:12px}.account-summary{grid-template-columns:1fr}.account-actions{grid-template-columns:1fr}}
+
+
+/* TLC post-login account type and password sign-in */
+.password-input-row{display:flex;position:relative;align-items:center;min-width:0}
+.password-input-row input{padding-right:70px}
+.password-input-row button{position:absolute;right:9px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:#A33B13;font-size:12px;font-weight:800;padding:7px;cursor:pointer}
+.password-input-row button:focus-visible{outline:2px solid #E96932;border-radius:5px}
+.account-choice-section{margin:20px 0}
+.account-choice-heading h2{margin:7px 0 9px}
+.account-choice-heading p{font-size:13px;color:#566168;margin:0 0 17px;line-height:1.6}
+.account-type-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px;margin-bottom:18px}
+.account-type-option{border:1px solid #D7DCD9;border-radius:10px;background:#fff;color:#202629;padding:17px 13px;min-height:94px;text-align:left;display:flex;flex-direction:column;gap:8px;cursor:pointer}
+.account-type-option strong{font-size:14px;font-weight:800}
+.account-type-option span{font-size:12px;color:#566168;line-height:1.45}
+.account-type-option.selected{border-color:#E96932;background:#FCE8DF;box-shadow:0 0 0 1px #E96932 inset}
+.account-type-option:focus-visible{outline:2px solid #E96932;outline-offset:2px}
+.account-choice-save{border:0}
+.account-choice-save:disabled{opacity:.5;cursor:not-allowed}
+.account-choice-note{font-size:11px!important;color:#566168;margin:15px 0 0!important;line-height:1.6}
+@media(max-width:720px){.account-type-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.account-type-option{min-height:96px;padding:13px 10px}.account-choice-save{width:100%}}
