@@ -15,9 +15,9 @@ export async function resolveAccountProfile(verifiedSubject:string):Promise<Acco
   await client.query("SELECT set_config('tlc.auth_subject',$1,true)",[verifiedSubject]);
   const r=await client.query<{
    id:string;display_name:string;account_kind:string;email:string|null;approval_state:string;role:string|null;
-  }>(String.raw\`SELECT a.id,a.display_name,a.account_kind,a.email,a.approval_state,r.role
+  }>(String.raw`SELECT a.id,a.display_name,a.account_kind,a.email,a.approval_state,r.role
      FROM tlc.accounts a LEFT JOIN tlc.account_roles r ON r.account_id=a.id
-     WHERE a.auth_subject=$1 AND a.approval_state='active'\`,[verifiedSubject]);
+     WHERE a.auth_subject=$1 AND a.approval_state='active'`,[verifiedSubject]);
   await client.query("COMMIT");
   if(!r.rowCount)return null;
   const first=r.rows[0];
