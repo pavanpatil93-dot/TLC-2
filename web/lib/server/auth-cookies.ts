@@ -26,6 +26,14 @@ export function validMutationOrigin(request:Request):boolean{
  const origin=request.headers.get("origin");if(!origin)return false;
  try{
   const url=new URL(request.url), o=new URL(origin);
-  return o.origin===url.origin;
+  if(o.origin===url.origin)return true;
+  // Vercel may reconstruct Request.url using an internal hostname.
+  // Trust only platform-provided deployment hostnames, never forwarded headers.
+  if(process.env.VERCEL==="1"){
+   for(const host of [process.env.VERCEL_URL,process.env.VERCEL_BRANCH_URL]){
+    if(host && o.origin==="https://"+host)return true;
+   }
+  }
+  return false;
  }catch{return false;}
 }
