@@ -38,11 +38,11 @@ export async function readPublicationPreview(approved: ReadonlySet<string>): Pro
   for (const tab of INVENTORY_TABS) {
     // Tab can be treated as public only when each record passes explicit approval
     // AND verification AND availability gates.
-    const range = "'" + tab.replaceAll("'", "''") + "'!A1:AO10000";
+    const range = "'" + tab.replaceAll("'", "''") + "'!A1:BN";
     const {data} = await sheets.spreadsheets.values.get({
-      spreadsheetId:SHEET_ID,range,valueRenderOption:"FORMATTED_VALUE"
+      spreadsheetId:SHEET_ID,range,valueRenderOption:"UNFORMATTED_VALUE"
     });
     listings.push(...toPublicListings(tab,(data.values ?? []).map(row => row.map(v => String(v ?? ""))),approved));
   }
-  return deduplicate(listings).slice(0,500);
+  return deduplicate(listings);
 }
