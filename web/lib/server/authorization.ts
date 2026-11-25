@@ -29,7 +29,8 @@ export async function resolveVerifiedPrincipal(request:Request):Promise<Verified
  if(!verified)return null;
  const account=await resolveAccountProfile(verified.id);
  if(!account||account.roles.length===0)return null;
- const permissions=new Set(account.roles.flatMap(role=>grants[role]));
+ // External accounts must never inherit internal employee permissions, even if misassigned a role.
+ const permissions=new Set<Permission>(account.accountKind === "employee" ? account.roles.flatMap(role=>grants[role] ?? []) : []);
  return {accountId:account.id,subject:verified.id,roles:account.roles,displayName:account.displayName,accountKind:account.accountKind,permissions};
 }
 export function hasPermission(principal:VerifiedPrincipal|null,permission:Permission):boolean{
