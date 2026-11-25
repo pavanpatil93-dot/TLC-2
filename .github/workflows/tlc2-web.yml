@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/tlc2-web-mvp
+      - feature/tlc2-gemini-completion
     paths:
       - 'web/**'
       - '.github/workflows/tlc2-web.yml'
