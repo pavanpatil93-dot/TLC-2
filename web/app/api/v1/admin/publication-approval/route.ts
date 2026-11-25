@@ -11,7 +11,7 @@ export async function POST(request:Request){
  if(process.env.TLC_MASTER_APPROVAL_WRITES!=="enabled")return reply({error:"APPROVAL_RELEASE_GATE_CLOSED"},503);
  let b:Record<string,unknown>;try{const raw=await request.json();if(!raw||typeof raw!=="object"||Array.isArray(raw))throw Error();b=raw;}catch{return reply({error:"INVALID_JSON"},400);}
  const key=b.key,action=b.action,version=b.expectedVersion;
- if(typeof key!=="string"||!/^(Commercial Inventory|Residential Inventory):[A-Za-z0-9_-]{1,64}$/.test(key)||!Number.isSafeInteger(version)||Number(version)<0||!["approve","revoke"].includes(String(action)))return reply({error:"INVALID_REQUEST"},422);
+ if(typeof key!=="string"||!/^(Commercial Lease Inventory|Commercial Resale Inventory|Residential Under Construction|Residential Resale|Residential Rentals):[A-Za-z0-9_-]{1,64}$/.test(key)||!Number.isSafeInteger(version)||Number(version)<0||!["approve","revoke"].includes(String(action)))return reply({error:"INVALID_REQUEST"},422);
  try{
  let digest="",evidence="",expiry="";
  if(action==="approve"){
