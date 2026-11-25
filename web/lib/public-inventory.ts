@@ -25,43 +25,49 @@ export type PublicListing = {
   targetPossessionDate?: string;
 };
 
-export const INVENTORY_TABS = ["Commercial Inventory", "Residential Inventory"] as const;
+export const INVENTORY_TABS = ["Commercial Lease Inventory","Commercial Resale Inventory","Residential Under Construction","Residential Resale","Residential Rentals"] as const;
 export type InventoryTab = (typeof INVENTORY_TABS)[number];
-const norm = (s: string) => s.trim().toLowerCase();
-const amount = (s: string): number | null => {
+const schema = {
+ "Commercial Lease Inventory": ["Project / Building Name","Asset Type","Total Carpet Area (Sq Ft)","Asking Rent / Month (₹)","Condition / Fit-out"],
+ "Commercial Resale Inventory": ["Project / Building Name","Asset Type","Total Carpet Area (Sq Ft)","Base / Agreement Value (₹)","Condition / Fit-out"],
+ "Residential Under Construction": ["Project Name","Configuration","Carpet Area (Sq Ft)","Agreement Value (₹)",""],
+ "Residential Resale": ["Society / Project Name","Configuration","Carpet Area (Sq Ft)","Asking Price (₹)","Condition & Furnishing"],
+ "Residential Rentals": ["Society / Project Name","Configuration","Carpet Area (Sq Ft)","Asking Rent / Month (₹)","Condition & Furnishing"]
+} as const;
+const norm = (s:string)=>s.trim().toLowerCase();
+const amount = (s:string):number|null=>{
  const v=s.replace(/[,₹]/g,"").trim();
  if(!/^\d+(\.\d+)?$/.test(v))return null;
  const n=Number(v);return Number.isFinite(n)&&n>0&&n<=Number.MAX_SAFE_INTEGER?n:null;
 };
-// Reject contact-like content even in otherwise public text columns.
-const safe = (s:string) => s.length<=100 && !/[@<>\r\n]|https?:|www\.|(?:\d[\s()+.-]*){10,}/i.test(s) ? s.trim() : "";
+const safe=(s:string)=>s.length<=100&&!/[@<>\r\n]|https?:|www\.|(?:\d[\s()+.-]*){10,}/i.test(s)?s.trim():"";
 export function approvedPublicationKeys(value:string|undefined):ReadonlySet<string>{
- try {const a:unknown=JSON.parse(value??"[]");return new Set(Array.isArray(a)?a.filter((v):v is string=>typeof v==="string"&&INVENTORY_TABS.some(t=>v.startsWith(t+":"))):[]);}catch{return new Set();}
+ try{const a:unknown=JSON.parse(value??"[]");return new Set(Array.isArray(a)?a.filter((v):v is string=>typeof v==="string"&&INVENTORY_TABS.some(t=>v.startsWith(t+":"))):[]);}catch{return new Set();}
 }
 export function toPublicListings(sheet:InventoryTab,values:string[][],approved:ReadonlySet<string>):PublicListing[]{
- const [raw,...rows]=values;if(!raw)return [];
- const h=raw.map(s=>s.trim());
- const required=["Property ID","Project / Building","Location","Property Type","Transaction Type","Carpet SqFt","Built-up SqFt","Sale Price INR","Rent INR/Month","Availability Status","Verification Status","Record Status"];
- if(new Set(h).size!==h.length||required.some(k=>!h.includes(k)))return [];
- const get=(r:string[],k:string)=>(r[h.indexOf(k)]??"").trim();
+ const [raw,...rows]=values;if(!raw||!schema[sheet])return [];
+ const [projectCol,assetCol,areaCol,priceCol,fitCol]=schema[sheet];
+ const h=raw.map(s=>s.trim()), named=h.filter(Boolean);
+ const required=["Unit ID","Location","Inventory Status","Verification Status","Duplicate Check",projectCol,assetCol,areaCol,priceCol];
+ if(new Set(named).size!==named.length||required.some(k=>!h.includes(k)))return [];
+ const get=(r:string[],k:string)=>k?(r[h.indexOf(k)]??"").trim():"";
  const counts=new Map<string,number>();
- for(const r of rows){const id=get(r,"Property ID");counts.set(id,(counts.get(id)??0)+1);}
+ for(const r of rows){const id=get(r,"Unit ID");counts.set(id,(counts.get(id)??0)+1);}
  const out:PublicListing[]=[];
  for(const r of rows){
-  const id=get(r,"Property ID"), key=sheet+":"+id;
+  const id=get(r,"Unit ID"),key=sheet+":"+id;
   if(!/^[A-Za-z0-9_-]{1,64}$/.test(id)||counts.get(id)!==1||!approved.has(key))continue;
-  if(norm(get(r,"Record Status"))!=="active"||!["verified","verified confirmed"].includes(norm(get(r,"Verification Status")))||!["available","available - verified","available - pre-leased"].includes(norm(get(r,"Availability Status"))))continue;
-  const tx=norm(get(r,"Transaction Type"));
-  const pre=["pre-leased","preleased","pre-leased sale"].includes(tx)||norm(get(r,"Availability Status"))==="available - pre-leased";
-  const lease=["lease","rent","rental"].includes(tx);
-  if(!lease&&!pre&&!["sale","resale","outright"].includes(tx))continue;
-  if(lease&&pre)continue;
-  const project=safe(get(r,"Project / Building")),location=safe(get(r,"Location")),assetType=safe(get(r,"Property Type"));
-  const areaSqFt=amount(get(r,"Carpet SqFt")),priceInr=amount(get(r,lease?"Rent INR/Month":"Sale Price INR"));
-  if(!project||!location||!assetType||!areaSqFt||!priceInr)continue;
-  const furnishing=safe(get(r,"Furnishing"));
-  const rent=pre?amount(get(r,"Rent INR/Month")):null;
-  out.push({id:key,title:project,projectName:project,location,assetType,type:sheet==="Residential Inventory"?"residential":lease?"lease":"resale",transaction:lease?"lease":"sale",areaSqFt,priceInr,builtUpSqFt:amount(get(r,"Built-up SqFt")),furnishing,description:"",isPreLeased:pre,currentRentInr:rent,yieldPct:rent?rent*1200/priceInr:null});
+  const status=norm(get(r,"Inventory Status"));
+  if(!["available","available - verified","available - pre-leased"].includes(status)||!["confirmed / verified","verified","verified confirmed"].includes(norm(get(r,"Verification Status")))||norm(get(r,"Duplicate Check"))!=="clear")continue;
+  const lease=sheet==="Commercial Lease Inventory"||sheet==="Residential Rentals";
+  const commercial=sheet==="Commercial Lease Inventory"||sheet==="Commercial Resale Inventory";
+  const pre=sheet==="Commercial Resale Inventory"&&(status==="available - pre-leased"||["yes","pre-leased","preleased"].includes(norm(get(r,"Pre-Leased Status"))));
+  if(status==="available - pre-leased"&&!pre)continue;
+  const project=safe(get(r,projectCol)),location=safe(get(r,"Location")),assetType=safe(get(r,assetCol));
+  const areaSqFt=amount(get(r,areaCol)),total=amount(get(r,"Total Carpet Area (Sq Ft)")),priceInr=amount(get(r,priceCol));
+  if(!project||!location||!assetType||!areaSqFt||!priceInr||(total!==null&&total!==areaSqFt))continue;
+  const rent=pre?amount(get(r,"Current Monthly Rent (₹)")):null;
+  out.push({id:key,title:project,projectName:project,location,assetType,type:commercial?(lease?"lease":"resale"):"residential",transaction:lease?"lease":"sale",areaSqFt,priceInr,builtUpSqFt:amount(get(r,"Total Built-Up Area (Sq Ft)")),furnishing:safe(get(r,fitCol)),description:"",isPreLeased:pre,currentRentInr:rent,yieldPct:rent?rent*1200/priceInr:null,isUnderConstruction:sheet==="Residential Under Construction"});
  }
  return out;
 }
