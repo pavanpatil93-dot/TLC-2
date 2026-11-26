@@ -1,0 +1,60 @@
+name: Android V1 internal APK and test gate
+on:
+  push:
+    branches: [integration/android-v1-apk-20261127]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+      - name: Prepare debug signing
+        run: |
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -keystore debug.keystore -alias androiddebugkey -storepass android -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=CI,C=US" -noprompt
+          fi
+      - name: Compile debug APK
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TLC2-V1-INTERNAL-UNVERIFIED
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+      - name: Prepare debug signing
+        run: |
+          if [ ! -f debug.keystore ]; then
+            keytool -genkeypair -keystore debug.keystore -alias androiddebugkey -storepass android -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=CI,C=US" -noprompt
+          fi
+      - name: Unit test gate
+        timeout-minutes: 20
+        run: gradle :app:testDebugUnitTest --stacktrace --info --no-daemon
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Android-unit-test-diagnostics
+          path: |
+            app/build/test-results/
+            app/build/reports/tests/
+          if-no-files-found: warn
