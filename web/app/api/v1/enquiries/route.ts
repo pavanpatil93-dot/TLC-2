@@ -11,7 +11,7 @@ export async function POST(request:Request){
  if(!secret||!process.env.TLC_DATABASE_URL||!configuredHost)return respond({error:"ENQUIRY_SERVICE_NOT_ACTIVATED"},503);
  const length=Number(request.headers.get("content-length")||"0");
  if(length>12000)return respond({error:"PAYLOAD_TOO_LARGE"},413);
- let raw:Body;try{raw=await request.json()}catch{return respond({error:"INVALID_JSON"},400)}
+ let raw:Body;try{const input:unknown=await request.json();if(!input||typeof input!=="object"||Array.isArray(input))throw new Error("INVALID_BODY");raw=input as Body;}catch{return respond({error:"INVALID_JSON"},400)}
  const name=safeText(raw.name,120),phone=safeText(raw.phone,18),requirement=safeText(raw.requirement,2000);
  const propertyRef=safeText(raw.propertyRef,150),location=safeText(raw.location,160),captcha=safeText(raw.captchaToken,1000);
  if(name.length<2||!/^\+[1-9][0-9]{7,14}$/.test(phone)||requirement.length<5||raw.consent!==true||captcha.length<10)return respond({error:"VALIDATION_FAILED"},422);
@@ -24,7 +24,8 @@ export async function POST(request:Request){
   verified=data.success===true&&data.hostname===configuredHost;
  }catch{return respond({error:"CAPTCHA_UNAVAILABLE"},503)}
  if(!verified)return respond({error:"CAPTCHA_FAILED"},403);
- const db=await databasePool().connect();
+ const db=await databasePool().connect().catch(()=>null);
+ if(!db)return respond({error:"ENQUIRY_UNAVAILABLE"},503);
  try{
   await db.query("BEGIN");
   await db.query("SELECT set_config('tlc.public_enquiry_verified','true',true)");
