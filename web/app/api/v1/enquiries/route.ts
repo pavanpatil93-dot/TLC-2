@@ -1,6 +1,6 @@
 import {NextResponse} from "next/server";
 import {databasePool} from "../../../../lib/server/database";
-import {safeText} from "../../../../lib/server/validation";
+import {validateEnquiry} from "../../../../lib/enquiry-validation";
 export const runtime="nodejs";export const dynamic="force-dynamic";
 const headers={"Cache-Control":"private, no-store, max-age=0","X-Content-Type-Options":"nosniff"};
 type Body={name?:unknown;phone?:unknown;propertyRef?:unknown;location?:unknown;requirement?:unknown;consent?:unknown;captchaToken?:unknown};
@@ -12,9 +12,9 @@ export async function POST(request:Request){
  const length=Number(request.headers.get("content-length")||"0");
  if(length>12000)return respond({error:"PAYLOAD_TOO_LARGE"},413);
  let raw:Body;try{const input:unknown=await request.json();if(!input||typeof input!=="object"||Array.isArray(input))throw new Error("INVALID_BODY");raw=input as Body;}catch{return respond({error:"INVALID_JSON"},400)}
- const name=safeText(raw.name,120),phone=safeText(raw.phone,18),requirement=safeText(raw.requirement,2000);
- const propertyRef=safeText(raw.propertyRef,150),location=safeText(raw.location,160),captcha=safeText(raw.captchaToken,1000);
- if(name.length<2||!/^\+[1-9][0-9]{7,14}$/.test(phone)||requirement.length<5||raw.consent!==true||captcha.length<10)return respond({error:"VALIDATION_FAILED"},422);
+ const validated=validateEnquiry(raw);
+ if(!validated)return respond({error:"VALIDATION_FAILED"},422);
+ const {name,phone,requirement,propertyRef,location,captcha}=validated;
  let verified=false;
  try{
   const body=new URLSearchParams({secret,response:captcha});
