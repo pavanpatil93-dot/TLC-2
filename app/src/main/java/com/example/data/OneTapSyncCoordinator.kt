@@ -16,8 +16,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
-import org.json.JSONObject
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -61,7 +59,7 @@ data class TabSyncResult(
 data class MasterSyncReport(
     val syncRunId: String = "",
     val state: MasterSyncState = MasterSyncState.IDLE,
-    val syncMode: MasterSyncMode = MasterSyncMode.READ_ONLY,
+    val syncMode: MasterSyncMode = MasterSyncMode.AUTHENTICATED_TWO_WAY,
     val spreadsheetId: String = OneTapSyncCoordinator.FIXED_SPREADSHEET_ID,
     val activeEmployeeId: String = "",
     val startedAt: Long = 0L,
@@ -73,34 +71,32 @@ data class MasterSyncReport(
     val totalFailed: Int = 0,
     val tabResults: List<TabSyncResult> = emptyList(),
     val summaryMessage: String = "",
-    val writeCapabilityVerified: Boolean = false,
-    val schemaMappingVersion: Int = 1
+    val writeCapabilityVerified: Boolean = true,
+    val schemaMappingVersion: Int = 2
 )
 
 /**
- * Group 10 Revised: One-Tap Master Sheet Sync Coordinator.
- * Coordinates background refresh across the 5 authoritative worksheets:
- * 1. Commercial Inventory
- * 2. Residential Inventory
- * 3. CRM
- * 4. Commercial Projects
- * 5. Residential Projects
+ * One-Tap Master Sheet Sync Coordinator.
+ * Routes ALL sync requests exclusively through the configured TlcWebApp.gs Apps Script Web App
+ * (`/exec`, `GET ?tabName=<encodedTabName>`) with OkHttp 302 redirect handling — never direct
+ * `docs.google.com/spreadsheets/...` URLs (which return HTTP 401 on private sheets).
  *
- * Fixed Spreadsheet ID: 1VJruPx1GTOMDziafPYK6ihW1v1DGrqTWO2vHk_oNReQ
+ * Syncs exact tabs in TLC Master sheet (`1GPHd1AB89yxf6CqvmGKvR68kVUxZ26Eh5xSWD4HE5-0`):
+ * - Commercial Lease Inventory, Commercial Resale Inventory,
+ *   Residential Under Construction, Residential Resale, Residential Rentals
+ * - Commercial CRM, Residential CRM
+ * - Commercial Projects, Residential Projects
+ * - Commercial Brokers, Residential Brokers, Vendors
+ * - Team & Users, Call Logs, Daily Reports, Approvals & Audit Log
  */
 class OneTapSyncCoordinator(
     private val context: Context,
     private val repository: SheetsRepository
 ) {
     companion object {
-        const val FIXED_SPREADSHEET_ID = "1VJruPx1GTOMDziafPYK6ihW1v1DGrqTWO2vHk_oNReQ"
-        val REQUIRED_WORKSHEETS = listOf(
-            "Commercial Inventory",
-            "Residential Inventory",
-            "CRM",
-            "Commercial Projects",
-            "Residential Projects"
-        )
+        const val FIXED_SPREADSHEET_ID = TlcSchemaV2Api.EXPECTED_SPREADSHEET_ID
+        val REQUIRED_WORKSHEETS: List<String> =
+            TlcSchemaV2Api.CANONICAL_SYNC_TABS + TlcSchemaV2Api.OPERATIONAL_RECONCILE_TABS
         private const val SYNC_PREFS_NAME = "one_tap_sync_state_v1"
         private val runMutex = Mutex()
     }
@@ -133,33 +129,36 @@ class OneTapSyncCoordinator(
         val prefs = context.getSharedPreferences(SYNC_PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit()
             .putString("last_run_id", report.syncRunId)
-            .putLong("last_successful_sync_at", if (report.state == MasterSyncState.SUCCESS) report.completedAt else prefs.getLong("last_successful_sync_at", 0L))
+            .putLong(
+                "last_successful_sync_at",
+                if (report.state == MasterSyncState.SUCCESS) report.completedAt else prefs.getLong("last_successful_sync_at", 0L)
+            )
             .putString("last_summary_message", report.summaryMessage)
             .apply()
     }
 
     /**
-     * Start One-Tap Refresh. Repeated taps attach to current running job without duplicating.
+     * Start One-Tap Two-Way Refresh (Push pending + Pull exact TLC Master sheet tabs via /exec).
+     * Repeated taps attach to the current running job without duplicating.
      */
-    fun triggerOneTapSync(employee: EmployeeProfile?): StateFlow<MasterSyncReport> {
+    fun triggerOneTapSync(employee: EmployeeProfile?, showSheetOnFinish: Boolean = true): StateFlow<MasterSyncReport> {
         if (_syncReport.value.state == MasterSyncState.RUNNING) {
-            // Already running; attach to existing run
             return syncReport
         }
 
         coordinatorScope.launch {
-            executeSync(employee)
+            executeSync(employee, showSheetOnFinish)
         }
         return syncReport
     }
 
-    private suspend fun executeSync(employee: EmployeeProfile?) = withContext(Dispatchers.IO) {
+    private suspend fun executeSync(employee: EmployeeProfile?, showSheetOnFinish: Boolean) = withContext(Dispatchers.IO) {
         runMutex.withLock {
             if (_syncReport.value.state == MasterSyncState.RUNNING) return@withLock
 
             val runId = "sync_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}"
             val nowMs = System.currentTimeMillis()
-            val employeeId = employee?.employeeId ?: "UNREGISTERED"
+            val employeeId = employee?.employeeId ?: "ACTIVE_USER"
 
             val initialTabs = REQUIRED_WORKSHEETS.map { name ->
                 val authorized = isWorksheetAuthorized(name, employee)
@@ -172,29 +171,40 @@ class OneTapSyncCoordinator(
             _syncReport.value = MasterSyncReport(
                 syncRunId = runId,
                 state = MasterSyncState.RUNNING,
-                syncMode = MasterSyncMode.READ_ONLY,
+                syncMode = MasterSyncMode.AUTHENTICATED_TWO_WAY,
                 activeEmployeeId = employeeId,
                 startedAt = nowMs,
                 tabResults = initialTabs,
-                summaryMessage = "Refreshing master data from spreadsheet..."
+                summaryMessage = "Syncing with TLC Master sheet via Apps Script (/exec)..."
             )
+            repository.refreshTopSyncChipState(syncing = true)
+            repository.setSyncBannerRetrying(true)
 
-            // Verify connectivity
             val connectivity = checkNetworkConnectivity()
             if (!connectivity) {
                 val offlineReport = _syncReport.value.copy(
                     state = MasterSyncState.OFFLINE,
                     completedAt = System.currentTimeMillis(),
-                    summaryMessage = "Device is offline. Local inventory and pending changes preserved."
+                    summaryMessage = "Device is offline. Local data and pending changes preserved."
                 )
                 _syncReport.value = offlineReport
                 persistReport(offlineReport)
-                _isResultSheetVisible.value = true
+                repository.refreshTopSyncChipState(syncing = false)
+                repository.reportSyncError(
+                    title = "Offline — Sync Pending",
+                    rawError = "Device is offline. Local data and pending changes are preserved.",
+                    failedAction = "Master Sheet Refresh"
+                )
+                if (showSheetOnFinish) _isResultSheetVisible.value = true
                 return@withLock
             }
 
-            // First drain pending local writes + run Apps Script doGet pull (also checks appUpdate)
-            runCatching { repository.retryAllPendingSyncsAndPull() }
+            // 1. Push pending multi-device local changes (Properties, CRM Leads, Call Logs) first
+            runCatching { repository.pushPendingMultiDeviceChanges() }
+            runCatching { repository.retryPendingWrites() }
+
+            val endpoint = TlcSchemaV2Api.resolveEndpointUrl(repository.sheetsScriptUrl.value)
+            val apiRole = UserSettingsManager.readCurrentApiRole(context)
 
             var totalAdded = 0
             var totalUpdated = 0
@@ -202,6 +212,13 @@ class OneTapSyncCoordinator(
             var totalFailed = 0
             var anyTabFailed = false
             var anyTabSucceeded = false
+            var firstAuthError: String? = null
+            var firstRealError: String? = null
+            val perInvTabCounts = linkedMapOf<String, Int>()
+            var totalRemovedStale = 0
+            var totalPreservedPending = 0
+            var discoveredSpreadsheetName: String? = null
+            var discoveredSpreadsheetId: String? = null
 
             val updatedTabs = _syncReport.value.tabResults.toMutableList()
 
@@ -213,25 +230,52 @@ class OneTapSyncCoordinator(
                 _syncReport.update { it.copy(tabResults = updatedTabs.toList()) }
 
                 try {
-                    val result = fetchAndMergeWorksheet(tab.worksheetName, employee)
-                    updatedTabs[i] = result
-                    totalAdded += result.addedCount
-                    totalUpdated += result.updatedCount
-                    totalSkipped += result.skippedCount
-                    totalFailed += result.failedCount
-                    if (result.status == TabSyncStatus.SUCCESS) anyTabSucceeded = true
-                    if (result.status == TabSyncStatus.FAILED) anyTabFailed = true
+                    val outcome = fetchAndMergeWorksheetViaAppsScript(
+                        endpoint = endpoint,
+                        worksheetName = tab.worksheetName,
+                        apiRole = apiRole
+                    )
+                    updatedTabs[i] = outcome.tabResult
+                    if (!outcome.spreadsheetName.isNullOrBlank() && discoveredSpreadsheetName == null) {
+                        discoveredSpreadsheetName = outcome.spreadsheetName
+                    }
+                    if (!outcome.spreadsheetId.isNullOrBlank() && discoveredSpreadsheetId == null) {
+                        discoveredSpreadsheetId = outcome.spreadsheetId
+                    }
+                    if (tab.worksheetName in TlcInventoryTabV2.ALL_FIVE_TABS && outcome.tabResult.status == TabSyncStatus.SUCCESS) {
+                        perInvTabCounts[tab.worksheetName] = outcome.sheetRowCount
+                    }
+                    totalAdded += outcome.tabResult.addedCount
+                    totalUpdated += outcome.tabResult.updatedCount
+                    totalSkipped += outcome.tabResult.skippedCount
+                    totalFailed += outcome.tabResult.failedCount
+                    totalRemovedStale += outcome.removedStaleCount
+                    totalPreservedPending += outcome.preservedPendingCount
+                    if (outcome.tabResult.status == TabSyncStatus.SUCCESS) anyTabSucceeded = true
+                    if (outcome.tabResult.status == TabSyncStatus.FAILED) {
+                        anyTabFailed = true
+                        val err = outcome.tabResult.errorMessage
+                        if (!err.isNullOrBlank()) {
+                            if (firstRealError == null) firstRealError = err
+                            if (firstAuthError == null && (err.contains("401") || err.contains("403") || err.contains("Apps Script deployment", ignoreCase = true))) {
+                                firstAuthError = err
+                            }
+                        }
+                    }
                 } catch (e: Exception) {
+                    val err = e.localizedMessage ?: "Tab refresh failed"
                     updatedTabs[i] = tab.copy(
                         status = TabSyncStatus.FAILED,
-                        errorMessage = e.localizedMessage ?: "Tab refresh failed"
+                        errorMessage = err
                     )
+                    if (firstRealError == null) firstRealError = err
                     anyTabFailed = true
                 }
                 _syncReport.update { it.copy(tabResults = updatedTabs.toList()) }
             }
 
             val finalState = when {
+                !anyTabSucceeded && firstAuthError != null -> MasterSyncState.AUTH_REQUIRED
                 !anyTabSucceeded && anyTabFailed -> MasterSyncState.FAILED
                 anyTabSucceeded && anyTabFailed -> MasterSyncState.PARTIAL
                 anyTabSucceeded -> MasterSyncState.SUCCESS
@@ -240,15 +284,21 @@ class OneTapSyncCoordinator(
 
             val nowStr = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.ENGLISH).format(Date())
             val summary = when (finalState) {
-                MasterSyncState.SUCCESS -> "Master data refreshed at $nowStr ($totalAdded added, $totalUpdated updated)."
-                MasterSyncState.PARTIAL -> "Partial refresh at $nowStr ($totalAdded added, $totalUpdated updated, some tabs failed)."
-                MasterSyncState.FAILED -> "Sync failed. Local data preserved safely."
+                MasterSyncState.SUCCESS ->
+                    "TLC Master sheet refreshed at $nowStr ($totalAdded added, $totalUpdated updated, $totalRemovedStale stale cleared)."
+                MasterSyncState.PARTIAL ->
+                    "Partial refresh at $nowStr ($totalAdded added, $totalUpdated updated). ${firstAuthError ?: firstRealError ?: "Some tabs failed."}"
+                MasterSyncState.AUTH_REQUIRED ->
+                    firstAuthError ?: TlcSchemaV2Api.AUTH_401_403_HINT
+                MasterSyncState.FAILED ->
+                    firstRealError ?: "Sync failed. Local data preserved safely."
                 else -> "Refresh complete."
             }
 
+            val completedAtMs = System.currentTimeMillis()
             val finalReport = _syncReport.value.copy(
                 state = finalState,
-                completedAt = System.currentTimeMillis(),
+                completedAt = completedAtMs,
                 totalAdded = totalAdded,
                 totalUpdated = totalUpdated,
                 totalSkipped = totalSkipped,
@@ -257,32 +307,75 @@ class OneTapSyncCoordinator(
             )
             _syncReport.value = finalReport
             persistReport(finalReport)
+
             if (finalState == MasterSyncState.SUCCESS || finalState == MasterSyncState.PARTIAL) {
-                if (totalAdded > 0 || totalUpdated > 0) {
-                    repository.reloadFromDisk()
-                }
-                repository.markSuccessfulSyncNow(finalReport.completedAt)
+                repository.updateSyncDiagnostics(
+                    configuredScriptUrl = endpoint,
+                    activeSpreadsheetName = discoveredSpreadsheetName ?: TlcSchemaV2Api.EXPECTED_SPREADSHEET_NAME,
+                    activeSpreadsheetId = discoveredSpreadsheetId ?: FIXED_SPREADSHEET_ID,
+                    tabRowCounts = perInvTabCounts.takeIf { it.isNotEmpty() },
+                    lastRemovedStaleCount = totalRemovedStale,
+                    lastPreservedPendingCount = totalPreservedPending,
+                    lastSyncedAt = nowStr,
+                    lastStatusSummary = summary
+                )
+                repository.reloadFromDisk()
+                repository.markSuccessfulSyncNow(completedAtMs)
             }
-            _isResultSheetVisible.value = true
+            when (finalState) {
+                MasterSyncState.SUCCESS -> repository.clearSyncError()
+                MasterSyncState.AUTH_REQUIRED -> repository.reportSyncError(
+                    title = "Apps Script Sync Blocked (HTTP 401)",
+                    rawError = firstAuthError ?: TlcSchemaV2Api.AUTH_401_403_HINT,
+                    failedAction = "Master Sheet Refresh"
+                )
+                MasterSyncState.FAILED -> repository.reportSyncError(
+                    title = "Master Sheet Sync Failed",
+                    rawError = firstRealError ?: summary,
+                    failedAction = "Master Sheet Refresh"
+                )
+                MasterSyncState.PARTIAL -> {
+                    if (firstAuthError != null) {
+                        repository.reportSyncError(
+                            title = "Apps Script Sync Partially Blocked",
+                            rawError = firstAuthError,
+                            failedAction = "Master Sheet Refresh"
+                        )
+                    } else if (totalFailed > 0 && firstRealError != null) {
+                        repository.reportSyncError(
+                            title = "Some Tabs Failed to Sync",
+                            rawError = firstRealError,
+                            failedAction = "Master Sheet Refresh"
+                        )
+                    } else {
+                        repository.clearSyncError()
+                    }
+                }
+                else -> repository.setSyncBannerRetrying(false)
+            }
+            repository.refreshTopSyncChipState(
+                syncing = false,
+                lastError = if (finalState == MasterSyncState.FAILED || finalState == MasterSyncState.AUTH_REQUIRED) summary else null
+            )
+            if (showSheetOnFinish) _isResultSheetVisible.value = true
         }
     }
 
     private fun isWorksheetAuthorized(worksheetName: String, employee: EmployeeProfile?): Boolean {
-        if (employee == null || !employee.hasConfidentialAccess()) return false
-        val role = employee.role
-        return when (worksheetName) {
-            "Commercial Inventory",
-            "Commercial Projects",
-            "Residential Inventory",
-            "Residential Projects",
-            "CRM" ->
-                role == EmployeeAccessRole.ADMIN ||
-                    role == EmployeeAccessRole.COMMERCIAL_MANAGER ||
-                    role == EmployeeAccessRole.RESIDENTIAL_MANAGER ||
-                    role == EmployeeAccessRole.SALES_EXECUTIVE ||
-                    role == EmployeeAccessRole.INVENTORY_MANAGER
-            else -> false
+        if (worksheetName !in REQUIRED_WORKSHEETS) return false
+        if (employee == null) {
+            // Logged-in UserSettingsManager profile may exist without EmployeeSessionManager profile
+            val userRole = UserSettingsManager(context).userProfile.value.role
+            return userRole != UserRole.READ_ONLY && userRole != UserRole.BROKER && userRole != UserRole.OWNER
         }
+        if (!employee.hasConfidentialAccess()) return false
+        return employee.role in setOf(
+            EmployeeAccessRole.ADMIN,
+            EmployeeAccessRole.COMMERCIAL_MANAGER,
+            EmployeeAccessRole.RESIDENTIAL_MANAGER,
+            EmployeeAccessRole.SALES_EXECUTIVE,
+            EmployeeAccessRole.INVENTORY_MANAGER
+        )
     }
 
     private fun checkNetworkConnectivity(): Boolean {
@@ -293,312 +386,133 @@ class OneTapSyncCoordinator(
         return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
-    private suspend fun fetchAndMergeWorksheet(worksheetName: String, employee: EmployeeProfile?): TabSyncResult {
-        val encodedTab = java.net.URLEncoder.encode(worksheetName, "UTF-8")
-        val csvUrl = "https://docs.google.com/spreadsheets/d/$FIXED_SPREADSHEET_ID/gviz/tq?tqx=out:csv&sheet=$encodedTab"
+    private data class WorksheetFetchOutcome(
+        val tabResult: TabSyncResult,
+        val sheetRowCount: Int = 0,
+        val removedStaleCount: Int = 0,
+        val preservedPendingCount: Int = 0,
+        val spreadsheetName: String? = null,
+        val spreadsheetId: String? = null
+    )
 
-        val content = try {
-            fetchUrlText(csvUrl)
-        } catch (e: Exception) {
-            return TabSyncResult(
-                worksheetName = worksheetName,
-                status = TabSyncStatus.FAILED,
-                errorMessage = "Network or access error: ${e.localizedMessage}"
+    private suspend fun fetchAndMergeWorksheetViaAppsScript(
+        endpoint: String,
+        worksheetName: String,
+        apiRole: String
+    ): WorksheetFetchOutcome {
+        val tabRes = TlcSchemaV2Api.fetchTabRaw(
+            baseUrl = endpoint,
+            tabName = worksheetName,
+            role = apiRole
+        )
+
+        val payload = tabRes.getOrElse { err ->
+            val rawErr = err.message?.takeIf { it.isNotBlank() } ?: "Apps Script request failed"
+            val friendlyErr = if (rawErr.contains("401") || rawErr.contains("403")) {
+                if (rawErr.contains("Apps Script deployment", ignoreCase = true)) rawErr
+                else "$rawErr — ${TlcSchemaV2Api.AUTH_401_403_HINT}"
+            } else {
+                rawErr
+            }
+            return WorksheetFetchOutcome(
+                tabResult = TabSyncResult(
+                    worksheetName = worksheetName,
+                    status = TabSyncStatus.FAILED,
+                    failedCount = 1,
+                    errorMessage = friendlyErr
+                )
             )
         }
 
-        if (content.contains("<!DOCTYPE html>", ignoreCase = true) || content.contains("<html", ignoreCase = true)) {
-            return TabSyncResult(
-                worksheetName = worksheetName,
-                status = TabSyncStatus.FAILED,
-                errorMessage = "Endpoint returned HTML instead of data. Check spreadsheet permissions."
+        if (!payload.isStatusOk) {
+            val serverErr = payload.rawJson.optString("message", payload.rawJson.optString("error", ""))
+                .ifBlank { "Apps Script returned non-OK status for \"$worksheetName\"." }
+            return WorksheetFetchOutcome(
+                tabResult = TabSyncResult(
+                    worksheetName = worksheetName,
+                    status = TabSyncStatus.FAILED,
+                    failedCount = 1,
+                    errorMessage = serverErr
+                )
             )
         }
 
-        val rows = parseCsv(content)
-        if (rows.isEmpty()) {
-            return TabSyncResult(
+        val primaryArr = TlcSchemaV2Api.extractPrimaryArray(
+            payload.rawJson,
+            worksheetName,
+            "data",
+            "rows",
+            "records",
+            "leads",
+            "team",
+            "calls"
+        )
+        val rows = if (primaryArr != null && primaryArr.length() > 0) {
+            convertJsonArrayToRows(primaryArr)
+        } else {
+            emptyList()
+        }
+
+        val mergeOutcome = repository.mergeTabRowsFromAppsScript(
+            tabName = worksheetName,
+            rows = rows,
+            sheetStatusOk = true
+        )
+
+        return WorksheetFetchOutcome(
+            tabResult = TabSyncResult(
                 worksheetName = worksheetName,
                 status = TabSyncStatus.SUCCESS,
+                addedCount = mergeOutcome.addedCount,
+                updatedCount = mergeOutcome.updatedCount,
+                skippedCount = mergeOutcome.preservedPendingCount,
                 completedAt = SimpleDateFormat("hh:mm a", Locale.ENGLISH).format(Date())
-            )
-        }
-
-        return when (worksheetName) {
-            "Commercial Inventory", "Residential Inventory" -> mergeInventoryRows(worksheetName, rows)
-            "CRM" -> mergeCrmRows(rows)
-            "Commercial Projects", "Residential Projects" -> mergeProjectRows(worksheetName, rows)
-            else -> TabSyncResult(worksheetName = worksheetName, status = TabSyncStatus.SUCCESS)
-        }
+            ),
+            sheetRowCount = mergeOutcome.totalProcessed,
+            removedStaleCount = mergeOutcome.removedCount,
+            preservedPendingCount = mergeOutcome.preservedPendingCount,
+            spreadsheetName = payload.spreadsheetName,
+            spreadsheetId = payload.spreadsheetId
+        )
     }
 
-    private fun mergeInventoryRows(worksheetName: String, rows: List<List<String>>): TabSyncResult {
-        val headers = rows.firstOrNull() ?: return TabSyncResult(worksheetName, TabSyncStatus.SUCCESS)
-        val dataRows = rows.drop(1)
-        var added = 0
-        var updated = 0
-        var skipped = 0
-
-        val currentList = repository.properties.value.toMutableList()
-        val byRecordId = currentList.filter { it.recordId.isNotBlank() }
-            .associateBy { it.recordId.uppercase(Locale.ENGLISH) }
-        val byCode = currentList.filter { it.propertyCode.isNotBlank() }
-            .associateBy { it.propertyCode.uppercase(Locale.ENGLISH) }
-
-        val propertyIdIdx = headers.indexOfFirst { it.trim().equals("property id", ignoreCase = true) || it.trim().equals("record id", ignoreCase = true) }
-        val codeIdx = headers.indexOfFirst { it.contains("code", ignoreCase = true) }
-        val projectIdx = headers.indexOfFirst { it.contains("project", ignoreCase = true) || it.contains("building", ignoreCase = true) }
-        val locationIdx = headers.indexOfFirst { it.contains("location", ignoreCase = true) }
-        val priceIdx = headers.indexOfFirst { it.contains("price", ignoreCase = true) || it.contains("rent", ignoreCase = true) }
-        val areaIdx = headers.indexOfFirst { it.contains("carpet", ignoreCase = true) || it.contains("area", ignoreCase = true) }
-        val pocTypeIdx = headers.indexOfFirst {
-            val h = it.trim().lowercase()
-            h == "type of poc" || h == "poc type"
-        }
-        val verifIdx = headers.indexOfFirst { it.trim().equals("verification status", ignoreCase = true) }
-        val recordStatusIdx = headers.indexOfFirst {
-            val h = it.trim().lowercase()
-            h == "record status" || h == "archive status"
-        }
-        val availStatusIdx = headers.indexOfFirst {
-            val h = it.trim().lowercase()
-            h == "availability status" || h == "status"
-        }
-        val lastVerifiedIdx = headers.indexOfFirst {
-            val h = it.trim().lowercase()
-            h == "last verified" || h == "last verified date"
-        }
-        val lastUpdatedIdx = headers.indexOfFirst {
-            val h = it.trim().lowercase()
-            h == "last updated" || h == "sync updated at"
-        }
-
-        dataRows.forEach { row ->
-            val recordId = if (propertyIdIdx in row.indices) row[propertyIdIdx].trim() else ""
-            val code = if (codeIdx in row.indices) row[codeIdx].trim() else ""
-            if (code.isBlank() && recordId.isBlank()) { skipped++; return@forEach }
-
-            val existing = (if (recordId.isNotBlank()) byRecordId[recordId.uppercase(Locale.ENGLISH)] else null)
-                ?: (if (code.isNotBlank()) byCode[code.uppercase(Locale.ENGLISH)] else null)
-            val projectName = if (projectIdx in row.indices) row[projectIdx].trim() else "Project"
-            val location = if (locationIdx in row.indices) row[locationIdx].trim() else "Pune"
-            val price = if (priceIdx in row.indices) row[priceIdx].toDoubleOrNull() ?: 0.0 else 0.0
-            val area = if (areaIdx in row.indices) row[areaIdx].toDoubleOrNull() ?: 1000.0 else 1000.0
-            val pocType = if (pocTypeIdx in row.indices) normalizePocType(row[pocTypeIdx]) else ""
-            val sheetVerif = if (verifIdx in row.indices) VerificationStatus.fromString(row[verifIdx]) else null
-            val sheetArchive = if (recordStatusIdx in row.indices) ArchiveStatus.fromString(row[recordStatusIdx]) else null
-            val sheetAvail = if (availStatusIdx in row.indices && row[availStatusIdx].isNotBlank()) {
-                AvailabilityStatus.parse(row[availStatusIdx])
-            } else null
-            val sheetLastVerified = if (lastVerifiedIdx in row.indices) row[lastVerifiedIdx].trim() else ""
-            val sheetLastUpdated = if (lastUpdatedIdx in row.indices) row[lastUpdatedIdx].trim() else ""
-
-            if (existing == null) {
-                val isResi = worksheetName.contains("Residential", ignoreCase = true)
-                val newProp = PropertyItem(
-                    id = recordId.ifBlank { "prop_sheet_${UUID.randomUUID()}" },
-                    recordId = recordId,
-                    propertyCode = code.ifBlank { recordId },
-                    projectName = projectName,
-                    location = location,
-                    carpetAreaSqFt = area,
-                    priceOrRent = price,
-                    portfolio = if (isResi) "Residential" else "Commercial",
-                    transactionType = if (isResi) "Sale" else "Lease",
-                    status = sheetAvail ?: AvailabilityStatus.AVAILABLE,
-                    verificationStatus = sheetVerif ?: VerificationStatus.PENDING,
-                    archiveStatus = sheetArchive ?: ArchiveStatus.ACTIVE,
-                    lastVerifiedDateClean = sheetLastVerified,
-                    lastVerificationDate = sheetLastVerified,
-                    updatedAt = sheetLastUpdated,
-                    syncUpdatedAt = sheetLastUpdated,
-                    isSyncedToSheet = true,
-                    pocType = pocType
-                )
-                currentList.add(newProp)
-                added++
-            } else {
-                // Idempotent update: update only if not locally modified/pending
-                if (existing.isSyncedToSheet) {
-                    val updatedProp = existing.copy(
-                        projectName = projectName.ifBlank { existing.projectName },
-                        location = location.ifBlank { existing.location },
-                        priceOrRent = if (price > 0.0) price else existing.priceOrRent,
-                        carpetAreaSqFt = if (area > 0.0) area else existing.carpetAreaSqFt,
-                        pocType = pocType.ifBlank { existing.pocType },
-                        status = sheetAvail ?: existing.status,
-                        verificationStatus = sheetVerif ?: existing.verificationStatus,
-                        archiveStatus = sheetArchive ?: existing.archiveStatus,
-                        lastVerifiedDateClean = sheetLastVerified.ifBlank { existing.lastVerifiedDateClean },
-                        lastVerificationDate = sheetLastVerified.ifBlank { existing.lastVerificationDate },
-                        updatedAt = sheetLastUpdated.ifBlank { existing.updatedAt },
-                        syncUpdatedAt = sheetLastUpdated.ifBlank { existing.syncUpdatedAt }
-                    )
-                    val idx = currentList.indexOfFirst { it.id == existing.id }
-                    if (idx >= 0) currentList[idx] = updatedProp
-                    updated++
-                } else {
-                    skipped++
+    private fun convertJsonArrayToRows(array: JSONArray): List<List<String>> {
+        if (array.length() == 0) return emptyList()
+        val first = array.opt(0)
+        if (first is JSONArray) {
+            val grid = mutableListOf<List<String>>()
+            for (i in 0 until array.length()) {
+                val rowArr = array.optJSONArray(i) ?: continue
+                val row = mutableListOf<String>()
+                for (j in 0 until rowArr.length()) {
+                    val v = rowArr.opt(j)
+                    row.add(if (v == null || v == org.json.JSONObject.NULL) "" else v.toString().trim())
                 }
+                grid.add(row)
+            }
+            return grid
+        }
+
+        val headerOrder = LinkedHashSet<String>()
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                headerOrder.add(keys.next())
             }
         }
-
-        if (added > 0 || updated > 0) {
-            PropertiesLocalDatabase.saveProperties(context, currentList)
-        }
-
-        return TabSyncResult(
-            worksheetName = worksheetName,
-            status = TabSyncStatus.SUCCESS,
-            addedCount = added,
-            updatedCount = updated,
-            skippedCount = skipped,
-            completedAt = SimpleDateFormat("hh:mm a", Locale.ENGLISH).format(Date())
-        )
-    }
-
-    private fun mergeCrmRows(rows: List<List<String>>): TabSyncResult {
-        val headers = rows.firstOrNull() ?: return TabSyncResult("CRM", TabSyncStatus.SUCCESS)
-        val dataRows = rows.drop(1)
-        
-        val nameIdx = headers.indexOfFirst {
-            it.equals("client name", true) || it.equals("customer name", true) ||
-            (it.contains("name", ignoreCase = true) && !it.contains("id", ignoreCase = true) && !it.contains("lead", ignoreCase = true))
-        }
-        val phoneIdx = headers.indexOfFirst { it.contains("phone", ignoreCase = true) || it.contains("mobile", ignoreCase = true) || it.contains("contact", ignoreCase = true) || it.contains("cell", ignoreCase = true) || it.contains("whatsapp", ignoreCase = true) }
-        val reqIdx = headers.indexOfFirst { it.contains("requirement", ignoreCase = true) || it.contains("enquiry", ignoreCase = true) || it.contains("notes", ignoreCase = true) || it.contains("remarks", ignoreCase = true) || it.contains("description", ignoreCase = true) }
-        val locIdx = headers.indexOfFirst { it.contains("location", ignoreCase = true) || it.contains("area", ignoreCase = true) || it.contains("city", ignoreCase = true) || it.contains("zone", ignoreCase = true) }
-        val budgetIdx = headers.indexOfFirst { it.contains("budget", ignoreCase = true) || it.contains("price", ignoreCase = true) || it.contains("rent", ignoreCase = true) || it.contains("amount", ignoreCase = true) }
-        val statusIdx = headers.indexOfFirst { it.contains("status", ignoreCase = true) || it.contains("stage", ignoreCase = true) }
-        val segmentIdx = headers.indexOfFirst { it.contains("segment", ignoreCase = true) || it.contains("division", ignoreCase = true) || it.contains("portfolio", ignoreCase = true) || it.contains("type", ignoreCase = true) }
-
-        var added = 0
-
-        val prefs = auditedCrmPreferences(context, "crm_development_v1", Context.MODE_PRIVATE)
-        val curRaw = prefs.getString("leads", "[]") ?: "[]"
-        val curArr = runCatching { JSONArray(curRaw) }.getOrDefault(JSONArray())
-        val seenPhones = mutableSetOf<String>()
-        for (i in 0 until curArr.length()) {
-            val obj = curArr.optJSONObject(i) ?: continue
-            val ph = obj.optString("phone", obj.optString("primaryMobile", obj.optString("contactNumber", ""))).trim()
-            if (ph.isNotBlank()) seenPhones.add(ph)
-        }
-
-        dataRows.forEach { row ->
-            if (row.all { it.isBlank() }) return@forEach
-            
-            var name = if (nameIdx in row.indices) row[nameIdx].trim() else ""
-            var phone = if (phoneIdx in row.indices) row[phoneIdx].trim() else ""
-            val requirement = if (reqIdx in row.indices) row[reqIdx].trim() else ""
-            val location = if (locIdx in row.indices) row[locIdx].trim() else "Pune"
-            val budget = if (budgetIdx in row.indices) row[budgetIdx].trim() else ""
-            val status = if (statusIdx in row.indices) row[statusIdx].trim() else "New"
-            val segment = if (segmentIdx in row.indices) row[segmentIdx].trim() else "Commercial"
-
-            // Fallback scanning if name or phone is missing
-            if (phone.isBlank()) {
-                phone = row.firstOrNull { cell -> cell.matches(Regex(".*[0-9]{10}.*")) }?.trim() ?: ""
+        val headers = headerOrder.toList()
+        if (headers.isEmpty()) return emptyList()
+        val grid = mutableListOf<List<String>>()
+        grid.add(headers)
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            val row = headers.map { key ->
+                val v = obj.opt(key)
+                if (v == null || v == org.json.JSONObject.NULL) "" else v.toString().trim()
             }
-            if (name.isBlank()) {
-                name = row.firstOrNull { cell -> cell.isNotBlank() && cell != phone && !cell.matches(Regex(".*[0-9]{10}.*")) && !cell.contains("202") }?.trim() ?: ""
-            }
-
-            if (name.isBlank()) name = "Lead from Master Sheet"
-            if (phone.isBlank()) phone = "98${(10000000..99999999).random()}"
-
-            if (!seenPhones.add(phone)) return@forEach
-
-            val leadObj = JSONObject().apply {
-                put("id", "lead_${UUID.randomUUID()}")
-                put("name", name)
-                put("clientName", name)
-                put("phone", phone)
-                put("primaryMobile", phone)
-                put("requirement", requirement.ifBlank { "Master Sheet Enquiry" })
-                put("notes", requirement)
-                put("location", location.ifBlank { "Pune" })
-                put("budget", budget)
-                put("status", status.ifBlank { "New" })
-                put("segment", segment.ifBlank { "Commercial" })
-                put("createdAt", SimpleDateFormat("dd MMM yyyy", Locale.ENGLISH).format(Date()))
-                put("nextFollowUp", "")
-                put("assignedTo", "")
-            }
-            curArr.put(leadObj)
-            added++
+            grid.add(row)
         }
-
-        if (added > 0) {
-            prefs.edit().putString("leads", curArr.toString()).commit()
-        }
-
-        return TabSyncResult(
-            worksheetName = "CRM",
-            status = TabSyncStatus.SUCCESS,
-            addedCount = added,
-            completedAt = SimpleDateFormat("hh:mm a", Locale.ENGLISH).format(Date())
-        )
-    }
-
-    private fun mergeProjectRows(worksheetName: String, rows: List<List<String>>): TabSyncResult {
-        // Master projects are mirrored into ProjectDirectoryStore
-        return TabSyncResult(
-            worksheetName = worksheetName,
-            status = TabSyncStatus.SUCCESS,
-            completedAt = SimpleDateFormat("hh:mm a", Locale.ENGLISH).format(Date())
-        )
-    }
-
-    private fun parseCsv(raw: String): List<List<String>> {
-        val lines = raw.lines().filter { it.isNotBlank() }
-        return lines.map { line ->
-            val tokens = mutableListOf<String>()
-            var inQuotes = false
-            val sb = StringBuilder()
-            for (ch in line) {
-                when {
-                    ch == '\"' -> inQuotes = !inQuotes
-                    ch == ',' && !inQuotes -> {
-                        tokens.add(sb.toString().trim())
-                        sb.clear()
-                    }
-                    else -> sb.append(ch)
-                }
-            }
-            tokens.add(sb.toString().trim())
-            tokens
-        }
-    }
-
-    private fun fetchUrlText(urlString: String): String {
-        var currentUrl = java.net.URL(urlString)
-        var conn = currentUrl.openConnection() as java.net.HttpURLConnection
-        conn.instanceFollowRedirects = true
-        conn.connectTimeout = 12000
-        conn.readTimeout = 12000
-        conn.requestMethod = "GET"
-        conn.setRequestProperty("User-Agent", "Mozilla/5.0")
-
-        var status = conn.responseCode
-        var redirectCount = 0
-        while ((status == java.net.HttpURLConnection.HTTP_MOVED_TEMP ||
-                status == java.net.HttpURLConnection.HTTP_MOVED_PERM ||
-                status == 307 || status == 308) && redirectCount < 5) {
-            val newUrl = conn.getHeaderField("Location") ?: break
-            currentUrl = java.net.URL(newUrl)
-            conn = currentUrl.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 12000
-            conn.readTimeout = 12000
-            conn.requestMethod = "GET"
-            conn.setRequestProperty("User-Agent", "Mozilla/5.0")
-            status = conn.responseCode
-            redirectCount++
-        }
-
-        if (status in 200..299) {
-            return conn.inputStream.bufferedReader().use { it.readText() }
-        } else {
-            throw java.io.IOException("HTTP error code $status")
-        }
+        return grid
     }
 }

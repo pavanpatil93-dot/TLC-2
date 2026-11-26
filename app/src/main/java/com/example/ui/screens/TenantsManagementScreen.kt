@@ -57,6 +57,7 @@ fun TenantsManagementScreen(
     onConsumePrefills: () -> Unit = {},
     onSaveTenant: (OfflineDiskCache.TenantCacheRecord) -> Unit,
     onSaveBrokerVendor: (BrokerVendorRecord) -> Unit,
+    activeCallContext: ActiveCallActionContext? = null,
     onBack: () -> Unit
 ) {
     BackHandler(onBack = onBack)
@@ -274,6 +275,8 @@ fun TenantsManagementScreen(
                 .padding(padding)
                 .testTag("tenants_management_screen")
         ) {
+            // Audio playback remains strictly inline on CallLogActionScreen; activeCallContext stays active for Auto-Link on Save.
+
             // ── ALERT STRIP ──────────────────────────────────────────────────
             Row(
                 modifier = Modifier
@@ -582,6 +585,7 @@ fun TenantsManagementScreen(
         TenantEditorDialog(
             initialTenant = draft,
             inventory = inventory,
+            activeCallContext = activeCallContext,
             onDismiss = { editingTenant = null },
             onSave = { saved ->
                 onSaveTenant(saved)
@@ -664,6 +668,7 @@ fun TenantsManagementScreen(
     editingBrokerVendor?.let { bvDraft ->
         BrokerVendorEditorDialog(
             initialRecord = bvDraft,
+            activeCallContext = activeCallContext,
             onDismiss = { editingBrokerVendor = null },
             onSave = { saved ->
                 onSaveBrokerVendor(saved)

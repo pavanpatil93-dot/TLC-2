@@ -349,8 +349,41 @@ data class PropertyItem(
     val leaseOfferStatus: AvailabilityStatus? = null,
     val saleSourceInfo: String? = null,
     val leaseSourceInfo: String? = null,
-    val pocType: String = ""
-)
+    val pocType: String = "",
+    // TLC Master Sheet v3 inventory columns & commercial specs
+    val microMarket: String? = null,
+    val attachedPantry: String? = null, // "Yes" / "No"
+    val attachedWashroom: String? = null, // "Yes" / "No"
+    val frontageFt: Double? = null,
+    val clearHeightFt: Double? = null,
+    val truckAccess: String? = null,
+    val powerLoad: String? = null,
+    val targetPossessionDate: String? = null, // dd/MM/yyyy
+    val groundFloorCarpetSqFt: Double? = null,
+    val mezzanineCarpetSqFt: Double? = null,
+    val puneZone: String? = null,
+    val jurisdiction: String? = null,
+    val ocStatus: String? = null,
+    val isPreLeased: Boolean = false,
+    val manualLoadingPercentOverride: Double? = null,
+    val isManualBuiltUpOverride: Boolean = false
+) {
+    val effectiveFrontageFt: Double?
+        get() = frontageFt ?: frontageFeet
+
+    val effectiveClearHeightFt: Double?
+        get() = clearHeightFt ?: ceilingHeightFeet
+
+    val effectiveMicroMarket: String?
+        get() = microMarket?.trim()?.takeIf { it.isNotBlank() }
+            ?: unmappedColumns["Micro-Market"]?.trim()?.takeIf { it.isNotBlank() }
+            ?: unmappedColumns["Micro Market"]?.trim()?.takeIf { it.isNotBlank() }
+
+    val effectiveIsPreLeased: Boolean
+        get() = isPreLeased ||
+            tab == InventoryTab.PRE_LEASED ||
+            transactionType.contains("Pre-Leased", ignoreCase = true)
+}
 
 enum class LocationPrecision(val label: String) {
     EXACT_PIN("Exact Pin Recorded"),
@@ -491,6 +524,8 @@ data class ImportPreviewRow(
     val latitude: Double? = null,
     val longitude: Double? = null,
     val verificationStatus: VerificationStatus = VerificationStatus.PENDING,
+    val hasExplicitVerificationStatus: Boolean = false,
+    val hasExplicitStatus: Boolean = false,
     val lastVerifiedDateClean: String = "",
     val verifiedBy: String? = null,
     val isAreaEstimated: Boolean = false,
@@ -498,7 +533,25 @@ data class ImportPreviewRow(
     val conflictResolution: String = "REVIEW", // "SKIP", "UPDATE", "CANCEL", "NEW_CODE"
     val pocType: String = "",
     val archiveStatus: ArchiveStatus = ArchiveStatus.ACTIVE,
-    val lastUpdated: String = ""
+    val lastUpdated: String = "",
+    // TLC Master Sheet v3 synced columns
+    val microMarket: String? = null,
+    val projectId: String? = null,
+    val attachedPantry: String? = null,
+    val attachedWashroom: String? = null,
+    val frontageFt: Double? = null,
+    val clearHeightFt: Double? = null,
+    val truckAccess: String? = null,
+    val powerLoad: String? = null,
+    val targetPossessionDate: String? = null,
+    val groundFloorCarpetSqFt: Double? = null,
+    val mezzanineCarpetSqFt: Double? = null,
+    val puneZone: String? = null,
+    val jurisdiction: String? = null,
+    val ocStatus: String? = null,
+    val isPreLeased: Boolean = false,
+    val tenantName: String? = null,
+    val parking: String = ""
 )
 
 // 35 Standard Columns for ASCEND_AUREA_MASTER_INVENTORY
@@ -1045,14 +1098,8 @@ object TlcStandardOptions {
         "Liked - Shortlisted", "Liked - Preparing Offer", "Need More Options",
         "Location Mismatch", "Budget Issue", "Area Too Small", "Postponed / No Show"
     )
-    val teamEmployees = listOf(
-        "Unassigned",
-        "Pawan Patil",
-        "Himanshu M. Chordiya",
-        "Sagar I. Chaudhari",
-        "Ayush S. Khedkar",
-        "Priya Thorat"
-    )
+    // Dynamic team list is loaded strictly from synced `Team & Users` Room table via SheetsRepository.getSyncedActiveEmployeeNames(context)
+    val teamEmployees = listOf("Unassigned")
     val ownerStages = listOf(
         "Active Listing",
         "Negotiation / Offer",

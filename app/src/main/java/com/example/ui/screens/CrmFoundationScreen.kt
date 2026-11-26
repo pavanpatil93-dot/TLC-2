@@ -159,7 +159,9 @@ data class CrmLead(
     val createdBy: String = "",
     val legacyLeadId: String = "",
     val verificationStatus: String = "",
-    val duplicatePhoneCheck: String = ""
+    val duplicatePhoneCheck: String = "",
+    val subSource: String = "",
+    val archiveStatus: String = "Active"
 )
 
 internal fun CrmLead.displayClientTitle(): String {
@@ -257,6 +259,8 @@ fun CrmLead.toJson() = JSONObject().apply {
     put("legacyLeadId", legacyLeadId)
     put("verificationStatus", verificationStatus)
     put("duplicatePhoneCheck", duplicatePhoneCheck)
+    put("subSource", subSource)
+    put("archiveStatus", archiveStatus)
 }
 
 fun readCrmLeads(context: Context): List<CrmLead> {
@@ -310,7 +314,7 @@ fun readCrmLeads(context: Context): List<CrmLead> {
                 requirement = rawReq.ifBlank { "General Enquiry" },
                 location = rawLoc.ifBlank { "Pune" },
                 budget = rawBudget,
-                status = item.optString("status", item.optString("Lead Stage", item.optString("stage", "New"))).ifBlank { "New" },
+                status = item.optString("status", item.optString("Pipeline Stage", item.optString("Lead Stage", item.optString("stage", "New")))).ifBlank { "New" },
                 nextFollowUp = item.optString("nextFollowUp", item.optString("Next Follow-up Date", "")),
                 notes = item.optString("notes", rawReq),
                 assignedTo = item.optString("assignedTo", item.optString("Assigned To", "")),
@@ -335,7 +339,7 @@ fun readCrmLeads(context: Context): List<CrmLead> {
                 maxBudgetInr = item.optString("maxBudgetInr", item.optString("Max Budget INR", "")),
                 minRentInr = item.optString("minRentInr", item.optString("Min Rent INR/Month", "")),
                 maxRentInr = item.optString("maxRentInr", item.optString("Max Rent INR/Month", "")),
-                furnishing = item.optString("furnishing", item.optString("Furnishing", "")),
+                furnishing = item.optString("furnishing", item.optString("Furnishing Preference", item.optString("Furnishing", ""))),
                 leadSource = item.optString("leadSource", item.optString("Lead Source", "")),
                 priority = item.optString("priority", item.optString("Priority", "")),
                 lastContactDate = item.optString("lastContactDate", item.optString("Last Contact Date", "")),
@@ -349,7 +353,9 @@ fun readCrmLeads(context: Context): List<CrmLead> {
                 createdBy = item.optString("createdBy", item.optString("Created By", "")),
                 legacyLeadId = item.optString("legacyLeadId", item.optString("Legacy Lead ID", "")),
                 verificationStatus = item.optString("verificationStatus", item.optString("Verification Status", "")),
-                duplicatePhoneCheck = item.optString("duplicatePhoneCheck", item.optString("Duplicate Phone Check", ""))
+                duplicatePhoneCheck = item.optString("duplicatePhoneCheck", item.optString("Duplicate Phone Check", "")),
+                subSource = item.optString("subSource", item.optString("Sub-Source / Broker", "")),
+                archiveStatus = item.optString("archiveStatus", item.optString("Archive Status", "Active")).ifBlank { "Active" }
             )
         }
     }.getOrDefault(emptyList())
@@ -372,6 +378,7 @@ internal fun saveCrmLeads(context: Context, leads: List<CrmLead>) {
     val storedRaw = com.example.data.OfflineDiskCache.loadCrmLeadsJson(context)
         ?: context.getSharedPreferences("crm_development_v1", Context.MODE_PRIVATE).getString("leads", "[]")
     val stored = runCatching { JSONArray(storedRaw ?: "[]") }.getOrDefault(JSONArray())
+    var anyModified = false
     audited.forEach { lead ->
         val old = (0 until stored.length()).map { stored.getJSONObject(it) }.firstOrNull { it.optString("id") == lead.id }
         val merged = old?.let { JSONObject(it.toString()) } ?: JSONObject()
@@ -381,6 +388,8 @@ internal fun saveCrmLeads(context: Context, leads: List<CrmLead>) {
         if (!unchanged) {
             val fields = lead.toJson()
             fields.keys().forEach { key -> merged.put(key, fields.get(key)) }
+            merged.put("pendingSync", true)
+            anyModified = true
         }
         array.put(merged)
     }
@@ -388,6 +397,9 @@ internal fun saveCrmLeads(context: Context, leads: List<CrmLead>) {
     com.example.data.OfflineDiskCache.saveCrmLeadsJson(context, jsonStr)
     com.example.data.auditedCrmPreferences(context, "crm_development_v1", Context.MODE_PRIVATE)
         .edit().putString("leads", jsonStr).commit()
+    if (anyModified) {
+        runCatching { com.example.data.BackgroundSyncScheduler.enqueueImmediatePush(context) }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -401,7 +413,9 @@ fun CrmFoundationScreen(
     initialPrefillLead: CrmLead? = null,
     onConsumeInitialPrefillLead: () -> Unit = {},
     initialSelectedLeadId: String? = null,
-    onConsumeInitialSelectedLeadId: () -> Unit = {}
+    onConsumeInitialSelectedLeadId: () -> Unit = {},
+    activeCallContext: ActiveCallActionContext? = null,
+    onLeadSaved: ((CrmLead) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -419,9 +433,14 @@ fun CrmFoundationScreen(
             if (onDeleteCrmLeadFromSheet != null) {
                 onDeleteCrmLeadFromSheet(targetLead.id)
             } else {
+                val targetCrmTab = if (targetLead.segment.equals("Residential", ignoreCase = true)) {
+                    "Residential CRM"
+                } else {
+                    "Commercial CRM"
+                }
                 SheetsRepository(context.applicationContext, startForegroundSync = false)
                     .deleteRecordPermanently(
-                        tabName = "CRM",
+                        tabName = targetCrmTab,
                         keyHeader = "Lead ID",
                         keyValue = targetLead.id
                     )
@@ -447,11 +466,86 @@ fun CrmFoundationScreen(
 
     var activeLeadTab by rememberSaveable { mutableStateOf("All Leads") } // "All Leads", "Today's Leads", "Overdue", "Upcoming"
     var divisionFilter by rememberSaveable { mutableStateOf("All") } // "All", "Commercial", "Residential"
+    var transactionFilter by rememberSaveable { mutableStateOf("All") } // "All", "Lease / Rent", "Buy / Sale", "Pre-Leased"
+    var selectedAssetTypes by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var selectedLocations by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var quickFollowUpToday by rememberSaveable { mutableStateOf(false) }
+    var quickHotOnly by rememberSaveable { mutableStateOf(false) }
     var assignedScopeMode by rememberSaveable { mutableStateOf("Team Leads") } // "My Leads", "Team Leads", "Unassigned"
     var assignedEmployeeFilter by rememberSaveable { mutableStateOf("") }
     var selectedStages by remember { mutableStateOf<Set<CrmPipelineStage>>(emptySet()) }
     var includeHistoricalRecords by rememberSaveable { mutableStateOf(false) }
     var sortBy by rememberSaveable { mutableStateOf("Follow-up Urgency") }
+
+    val commercialAssetOptions = remember { listOf("Office Space", "Shop", "Showroom", "Warehouse", "Land") }
+    val residentialAssetOptions = remember { listOf("1 BHK", "2 BHK", "3 BHK", "4+ BHK", "Villa") }
+
+    // Auto-clear incompatible asset type chips when switching divisions
+    LaunchedEffect(divisionFilter) {
+        if (divisionFilter == "Commercial") {
+            selectedAssetTypes = selectedAssetTypes.filter { it in commercialAssetOptions }.toSet()
+        } else if (divisionFilter == "Residential") {
+            selectedAssetTypes = selectedAssetTypes.filter { it in residentialAssetOptions }.toSet()
+        }
+    }
+
+    val availableLocationChips = remember(leads) {
+        val corePuneHubs = listOf(
+            "Kharadi", "Viman Nagar", "Baner", "Wakad", "Hinjewadi",
+            "Koregaon Park", "Magarpatta", "Kalyani Nagar", "Aundh", "Balewadi"
+        )
+        val counts = LinkedHashMap<String, Int>()
+        leads.forEach { lead ->
+            lead.location.split(",", "/", "|")
+                .map { it.trim() }
+                .filter { it.length >= 3 && !it.equals("Pune", ignoreCase = true) && !it.equals("N/A", ignoreCase = true) }
+                .forEach { loc ->
+                    val normalized = corePuneHubs.firstOrNull { it.equals(loc, ignoreCase = true) } ?: loc
+                    counts[normalized] = (counts[normalized] ?: 0) + 1
+                }
+        }
+        val topFromLeads = counts.entries.sortedByDescending { it.value }.map { it.key }.take(12)
+        (topFromLeads + corePuneHubs).distinctBy { it.lowercase(Locale.ENGLISH) }.take(16)
+    }
+
+    val activeFilterCount = remember(
+        divisionFilter,
+        transactionFilter,
+        selectedAssetTypes,
+        selectedLocations,
+        quickFollowUpToday,
+        quickHotOnly,
+        selectedStages,
+        assignedScopeMode,
+        assignedEmployeeFilter,
+        includeHistoricalRecords
+    ) {
+        (if (divisionFilter != "All") 1 else 0) +
+            (if (transactionFilter != "All") 1 else 0) +
+            selectedAssetTypes.size +
+            selectedLocations.size +
+            (if (quickFollowUpToday) 1 else 0) +
+            (if (quickHotOnly) 1 else 0) +
+            selectedStages.size +
+            (if (assignedScopeMode != "Team Leads") 1 else 0) +
+            (if (assignedEmployeeFilter.isNotBlank()) 1 else 0) +
+            (if (includeHistoricalRecords) 1 else 0)
+    }
+
+    fun resetAllCrmFilters() {
+        search = ""
+        activeLeadTab = "All Leads"
+        divisionFilter = "All"
+        transactionFilter = "All"
+        selectedAssetTypes = emptySet()
+        selectedLocations = emptySet()
+        quickFollowUpToday = false
+        quickHotOnly = false
+        selectedStages = emptySet()
+        assignedScopeMode = "Team Leads"
+        assignedEmployeeFilter = ""
+        includeHistoricalRecords = false
+    }
 
     var showFilterSheet by remember { mutableStateOf(false) }
     var showTaskCentreModal by remember { mutableStateOf(false) }
@@ -498,6 +592,11 @@ fun CrmFoundationScreen(
         includeHistoricalRecords,
         activeLeadTab,
         divisionFilter,
+        transactionFilter,
+        selectedAssetTypes,
+        selectedLocations,
+        quickFollowUpToday,
+        quickHotOnly,
         assignedScopeMode,
         assignedEmployeeFilter,
         selectedStages,
@@ -565,6 +664,67 @@ fun CrmFoundationScreen(
                     "Residential" -> lead.segment.equals("Residential", true)
                     else -> true
                 }
+                val txHaystack = "${lead.requirementType} ${lead.propertyType} ${lead.requirement} ${lead.notes}".lowercase(Locale.ENGLISH)
+                val matchesTransaction = when (transactionFilter) {
+                    "Lease / Rent" -> {
+                        val isPreLeased = txHaystack.contains("pre-leased") || txHaystack.contains("preleased") || txHaystack.contains("pre leased")
+                        !isPreLeased && (
+                            txHaystack.contains("lease") ||
+                                txHaystack.contains("rent") ||
+                                txHaystack.contains("tenant") ||
+                                txHaystack.contains("l&l") ||
+                                lead.minRentInr.isNotBlank() ||
+                                lead.maxRentInr.isNotBlank()
+                            )
+                    }
+                    "Buy / Sale" -> {
+                        txHaystack.contains("buy") ||
+                            txHaystack.contains("sale") ||
+                            txHaystack.contains("resale") ||
+                            txHaystack.contains("purchase") ||
+                            txHaystack.contains("outright") ||
+                            txHaystack.contains("invest") ||
+                            ((lead.minBudgetInr.isNotBlank() || lead.maxBudgetInr.isNotBlank()) &&
+                                lead.minRentInr.isBlank() && lead.maxRentInr.isBlank() &&
+                                !txHaystack.contains("lease") && !txHaystack.contains("rent"))
+                    }
+                    "Pre-Leased" -> {
+                        txHaystack.contains("pre-leased") ||
+                            txHaystack.contains("preleased") ||
+                            txHaystack.contains("pre leased") ||
+                            txHaystack.contains("roi") ||
+                            txHaystack.contains("yield")
+                    }
+                    else -> true
+                }
+                val assetHaystack = "${lead.propertyType} ${lead.requirement} ${lead.furnishing} ${lead.notes} ${lead.clientNotes}".lowercase(Locale.ENGLISH)
+                val matchesAssetType = selectedAssetTypes.isEmpty() || selectedAssetTypes.any { asset ->
+                    when (asset) {
+                        "Office Space" -> assetHaystack.contains("office") || assetHaystack.contains("workspace") || assetHaystack.contains("workstation") || assetHaystack.contains("it space") || assetHaystack.contains("seat")
+                        "Shop" -> assetHaystack.contains("shop") || assetHaystack.contains("retail")
+                        "Showroom" -> assetHaystack.contains("showroom") || assetHaystack.contains("high street") || assetHaystack.contains("high-street")
+                        "Warehouse" -> assetHaystack.contains("warehouse") || assetHaystack.contains("godown") || assetHaystack.contains("industrial") || assetHaystack.contains("shed")
+                        "Land" -> assetHaystack.contains("land") || assetHaystack.contains("plot")
+                        "1 BHK" -> assetHaystack.contains("1 bhk") || assetHaystack.contains("1bhk") || assetHaystack.contains("1 rk") || assetHaystack.contains("studio")
+                        "2 BHK" -> assetHaystack.contains("2 bhk") || assetHaystack.contains("2bhk")
+                        "3 BHK" -> assetHaystack.contains("3 bhk") || assetHaystack.contains("3bhk")
+                        "4+ BHK" -> assetHaystack.contains("4 bhk") || assetHaystack.contains("4bhk") || assetHaystack.contains("5 bhk") || assetHaystack.contains("5bhk") || assetHaystack.contains("penthouse") || assetHaystack.contains("duplex")
+                        "Villa" -> assetHaystack.contains("villa") || assetHaystack.contains("bungalow") || assetHaystack.contains("row house") || assetHaystack.contains("rowhouse")
+                        else -> assetHaystack.contains(asset.lowercase(Locale.ENGLISH))
+                    }
+                }
+                val locHaystack = "${lead.location} ${lead.requirement} ${lead.notes}".lowercase(Locale.ENGLISH)
+                val matchesLocation = selectedLocations.isEmpty() || selectedLocations.any { loc ->
+                    locHaystack.contains(loc.lowercase(Locale.ENGLISH))
+                }
+                val matchesFollowUpToday = !quickFollowUpToday || (!lead.followUpCompleted && lead.nextFollowUp == today)
+                val matchesHotOnly = !quickHotOnly ||
+                    lead.priority.contains("Hot", ignoreCase = true) ||
+                    lead.priority.contains("High", ignoreCase = true) ||
+                    lead.priority.contains("Urgent", ignoreCase = true) ||
+                    stage == CrmPipelineStage.NEGOTIATION ||
+                    stage == CrmPipelineStage.SITE_VISIT_PENDING ||
+                    stage == CrmPipelineStage.SITE_VISIT_DONE
                 val matchesStage = selectedStages.isEmpty() || stage in selectedStages
                 val matchesScopeMode = when (assignedScopeMode) {
                     "My Leads" -> lead.assignedTo.equals(currentProfile.username, ignoreCase = true)
@@ -579,11 +739,23 @@ fun CrmFoundationScreen(
                     lead.companyName,
                     lead.location,
                     lead.requirement,
+                    lead.propertyType,
+                    lead.requirementType,
                     lead.assignedTo,
                     stage.label
                 ).any { value -> value.contains(q, ignoreCase = true) }
 
-                matchesTab && matchesDivision && matchesStage && matchesScopeMode && matchesSpecificAssignee && matchesSearch
+                matchesTab &&
+                    matchesDivision &&
+                    matchesTransaction &&
+                    matchesAssetType &&
+                    matchesLocation &&
+                    matchesFollowUpToday &&
+                    matchesHotOnly &&
+                    matchesStage &&
+                    matchesScopeMode &&
+                    matchesSpecificAssignee &&
+                    matchesSearch
             }
 
             val sortedList = when (sortBy) {
@@ -791,19 +963,32 @@ fun CrmFoundationScreen(
                                         modifier = Modifier
                                             .size(48.dp)
                                             .clip(RoundedCornerShape(10.dp))
-                                            .background(SurfaceWhite)
+                                            .background(if (activeFilterCount > 0) SelectedSurfaceContainer else SurfaceWhite)
                                             .testTag("crm_open_filter_sheet_btn")
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Tune,
-                                            contentDescription = "Filters",
-                                            tint = if (selectedStages.isNotEmpty() || divisionFilter != "All" || assignedScopeMode != "Team Leads" || assignedEmployeeFilter.isNotBlank()) {
-                                                PrimaryActionOrange
-                                            } else {
-                                                TextPrimary
-                                            },
-                                            modifier = Modifier.size(20.dp)
-                                        )
+                                        BadgedBox(
+                                            badge = {
+                                                if (activeFilterCount > 0) {
+                                                    Badge(
+                                                        containerColor = PrimaryActionOrange,
+                                                        contentColor = OnPrimaryActionColor
+                                                    ) {
+                                                        Text(
+                                                            text = activeFilterCount.toString(),
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.ExtraBold
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Tune,
+                                                contentDescription = "Open CRM Filters",
+                                                tint = if (activeFilterCount > 0) PrimaryActionOrange else TextPrimary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
                                     }
                                 }
 
@@ -831,50 +1016,130 @@ fun CrmFoundationScreen(
                                     }
                                 }
 
-                                // Active Stage & Assignment Removable Filter Chips
-                                if (divisionFilter != "All" || selectedStages.isNotEmpty() || assignedScopeMode != "Team Leads" || assignedEmployeeFilter.isNotBlank() || includeHistoricalRecords) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        if (divisionFilter != "All") {
-                                            InputChip(
-                                                selected = true,
-                                                onClick = { divisionFilter = "All" },
-                                                label = { Text("$divisionFilter ✕", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                // Single Horizontal Stackable Quick-Chip Filter Row (Division, Transaction, Asset/BHK, Urgency + Expandable Sheet Trigger)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState())
+                                        .testTag("crm_quick_filter_chip_row"),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    FilterChip(
+                                        selected = activeFilterCount > 0,
+                                        onClick = { showFilterSheet = true },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.FilterList,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(15.dp)
                                             )
-                                        }
-                                        selectedStages.forEach { st ->
-                                            InputChip(
-                                                selected = true,
-                                                onClick = { selectedStages = selectedStages - st },
-                                                label = { Text("Stage: ${st.label} ✕", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                        },
+                                        label = {
+                                            Text(
+                                                text = if (activeFilterCount > 0) "Filters ($activeFilterCount)" else "Filters",
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Bold
                                             )
-                                        }
-                                        if (assignedScopeMode != "Team Leads") {
-                                            InputChip(
-                                                selected = true,
-                                                onClick = { assignedScopeMode = "Team Leads" },
-                                                label = { Text("$assignedScopeMode ✕", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                                            )
-                                        }
-                                        if (assignedEmployeeFilter.isNotBlank()) {
-                                            InputChip(
-                                                selected = true,
-                                                onClick = { assignedEmployeeFilter = "" },
-                                                label = { Text("Assigned: $assignedEmployeeFilter ✕", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                                            )
-                                        }
-                                        if (includeHistoricalRecords) {
-                                            InputChip(
-                                                selected = true,
-                                                onClick = { includeHistoricalRecords = false },
-                                                label = { Text("Including Historical ✕", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                                            )
-                                        }
+                                        },
+                                        modifier = Modifier.testTag("crm_quick_filters_sheet_chip")
+                                    )
+
+                                    // Division quick toggles
+                                    listOf("Commercial", "Residential").forEach { div ->
+                                        val isDivSelected = divisionFilter == div
+                                        FilterChipItem(
+                                            label = div,
+                                            isSelected = isDivSelected,
+                                            onClick = { divisionFilter = if (isDivSelected) "All" else div }
+                                        )
+                                    }
+
+                                    // Transaction quick toggles (Lease / Rent, Buy / Sale, Pre-Leased)
+                                    listOf("Lease / Rent", "Buy / Sale", "Pre-Leased").forEach { tx ->
+                                        val isTxSelected = transactionFilter == tx
+                                        FilterChipItem(
+                                            label = tx,
+                                            isSelected = isTxSelected,
+                                            onClick = { transactionFilter = if (isTxSelected) "All" else tx }
+                                        )
+                                    }
+
+                                    // Dynamic Asset Type / BHK quick chips based on Division
+                                    val quickAssets = when (divisionFilter) {
+                                        "Residential" -> residentialAssetOptions
+                                        "Commercial" -> commercialAssetOptions
+                                        else -> listOf("Office Space", "Shop", "Showroom", "Warehouse", "2 BHK", "3 BHK")
+                                    }
+                                    quickAssets.forEach { asset ->
+                                        val isAssetSelected = asset in selectedAssetTypes
+                                        FilterChipItem(
+                                            label = asset,
+                                            isSelected = isAssetSelected,
+                                            onClick = {
+                                                selectedAssetTypes = if (isAssetSelected) {
+                                                    selectedAssetTypes - asset
+                                                } else {
+                                                    selectedAssetTypes + asset
+                                                }
+                                            }
+                                        )
+                                    }
+
+                                    // Urgency quick toggles
+                                    FilterChipItem(
+                                        label = "Follow-Up Today",
+                                        isSelected = quickFollowUpToday,
+                                        onClick = { quickFollowUpToday = !quickFollowUpToday }
+                                    )
+                                    FilterChipItem(
+                                        label = "🔥 Hot",
+                                        isSelected = quickHotOnly,
+                                        onClick = { quickHotOnly = !quickHotOnly }
+                                    )
+
+                                    // Active Location / Stage / Assignee removable pills
+                                    selectedLocations.forEach { loc ->
+                                        InputChip(
+                                            selected = true,
+                                            onClick = { selectedLocations = selectedLocations - loc },
+                                            label = { Text("$loc ✕", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                        )
+                                    }
+                                    selectedStages.forEach { st ->
+                                        InputChip(
+                                            selected = true,
+                                            onClick = { selectedStages = selectedStages - st },
+                                            label = { Text("${st.label} ✕", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                        )
+                                    }
+                                    if (assignedScopeMode != "Team Leads") {
+                                        InputChip(
+                                            selected = true,
+                                            onClick = { assignedScopeMode = "Team Leads" },
+                                            label = { Text("$assignedScopeMode ✕", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                        )
+                                    }
+                                    if (assignedEmployeeFilter.isNotBlank()) {
+                                        InputChip(
+                                            selected = true,
+                                            onClick = { assignedEmployeeFilter = "" },
+                                            label = { Text("$assignedEmployeeFilter ✕", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                        )
+                                    }
+                                    if (activeFilterCount > 0) {
+                                        AssistChip(
+                                            onClick = { resetAllCrmFilters() },
+                                            label = {
+                                                Text(
+                                                    text = "Reset",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = StatusDangerRed
+                                                )
+                                            },
+                                            modifier = Modifier.testTag("crm_quick_reset_filters_chip")
+                                        )
                                     }
                                 }
                             }
@@ -1012,14 +1277,7 @@ fun CrmFoundationScreen(
                                     Text("Review Archive (${archivedWorkLeads.size})", fontWeight = FontWeight.Bold)
                                 }
                             } else {
-                                TextButton(onClick = {
-                                    search = ""
-                                    activeLeadTab = "All Leads"
-                                    divisionFilter = "All"
-                                    selectedStages = emptySet()
-                                    assignedScopeMode = "Team Leads"
-                                    assignedEmployeeFilter = ""
-                                }) {
+                                TextButton(onClick = { resetAllCrmFilters() }) {
                                     Text("Reset all filters", color = PrimaryActionOrange, fontWeight = FontWeight.Bold)
                                 }
                             }
@@ -1063,105 +1321,269 @@ fun CrmFoundationScreen(
         }
     }
 
-    // Filter Sheet with Stage Counts & Employee Scope
+    // Expandable Stackable Filter Sheet (Division, Transaction, Asset/BHK, Location, Urgency, Stage & Workload)
     if (showFilterSheet) {
+        val filterSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
             onDismissRequest = { showFilterSheet = false },
-            containerColor = BackgroundSoft
+            sheetState = filterSheetState,
+            containerColor = BackgroundSoft,
+            modifier = Modifier.testTag("crm_expandable_filter_sheet")
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(18.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .fillMaxHeight(0.88f)
             ) {
-                Text("Filter CRM Pipeline & Workload", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-
-                Text("Division", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("All", "Commercial", "Residential").forEach { divOpt ->
-                        FilterChipItem(
-                            label = divOpt,
-                            isSelected = divisionFilter == divOpt,
-                            onClick = { divisionFilter = divOpt }
-                        )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Filter CRM Leads",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "${sortedLeads.size} matching lead${if (sortedLeads.size == 1) "" else "s"}",
+                                fontSize = 12.sp,
+                                color = SecondaryText,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        IconButton(
+                            onClick = { showFilterSheet = false },
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close Filters", tint = TextPrimary)
+                        }
                     }
-                }
 
-                Text("Ownership Scope", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("My Leads", "Team Leads", "Unassigned").forEach { scopeOpt ->
-                        FilterChipItem(
-                            label = scopeOpt,
-                            isSelected = assignedScopeMode == scopeOpt,
-                            onClick = { assignedScopeMode = scopeOpt }
-                        )
-                    }
-                }
-
-                Text("Pipeline Stage (Distinct Active Requirements)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                CrmPipelineStage.entries.chunked(2).forEach { pair ->
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        pair.forEach { st ->
-                            val count = stageCounts[st] ?: 0
-                            val isSelected = st in selectedStages
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    selectedStages = if (isSelected) selectedStages - st else selectedStages + st
-                                },
-                                label = { Text("${st.label} ($count)", fontSize = 11.5.sp) },
-                                modifier = Modifier.weight(1f)
+                    Text("Division", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("All", "Commercial", "Residential").forEach { divOpt ->
+                            FilterChipItem(
+                                label = divOpt,
+                                isSelected = divisionFilter == divOpt,
+                                onClick = { divisionFilter = divOpt }
                             )
                         }
                     }
-                }
 
-                Text("Sort Order", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Follow-up Urgency", "Recent", "Name").forEach { sOpt ->
+                    Text("Transaction Type", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("All", "Lease / Rent", "Buy / Sale", "Pre-Leased").forEach { txOpt ->
+                            FilterChipItem(
+                                label = txOpt,
+                                isSelected = transactionFilter == txOpt,
+                                onClick = { transactionFilter = txOpt }
+                            )
+                        }
+                    }
+
+                    if (divisionFilter != "Residential") {
+                        Text("Commercial Asset Type", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        commercialAssetOptions.chunked(3).forEach { rowItems ->
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                rowItems.forEach { asset ->
+                                    val isSelected = asset in selectedAssetTypes
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            selectedAssetTypes = if (isSelected) selectedAssetTypes - asset else selectedAssetTypes + asset
+                                        },
+                                        label = { Text(asset, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                    }
+
+                    if (divisionFilter != "Commercial") {
+                        Text("Residential Configuration / BHK", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                        residentialAssetOptions.chunked(3).forEach { rowItems ->
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                rowItems.forEach { asset ->
+                                    val isSelected = asset in selectedAssetTypes
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = {
+                                            selectedAssetTypes = if (isSelected) selectedAssetTypes - asset else selectedAssetTypes + asset
+                                        },
+                                        label = { Text(asset, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                    }
+
+                    Text("Location / Micro-Market", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    availableLocationChips.chunked(3).forEach { rowLocs ->
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            rowLocs.forEach { loc ->
+                                val isSelected = loc in selectedLocations
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        selectedLocations = if (isSelected) selectedLocations - loc else selectedLocations + loc
+                                    },
+                                    label = { Text(loc, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            repeat(3 - rowLocs.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+
+                    Text("Urgency & Priority", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         FilterChipItem(
-                            label = sOpt,
-                            isSelected = sortBy == sOpt,
-                            onClick = { sortBy = sOpt }
+                            label = "Follow-Up Today",
+                            isSelected = quickFollowUpToday,
+                            onClick = { quickFollowUpToday = !quickFollowUpToday }
+                        )
+                        FilterChipItem(
+                            label = "🔥 Hot / High Priority",
+                            isSelected = quickHotOnly,
+                            onClick = { quickHotOnly = !quickHotOnly }
                         )
                     }
-                }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(
-                        checked = includeHistoricalRecords,
-                        onCheckedChange = { includeHistoricalRecords = it },
-                        colors = CheckboxDefaults.colors(checkedColor = PrimaryActionOrange, checkmarkColor = OnPrimaryActionColor)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text("Include historical/closed records in list", fontSize = 12.5.sp, color = TextPrimary)
-                }
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            selectedStages = emptySet()
-                            assignedScopeMode = "Team Leads"
-                            assignedEmployeeFilter = ""
-                            includeHistoricalRecords = false
-                            showFilterSheet = false
-                        },
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)
-                    ) {
-                        Text("Reset", fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Text("Ownership Scope", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("My Leads", "Team Leads", "Unassigned").forEach { scopeOpt ->
+                            FilterChipItem(
+                                label = scopeOpt,
+                                isSelected = assignedScopeMode == scopeOpt,
+                                onClick = { assignedScopeMode = scopeOpt }
+                            )
+                        }
                     }
-                    Button(
-                        onClick = { showFilterSheet = false },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = PrimaryActionOrange,
-                            contentColor = OnPrimaryActionColor
-                        ),
-                        modifier = Modifier.weight(1.4f).heightIn(min = 48.dp)
+
+                    Text("Pipeline Stage (Distinct Active Requirements)", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    CrmPipelineStage.entries.chunked(2).forEach { pair ->
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            pair.forEach { st ->
+                                val count = stageCounts[st] ?: 0
+                                val isSelected = st in selectedStages
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        selectedStages = if (isSelected) selectedStages - st else selectedStages + st
+                                    },
+                                    label = { Text("${st.label} ($count)", fontSize = 11.5.sp) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+
+                    Text("Sort Order", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("Apply Filters", fontWeight = FontWeight.Bold)
+                        listOf("Follow-up Urgency", "Recent", "Name").forEach { sOpt ->
+                            FilterChipItem(
+                                label = sOpt,
+                                isSelected = sortBy == sOpt,
+                                onClick = { sortBy = sOpt }
+                            )
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = includeHistoricalRecords,
+                            onCheckedChange = { includeHistoricalRecords = it },
+                            colors = CheckboxDefaults.colors(checkedColor = PrimaryActionOrange, checkmarkColor = OnPrimaryActionColor)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("Include historical/closed records in list", fontSize = 12.5.sp, color = TextPrimary)
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                // Sticky Bottom Action Bar with navigationBarsPadding
+                Surface(
+                    color = SurfaceWhite,
+                    tonalElevation = 4.dp,
+                    shadowElevation = 8.dp,
+                    border = BorderStroke(1.dp, BorderGrey),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .imePadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                resetAllCrmFilters()
+                                showFilterSheet = false
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("crm_filter_sheet_reset_btn")
+                        ) {
+                            Text("Reset All", fontWeight = FontWeight.Bold, color = TextPrimary)
+                        }
+                        Button(
+                            onClick = { showFilterSheet = false },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PrimaryActionOrange,
+                                contentColor = OnPrimaryActionColor
+                            ),
+                            modifier = Modifier
+                                .weight(1.5f)
+                                .heightIn(min = 48.dp)
+                                .testTag("crm_filter_sheet_apply_btn")
+                        ) {
+                            Text(
+                                text = "Show ${sortedLeads.size} Matching Leads",
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }
@@ -1324,6 +1746,7 @@ fun CrmFoundationScreen(
     if (showEditor) {
         AddEditLeadScreen(
             initial = editing,
+            activeCallContext = activeCallContext,
             onDismiss = { showEditor = false },
             onDeletePermanently = if (currentProfile.isAdminOrSuperAdmin) { targetLead ->
                 showEditor = false
@@ -1361,6 +1784,7 @@ fun CrmFoundationScreen(
                         }
                         leads = reloaded
                         pipelineRefreshTick++
+                        batchLeads.firstOrNull()?.let { onLeadSaved?.invoke(it) }
                         batchLeads.forEach { item ->
                             launch { onPushCrmLeadToSheet?.invoke(item) }
                         }
@@ -1404,17 +1828,20 @@ fun CrmFoundationScreen(
                             leads = savedList
                             pipelineRefreshTick++
                             showEditor = false
+                            onLeadSaved?.invoke(syncedLead)
                             Toast.makeText(context, "${syncedLead.displayClientTitle()} verified & synced Live", Toast.LENGTH_SHORT).show()
                             launch { onPushCrmLeadToSheet?.invoke(syncedLead) }
                         }.onFailure { err ->
                             pipelineRefreshTick++
                             showEditor = false
+                            onLeadSaved?.invoke(persistedLead)
                             snackbarMessage = err.message ?: "Saved to Archive — complete 100% required fields to go Live"
                             launch { onPushCrmLeadToSheet?.invoke(persistedLead) }
                         }
                     } else {
                         pipelineRefreshTick++
                         showEditor = false
+                        onLeadSaved?.invoke(persistedLead)
                         Toast.makeText(context, "Draft saved & synced", Toast.LENGTH_SHORT).show()
                         launch { onPushCrmLeadToSheet?.invoke(persistedLead) }
                     }
@@ -2281,6 +2708,7 @@ private fun TeamWorkloadBottomSheet(
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f)
                 .navigationBarsPadding()
+                .imePadding()
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -2383,6 +2811,7 @@ private fun LeadratReviewQueueSheet(
                 .fillMaxWidth()
                 .fillMaxHeight(0.88f)
                 .navigationBarsPadding()
+                .imePadding()
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -2604,10 +3033,14 @@ private fun QuickFollowUpBottomSheet(
                         modifier = Modifier.weight(1f),
                         allowCustom = false
                     )
+                    val syncedTeamOptions = remember(context) {
+                        (com.example.data.SheetsRepository.getSyncedActiveEmployeeNames(context) + listOf("Unassigned"))
+                            .distinct()
+                    }
                     CompactDropdownField(
                         label = "Assigned To",
                         selectedValue = assignedTo,
-                        options = TlcStandardOptions.teamEmployees,
+                        options = syncedTeamOptions,
                         onValueSelected = { assignedTo = it },
                         modifier = Modifier.weight(1f),
                         allowCustom = true
@@ -2827,6 +3260,7 @@ private fun QuickFollowUpBottomSheet(
 @Composable
 internal fun AddEditLeadScreen(
     initial: CrmLead?,
+    activeCallContext: ActiveCallActionContext? = null,
     onDismiss: () -> Unit,
     onDeletePermanently: ((CrmLead) -> Unit)? = null,
     onBatchSaveLeads: ((List<CrmLead>) -> Unit)? = null,
@@ -2838,7 +3272,7 @@ internal fun AddEditLeadScreen(
     val profile = settings.userProfile.collectAsState().value
     val canPermanentDelete = initial != null && profile.isAdminOrSuperAdmin && onDeletePermanently != null
     var showPermanentDeleteDialog by remember { mutableStateOf(false) }
-    val defaultEmployee = profile.username.ifBlank { "Pawan Patil" }
+    val defaultEmployee = profile.username.trim()
     val isoFmt = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
 
     val initialClientTypeMode = remember(initial) {
@@ -3198,7 +3632,7 @@ internal fun AddEditLeadScreen(
         val ownerCarpet = carpetAreaRange.trim()
             .ifBlank { matchedLinkedProperty?.carpetAreaSqFt?.takeIf { it > 0 }?.let { CalculationUtils.formatNumber(it) }.orEmpty() }
         CrmLead(
-            id = initial?.id ?: "CRM-${System.currentTimeMillis().toString().takeLast(6)}",
+            id = initial?.id ?: com.example.data.DeviceIdentityManager.generateCrmLeadId(context),
             name = name.trim(),
             phone = phone.trim(),
             segment = ownerSegment,
@@ -3246,7 +3680,7 @@ internal fun AddEditLeadScreen(
         )
     } else {
         CrmLead(
-            id = initial?.id ?: "CRM-${System.currentTimeMillis().toString().takeLast(6)}",
+            id = initial?.id ?: com.example.data.DeviceIdentityManager.generateCrmLeadId(context),
             name = name.trim(),
             phone = phone.trim(),
             segment = segment,
@@ -3465,6 +3899,8 @@ internal fun AddEditLeadScreen(
                         }
                     }
                 }
+
+                // Audio playback remains strictly inline on CallLogActionScreen; activeCallContext stays active for Auto-Link on Save.
 
                 // Scrollable 2-Column Compact Form Body
                 Column(
@@ -4356,7 +4792,7 @@ internal fun AddEditLeadScreen(
                 val baseTs = System.currentTimeMillis()
                 val newLeads = selectedDrafts.mapIndexed { idx, d ->
                     val isMonthly = d.transactionType.equals("Lease", true) || d.transactionType.equals("Rent", true)
-                    val leadId = "CRM-${((baseTs + idx) % 1_000_000L).toString().padStart(6, '0')}"
+                    val leadId = com.example.data.DeviceIdentityManager.generateCrmLeadId(context)
                     val resolvedName = when {
                         d.isBrokerLead && d.brokerName.isNotBlank() && d.clientName.isNotBlank() && !d.clientName.contains(d.brokerName, true) ->
                             "${d.brokerName} • ${d.clientName}"
@@ -4808,7 +5244,7 @@ internal fun upsertCrmLeadFromPostCall(
     val existing = readCrmLeads(context)
     val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
     val resolvedId = lead.id.ifBlank {
-        "CRM-${(existing.size + 1).toString().padStart(6, '0')}"
+        com.example.data.DeviceIdentityManager.generateCrmLeadId(context)
     }
     val normalizedStatus = if (lead.status.isBlank() || lead.status.equals("New", ignoreCase = true)) {
         "New Lead"

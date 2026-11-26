@@ -228,7 +228,7 @@ fun MapSearchScreen(
     var selectedBuilderProject by remember { mutableStateOf<BuilderProjectPin?>(null) }
     var propertyToPin by remember { mutableStateOf<PropertyItem?>(null) }
 
-    // Compute Filtered Properties — strictly Live, Verified Direct Units (no Pending, no Archived, no Builder Stock)
+    // Compute Filtered Properties — all Active Direct Units (including Pending / Not Confirmed; excluding Archived/Closed & Builder Stock)
     val filteredProperties = remember(
         allProperties, initialTargetProperty, selectedPortfolio, selectedTypes, selectedBhkFilter,
         selectedTransactionType, minPriceText, maxPriceText, minAreaText, maxAreaText, selectedLocation, mapSearchQuery
@@ -236,7 +236,7 @@ fun MapSearchScreen(
         allProperties.filter { prop ->
             val isExplicitTarget = initialTargetProperty != null && prop.id == initialTargetProperty.id
             if (!isExplicitTarget) {
-                if (!InventoryQuality.isStrictlyLive(prop)) return@filter false
+                if (!InventoryQuality.isActiveInventory(prop)) return@filter false
                 if (InventoryQuality.isBuilderProjectStock(prop)) return@filter false
             }
             val matchesPortfolio = when (selectedPortfolio) {
@@ -1016,6 +1016,8 @@ fun MapSearchScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding()
                     .padding(20.dp)
                     .verticalScroll(rememberScrollState())
             ) {
@@ -1171,6 +1173,8 @@ fun MapSearchScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding()
                     .padding(20.dp)
                     .verticalScroll(rememberScrollState())
             ) {

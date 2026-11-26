@@ -67,6 +67,22 @@ internal object BackgroundSyncScheduler {
         return true
     }
 
+    /**
+     * Immediately enqueues a background OneTimeWorkRequest (NetworkType.CONNECTED) whenever
+     * a Property, CRM Lead, or Call Log is saved/edited so it UPSERTs to Google Sheets right away.
+     */
+    fun enqueueImmediatePush(context: Context): Boolean {
+        val rawEndpoint = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+            .getString("google_sheet_url", "").orEmpty()
+        val endpoint = TlcSchemaV2Api.resolveEndpointUrl(rawEndpoint)
+        if (!validEndpoint(endpoint)) return false
+        return runCatching {
+            val manager = WorkManager.getInstance(context.applicationContext)
+            manager.enqueueUniqueWork(IMMEDIATE_WORK, ExistingWorkPolicy.REPLACE, immediateRequest())
+            true
+        }.getOrDefault(false)
+    }
+
     fun ensureScheduled(context: Context): Boolean {
         val rawEndpoint = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
             .getString("google_sheet_url", "").orEmpty()
@@ -81,4 +97,5 @@ internal object BackgroundSyncScheduler {
         return true
     }
 }
+
 

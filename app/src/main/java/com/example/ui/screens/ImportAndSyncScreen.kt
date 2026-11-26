@@ -335,7 +335,17 @@ fun ImportAndSyncScreen(
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    DetailRow(label = "Master Spreadsheet", value = "MASTER_REAL_ESTATE_INVENTORY")
+                    val syncDiag by repository.syncDiagnostics.collectAsState()
+                    DetailRow(label = "Master Spreadsheet", value = syncDiag.activeSpreadsheetName)
+                    DetailRow(
+                        label = "Spreadsheet ID",
+                        value = if (syncDiag.isExpectedSpreadsheetConnected) {
+                            "${syncDiag.activeSpreadsheetId} (Verified)"
+                        } else {
+                            syncDiag.activeSpreadsheetId
+                        }
+                    )
+                    DetailRow(label = "Last Sync Sheet Rows", value = "${syncDiag.totalSyncedSheetRows} rows (5 inventory tabs)")
                     DetailRow(label = "Last Sync Timestamp", value = lastSyncTimestamp)
                     DetailRow(label = "Sync Polling Engine", value = "Checks while open and in background")
                     DetailRow(label = "Pending Changes", value = pendingSyncCount.toString())

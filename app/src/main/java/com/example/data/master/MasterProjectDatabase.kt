@@ -22,9 +22,12 @@ import kotlinx.coroutines.launch
         DuplicateReviewEntity::class,
         ApprovalRequestEntity::class,
         AuditEventEntity::class,
-        MarketPulseEntity::class
+        MarketPulseEntity::class,
+        CallLogEntity::class,
+        BrokerEntity::class,
+        CallAnalysisEntity::class
     ],
-    version = 2,
+    version = 7,
     exportSchema = false
 )
 abstract class MasterProjectDatabase : RoomDatabase() {
@@ -201,6 +204,170 @@ abstract class MasterProjectDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val existingCols = mutableSetOf<String>()
+                db.query("PRAGMA table_info(`unit_inventory_master`)").use { cursor ->
+                    val nameIdx = cursor.getColumnIndex("name")
+                    while (cursor.moveToNext()) {
+                        if (nameIdx >= 0) {
+                            existingCols.add(cursor.getString(nameIdx))
+                        }
+                    }
+                }
+                val columnsToAdd = listOf(
+                    "microMarket" to "TEXT",
+                    "attachedPantry" to "TEXT",
+                    "attachedWashroom" to "TEXT",
+                    "frontageFt" to "REAL",
+                    "clearHeightFt" to "REAL",
+                    "truckAccess" to "TEXT",
+                    "powerLoad" to "TEXT",
+                    "targetPossessionDate" to "TEXT"
+                )
+                columnsToAdd.forEach { (colName, sqlType) ->
+                    if (colName !in existingCols) {
+                        db.execSQL("ALTER TABLE `unit_inventory_master` ADD COLUMN `$colName` $sqlType DEFAULT NULL")
+                    }
+                }
+            }
+        }
+
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `call_logs_master` (
+                        `callId` TEXT NOT NULL PRIMARY KEY,
+                        `timestamp` INTEGER NOT NULL,
+                        `callerName` TEXT NOT NULL,
+                        `phoneNumber` TEXT NOT NULL,
+                        `direction` TEXT NOT NULL,
+                        `durationSeconds` INTEGER NOT NULL,
+                        `roleOrLinkedId` TEXT NOT NULL,
+                        `linkedTitle` TEXT NOT NULL,
+                        `notesOrAiSummary` TEXT NOT NULL,
+                        `employeeName` TEXT NOT NULL,
+                        `deviceName` TEXT DEFAULT NULL,
+                        `recordingFilename` TEXT DEFAULT NULL,
+                        `syncStatus` TEXT NOT NULL DEFAULT 'PENDING',
+                        `updatedAt` INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_call_logs_master_timestamp` ON `call_logs_master`(`timestamp`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_call_logs_master_syncStatus` ON `call_logs_master`(`syncStatus`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_call_logs_master_phoneNumber` ON `call_logs_master`(`phoneNumber`)")
+
+                // Defensive column guard if table existed from an earlier build without deviceName/syncStatus
+                val existingCols = mutableSetOf<String>()
+                db.query("PRAGMA table_info(`call_logs_master`)").use { cursor ->
+                    val nameIdx = cursor.getColumnIndex("name")
+                    while (cursor.moveToNext()) {
+                        if (nameIdx >= 0) existingCols.add(cursor.getString(nameIdx))
+                    }
+                }
+                if ("deviceName" !in existingCols) {
+                    db.execSQL("ALTER TABLE `call_logs_master` ADD COLUMN `deviceName` TEXT DEFAULT NULL")
+                }
+                if ("recordingFilename" !in existingCols) {
+                    db.execSQL("ALTER TABLE `call_logs_master` ADD COLUMN `recordingFilename` TEXT DEFAULT NULL")
+                }
+                if ("syncStatus" !in existingCols) {
+                    db.execSQL("ALTER TABLE `call_logs_master` ADD COLUMN `syncStatus` TEXT NOT NULL DEFAULT 'PENDING'")
+                }
+                if ("updatedAt" !in existingCols) {
+                    db.execSQL("ALTER TABLE `call_logs_master` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                }
+            }
+        }
+
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `brokers_master` (
+                        `brokerId` TEXT NOT NULL PRIMARY KEY,
+                        `name` TEXT NOT NULL DEFAULT '',
+                        `phone` TEXT NOT NULL DEFAULT '',
+                        `mobileLast10` TEXT NOT NULL DEFAULT '',
+                        `division` TEXT NOT NULL DEFAULT 'Commercial',
+                        `firmName` TEXT NOT NULL DEFAULT '',
+                        `operatingAreas` TEXT NOT NULL DEFAULT '',
+                        `specialization` TEXT NOT NULL DEFAULT '',
+                        `confidence` TEXT NOT NULL DEFAULT '',
+                        `notes` TEXT NOT NULL DEFAULT '',
+                        `sourceTab` TEXT NOT NULL DEFAULT 'Commercial Brokers',
+                        `updatedAt` INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_brokers_master_mobileLast10` ON `brokers_master`(`mobileLast10`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_brokers_master_division` ON `brokers_master`(`division`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_brokers_master_sourceTab` ON `brokers_master`(`sourceTab`)")
+            }
+        }
+
+        val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `call_analysis_master` (
+                        `callLogId` TEXT NOT NULL PRIMARY KEY,
+                        `callerName` TEXT NOT NULL DEFAULT '',
+                        `phoneNumber` TEXT NOT NULL DEFAULT '',
+                        `callTimestamp` INTEGER NOT NULL DEFAULT 0,
+                        `durationSeconds` INTEGER NOT NULL DEFAULT 0,
+                        `callerRole` TEXT NOT NULL DEFAULT 'PERSONAL_NON_BUSINESS',
+                        `detectedLanguage` TEXT NOT NULL DEFAULT 'English',
+                        `summaryBulletsJson` TEXT NOT NULL DEFAULT '[]',
+                        `extractedClientLeadJson` TEXT NOT NULL DEFAULT '',
+                        `extractedPropertyUpdateJson` TEXT NOT NULL DEFAULT '',
+                        `extractedTenantNoteJson` TEXT NOT NULL DEFAULT '',
+                        `followUpDate` TEXT NOT NULL DEFAULT '',
+                        `followUpTime` TEXT NOT NULL DEFAULT '',
+                        `followUpNextAction` TEXT NOT NULL DEFAULT '',
+                        `suggestedWhatsAppDraft` TEXT NOT NULL DEFAULT '',
+                        `confidence` INTEGER NOT NULL DEFAULT 0,
+                        `needsReview` INTEGER NOT NULL DEFAULT 0,
+                        `modelUsed` TEXT NOT NULL DEFAULT '',
+                        `reviewStatus` TEXT NOT NULL DEFAULT 'PENDING_REVIEW',
+                        `aiAnalyzedAt` INTEGER NOT NULL DEFAULT 0,
+                        `deviceName` TEXT NOT NULL DEFAULT '',
+                        `recordingFilename` TEXT NOT NULL DEFAULT '',
+                        `rawTranscript` TEXT NOT NULL DEFAULT '',
+                        `syncedToSheet` INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_call_analysis_master_callerRole` ON `call_analysis_master`(`callerRole`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_call_analysis_master_reviewStatus` ON `call_analysis_master`(`reviewStatus`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_call_analysis_master_aiAnalyzedAt` ON `call_analysis_master`(`aiAnalyzedAt`)")
+            }
+        }
+
+        val MIGRATION_6_7: Migration = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val existingCols = mutableSetOf<String>()
+                db.query("PRAGMA table_info(`brokers_master`)").use { cursor ->
+                    val nameIdx = cursor.getColumnIndex("name")
+                    while (cursor.moveToNext()) {
+                        if (nameIdx >= 0) existingCols.add(cursor.getString(nameIdx))
+                    }
+                }
+                val columnsToAdd = listOf(
+                    "phoneType" to "TEXT NOT NULL DEFAULT ''",
+                    "alternateMobiles" to "TEXT NOT NULL DEFAULT ''",
+                    "verificationStatus" to "TEXT NOT NULL DEFAULT ''"
+                )
+                columnsToAdd.forEach { (colName, sqlDef) ->
+                    if (colName !in existingCols) {
+                        db.execSQL("ALTER TABLE `brokers_master` ADD COLUMN `$colName` $sqlDef")
+                    }
+                }
+            }
+        }
+
         fun getDatabase(context: Context): MasterProjectDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -208,177 +375,17 @@ abstract class MasterProjectDatabase : RoomDatabase() {
                     MasterProjectDatabase::class.java,
                     "master_project_inventory.db"
                 )
-                .addMigrations(MIGRATION_1_2)
-                .addCallback(SeedCallback(context))
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7
+                )
                 .build()
                 INSTANCE = instance
                 instance
-            }
-        }
-
-        private class SeedCallback(private val context: Context) : RoomDatabase.Callback() {
-            override fun onCreate(db: SupportSQLiteDatabase) {
-                super.onCreate(db)
-                CoroutineScope(Dispatchers.IO).launch {
-                    val dao = getDatabase(context).masterProjectDao()
-                    // Seed initial rich Pune Real Estate projects
-                    val initialProjects = listOf(
-                        ProjectEntity(
-                            projectId = "CP-0001",
-                            projectName = "World Trade Center (WTC)",
-                            projectType = ProjectType.COMMERCIAL,
-                            developerName = "Panchshil Realty",
-                            city = "Pune",
-                            location = "East Pune",
-                            microMarket = "Kharadi",
-                            category = "IT Park / Offices",
-                            reraNumber = "P52100001234",
-                            possessionDate = "Ready to Move",
-                            status = ProjectStatus.READY,
-                            verificationStatus = VerificationStatus.VERIFIED
-                        ),
-                        ProjectEntity(
-                            projectId = "CP-0002",
-                            projectName = "EON Free Zone Phase 2",
-                            projectType = ProjectType.COMMERCIAL,
-                            developerName = "Panchshil Realty",
-                            city = "Pune",
-                            location = "East Pune",
-                            microMarket = "Kharadi",
-                            category = "SEZ Office Towers",
-                            reraNumber = "P52100005678",
-                            possessionDate = "Ready to Move",
-                            status = ProjectStatus.READY,
-                            verificationStatus = VerificationStatus.VERIFIED
-                        ),
-                        ProjectEntity(
-                            projectId = "CP-0003",
-                            projectName = "Gera Imperium Alpha",
-                            projectType = ProjectType.COMMERCIAL,
-                            developerName = "Gera Developments",
-                            city = "Pune",
-                            location = "East Pune",
-                            microMarket = "Kharadi",
-                            category = "Commercial Offices & Retail",
-                            reraNumber = "P52100011223",
-                            possessionDate = "Ready to Move",
-                            status = ProjectStatus.READY,
-                            verificationStatus = VerificationStatus.VERIFIED
-                        ),
-                        ProjectEntity(
-                            projectId = "CP-0004",
-                            projectName = "Phoenix Marketcity High Street",
-                            projectType = ProjectType.COMMERCIAL,
-                            developerName = "The Phoenix Mills Ltd",
-                            city = "Pune",
-                            location = "East Pune",
-                            microMarket = "Viman Nagar",
-                            category = "Retail Showrooms",
-                            reraNumber = "P52100022334",
-                            possessionDate = "Ready to Move",
-                            status = ProjectStatus.READY,
-                            verificationStatus = VerificationStatus.VERIFIED
-                        ),
-                        ProjectEntity(
-                            projectId = "RP-0001",
-                            projectName = "Kasturi Apostrophe",
-                            projectType = ProjectType.RESIDENTIAL,
-                            developerName = "Kasturi Developments",
-                            city = "Pune",
-                            location = "West Pune",
-                            microMarket = "Wakad",
-                            category = "3 BHK Luxury Apartments",
-                            reraNumber = "P52100012399",
-                            possessionDate = "December 2026",
-                            status = ProjectStatus.UNDER_CONSTRUCTION,
-                            verificationStatus = VerificationStatus.VERIFIED
-                        ),
-                        ProjectEntity(
-                            projectId = "RP-0002",
-                            projectName = "Kumar Primavera",
-                            projectType = ProjectType.RESIDENTIAL,
-                            developerName = "Kumar Properties",
-                            city = "Pune",
-                            location = "East Pune",
-                            microMarket = "Kalyani Nagar",
-                            category = "2 & 3 BHK Apartments",
-                            reraNumber = "P52100009876",
-                            possessionDate = "Ready to Move",
-                            status = ProjectStatus.READY,
-                            verificationStatus = VerificationStatus.VERIFIED
-                        ),
-                        ProjectEntity(
-                            projectId = "RP-0003",
-                            projectName = "Godrej Infinity",
-                            projectType = ProjectType.RESIDENTIAL,
-                            developerName = "Godrej Properties",
-                            city = "Pune",
-                            location = "East Pune",
-                            microMarket = "Keshav Nagar",
-                            category = "2 & 3 BHK Residences",
-                            reraNumber = "P52100004511",
-                            possessionDate = "Ready to Move",
-                            status = ProjectStatus.READY,
-                            verificationStatus = VerificationStatus.VERIFIED
-                        )
-                    )
-
-                    initialProjects.forEach { dao.insertProject(it) }
-
-                    // Seed sample unit inventory
-                    val initialUnits = listOf(
-                        PropertyUnitEntity(
-                            unitId = "UNIT-CP-001",
-                            projectId = "CP-0001",
-                            propertyCode = "OL-KHD-401",
-                            towerBuilding = "Tower 4",
-                            unitNumber = "801",
-                            floor = 8,
-                            areaSqFt = 2400.0,
-                            pricing = 36000000.0,
-                            rentAmount = 168000.0,
-                            tab = "Off Lease",
-                            furnishing = "Fully Furnished",
-                            status = "Available",
-                            ownerName = "Rajesh Singhania",
-                            ownerContact = "9822011223"
-                        ),
-                        PropertyUnitEntity(
-                            unitId = "UNIT-CP-002",
-                            projectId = "CP-0003",
-                            propertyCode = "OL-KHD-305",
-                            towerBuilding = "Wing A",
-                            unitNumber = "305",
-                            floor = 3,
-                            areaSqFt = 1450.0,
-                            pricing = 22500000.0,
-                            rentAmount = 95000.0,
-                            tab = "Pre - Leased",
-                            furnishing = "Semi Furnished",
-                            status = "Available",
-                            ownerName = "Anil Deshmukh",
-                            ownerContact = "9850123456"
-                        ),
-                        PropertyUnitEntity(
-                            unitId = "UNIT-RP-001",
-                            projectId = "RP-0001",
-                            propertyCode = "RR-WKD-1202",
-                            towerBuilding = "Building B",
-                            unitNumber = "1202",
-                            floor = 12,
-                            areaSqFt = 1320.0,
-                            pricing = 17500000.0,
-                            rentAmount = 45000.0,
-                            tab = "Resi Rent",
-                            furnishing = "Semi Furnished",
-                            status = "Available",
-                            ownerName = "Dr. Prakash Kulkarni",
-                            ownerContact = "9860012345"
-                        )
-                    )
-
-                    initialUnits.forEach { dao.insertUnit(it) }
-                }
             }
         }
     }

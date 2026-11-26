@@ -46,6 +46,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import com.example.ai.AiPitchTone
 import com.example.ai.GeminiProductivityEngine
 import com.example.data.UserSettingsManager
@@ -57,9 +61,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-enum class ShareAudienceMode(val label: String) {
-    CLIENT("Client"),
-    BROKER("Broker"),
+enum class ShareSheetTab(val label: String) {
+    UNIFIED_WHATSAPP("Unified Share"),
     FB_MARKETPLACE("FB Marketplace Ad")
 }
 
@@ -177,19 +180,56 @@ fun WhatsAppShareDialog(
         list.distinctBy { it.id }
     }
 
-    var audienceMode by rememberSaveable { mutableStateOf(ShareAudienceMode.CLIENT) }
-    var conciseMode by rememberSaveable { mutableStateOf(false) }
+    var activeTab by rememberSaveable { mutableStateOf(ShareSheetTab.UNIFIED_WHATSAPP) }
+    var showMatchingBrokersSheet by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     val userProfile = userSettingsManager?.userProfile?.collectAsState()?.value
     val employeeName = senderName ?: userProfile?.username?.takeIf { it.isNotBlank() } ?: "TLC Executive"
     val employeeMobile = userProfile?.mobileNumber.orEmpty()
 
-    // Generate template message
-    val generatedText = remember(normalizedProperties, project, customMessage, audienceMode, conciseMode, employeeName, employeeMobile) {
+    // Asynchronously load linked Project Building Highlights from Room / ProjectDirectoryStore
+    var highlightsByPropertyId by remember(normalizedProperties) {
+        mutableStateOf<Map<String, LinkedProjectBuildingHighlights>>(emptyMap())
+    }
+    LaunchedEffect(normalizedProperties) {
+        if (normalizedProperties.isNotEmpty()) {
+            val resolved = LinkedHashMap<String, LinkedProjectBuildingHighlights>()
+            normalizedProperties.forEach { prop ->
+                WhatsAppShareFormatter.resolveLinkedProjectHighlights(context, prop)?.let { hl ->
+                    resolved[prop.id] = hl
+                }
+            }
+            highlightsByPropertyId = resolved
+        } else {
+            highlightsByPropertyId = emptyMap()
+        }
+    }
+
+    // Asynchronously collect attached/cached property photos
+    var photoSources by remember(normalizedProperties) { mutableStateOf<List<String>>(emptyList()) }
+    var includePhotos by remember(normalizedProperties) { mutableStateOf(true) }
+    var isPreparingPhotos by remember { mutableStateOf(false) }
+    LaunchedEffect(normalizedProperties) {
+        val sources = if (normalizedProperties.isNotEmpty()) {
+            WhatsAppShareHelper.collectPropertyPhotoSources(context, normalizedProperties)
+        } else {
+            emptyList()
+        }
+        photoSources = sources
+        includePhotos = sources.isNotEmpty()
+    }
+
+    // Generate ONE unified executive-grade message for both Clients and Brokers
+    val generatedText = remember(normalizedProperties, project, customMessage, employeeName, employeeMobile, highlightsByPropertyId) {
         when {
             !customMessage.isNullOrBlank() -> customMessage
-            normalizedProperties.isNotEmpty() -> buildMultiPropertyShareMessage(normalizedProperties, audienceMode, conciseMode, employeeName, employeeMobile)
+            normalizedProperties.isNotEmpty() -> WhatsAppShareFormatter.formatMultipleProperties(
+                properties = normalizedProperties,
+                employeeName = employeeName,
+                employeeMobile = employeeMobile,
+                highlightsByPropertyId = highlightsByPropertyId
+            )
             project != null -> buildProjectShareMessage(project, employeeName, employeeMobile)
             else -> "For details & site visits: 📞 9766880099 | 9766668099"
         }
@@ -203,17 +243,19 @@ fun WhatsAppShareDialog(
     var isDraftingAiPitch by remember { mutableStateOf(false) }
     var aiPitchStatusNote by remember { mutableStateOf<String?>(null) }
 
-    // Live Leak Guard: check if shareText contains any sensitive owner/broker info from normalizedProperties
+    // Live Leak Guard: check if edited shareText contains any sensitive owner/broker/unit info
     val hasSensitiveLeak = remember(shareText, normalizedProperties) {
         normalizedProperties.any { prop ->
             val owner = prop.ownerName?.trim().orEmpty()
             val ownerPh = prop.ownerContact?.trim().orEmpty()
             val broker = prop.brokerName?.trim().orEmpty()
             val brokerPh = prop.brokerContact?.trim().orEmpty()
+            val unitNo = prop.unitNumber.trim()
             (owner.isNotBlank() && owner.length > 2 && shareText.contains(owner, true)) ||
                 (ownerPh.isNotBlank() && ownerPh.length > 5 && shareText.contains(ownerPh, true)) ||
                 (broker.isNotBlank() && broker.length > 2 && shareText.contains(broker, true)) ||
-                (brokerPh.isNotBlank() && brokerPh.length > 5 && shareText.contains(brokerPh, true))
+                (brokerPh.isNotBlank() && brokerPh.length > 5 && shareText.contains(brokerPh, true)) ||
+                (unitNo.isNotBlank() && unitNo.length >= 2 && shareText.contains("Unit $unitNo", true))
         }
     }
 
@@ -229,7 +271,7 @@ fun WhatsAppShareDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.9f)
+                .fillMaxHeight(0.92f)
                 .navigationBarsPadding()
                 .imePadding()
                 .padding(horizontal = 18.dp, vertical = 8.dp)
@@ -240,7 +282,7 @@ fun WhatsAppShareDialog(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "WhatsApp Share Workflow",
                         color = TextPrimary,
@@ -248,7 +290,11 @@ fun WhatsAppShareDialog(
                         fontWeight = FontWeight.ExtraBold
                     )
                     Text(
-                        text = if (normalizedProperties.size > 1) "${normalizedProperties.size} Properties Selected" else "Client-Safe Professional Pitch",
+                        text = if (normalizedProperties.size > 1) {
+                            "${normalizedProperties.size} Properties • Unified Executive Format"
+                        } else {
+                            "Unified Executive Share • Clients & Brokers"
+                        },
                         color = PrimaryActionOrange,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
@@ -261,57 +307,70 @@ fun WhatsAppShareDialog(
 
             Spacer(Modifier.height(8.dp))
 
-            // Audience Mode Selector & Concise Toggle
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    color = SurfaceMuted,
-                    shape = RoundedCornerShape(8.dp)
+            // Unified Tab Strip (NO separate Client vs Broker toggle) + Share to Matching Brokers entry
+            if (normalizedProperties.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val availableModes = remember(normalizedProperties.size) {
-                        if (normalizedProperties.isNotEmpty()) {
-                            ShareAudienceMode.entries
-                        } else {
-                            listOf(ShareAudienceMode.CLIENT, ShareAudienceMode.BROKER)
-                        }
-                    }
-                    Row(modifier = Modifier.padding(2.dp)) {
-                        availableModes.forEach { mode ->
-                            val selected = audienceMode == mode
-                            Surface(
-                                color = if (selected) PrimaryActionOrange else Color.Transparent,
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier
-                                    .clickable { audienceMode = mode }
-                                    .testTag("share_mode_tab_${mode.name.lowercase()}")
-                            ) {
-                                Text(
-                                    text = mode.label,
-                                    color = if (selected) OnPrimaryActionColor else TextPrimary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                                )
+                    Surface(
+                        color = SurfaceMuted,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(2.dp)) {
+                            ShareSheetTab.entries.forEach { tab ->
+                                val selected = activeTab == tab
+                                Surface(
+                                    color = if (selected) PrimaryActionOrange else Color.Transparent,
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier
+                                        .clickable { activeTab = tab }
+                                        .testTag("share_mode_tab_${tab.name.lowercase(Locale.ENGLISH)}")
+                                ) {
+                                    Text(
+                                        text = tab.label,
+                                        color = if (selected) OnPrimaryActionColor else TextPrimary,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp)
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                if (audienceMode != ShareAudienceMode.FB_MARKETPLACE && (normalizedProperties.size >= 3 || shareText.length > 1500)) {
-                    FilterChipItem(
-                        label = "Concise Mode",
-                        isSelected = conciseMode,
-                        onClick = { conciseMode = !conciseMode }
-                    )
+                    // 1-Tap entry to Share to Matching Brokers Sheet
+                    if (normalizedProperties.size == 1) {
+                        OutlinedButton(
+                            onClick = { showMatchingBrokersSheet = true },
+                            modifier = Modifier
+                                .heightIn(min = 36.dp)
+                                .testTag("open_matching_brokers_share_btn"),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            border = BorderStroke(1.dp, PrimaryActionOrange)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Groups,
+                                contentDescription = null,
+                                tint = PrimaryActionOrange,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = "Matching Brokers",
+                                color = PrimaryActionOrange,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
+                Spacer(Modifier.height(10.dp))
             }
 
-            Spacer(Modifier.height(10.dp))
-
-            if (audienceMode == ShareAudienceMode.FB_MARKETPLACE && normalizedProperties.isNotEmpty()) {
+            if (activeTab == ShareSheetTab.FB_MARKETPLACE && normalizedProperties.isNotEmpty()) {
                 FbMarketplaceAdPanel(
                     property = normalizedProperties.first(),
                     employeeName = employeeName,
@@ -319,7 +378,7 @@ fun WhatsAppShareDialog(
                     modifier = Modifier.weight(1f)
                 )
             } else {
-                // Upper 1-Tap Action Bar right below Client | Broker toggle (above Editable Message Preview)
+                // Upper 1-Tap Action Bar (Copy | Share PDF Proposal | Send on WhatsApp)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -330,13 +389,12 @@ fun WhatsAppShareDialog(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                            clipboard?.setPrimaryClip(ClipData.newPlainText("Property Share", shareText))
+                            WhatsAppShareHelper.copyToClipboard(context, shareText)
                             copiedConfirmed = true
                             Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier
-                            .weight(0.85f)
+                            .weight(0.8f)
                             .heightIn(min = 48.dp)
                             .testTag("whatsapp_share_copy_btn"),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
@@ -370,7 +428,7 @@ fun WhatsAppShareDialog(
                         },
                         enabled = !isGeneratingPdf,
                         modifier = Modifier
-                            .weight(1.35f)
+                            .weight(1.25f)
                             .heightIn(min = 48.dp)
                             .testTag("export_branded_pdf_proposal_btn"),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
@@ -388,7 +446,7 @@ fun WhatsAppShareDialog(
                         }
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            text = if (isGeneratingPdf) "Preparing PDF..." else "Share PDF Proposal",
+                            text = if (isGeneratingPdf) "Preparing PDF..." else "PDF Proposal",
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.5.sp,
                             color = TextPrimary,
@@ -398,12 +456,32 @@ fun WhatsAppShareDialog(
 
                     Button(
                         onClick = {
-                            WhatsAppIntentRouter.launchWhatsAppSafely(context, shareText, recipientPhone) { err ->
-                                feedbackError = err
+                            if (isPreparingPhotos) return@Button
+                            feedbackError = null
+                            if (includePhotos && photoSources.isNotEmpty()) {
+                                isPreparingPhotos = true
+                                coroutineScope.launch {
+                                    val uris = WhatsAppShareHelper.prepareShareablePhotoUris(context, photoSources)
+                                    isPreparingPhotos = false
+                                    WhatsAppShareHelper.shareToWhatsApp(
+                                        context = context,
+                                        message = shareText,
+                                        photoUris = uris,
+                                        recipientPhone = recipientPhone
+                                    ) { err -> feedbackError = err }
+                                }
+                            } else {
+                                WhatsAppShareHelper.shareToWhatsApp(
+                                    context = context,
+                                    message = shareText,
+                                    photoUris = emptyList(),
+                                    recipientPhone = recipientPhone
+                                ) { err -> feedbackError = err }
                             }
                         },
+                        enabled = !isPreparingPhotos,
                         modifier = Modifier
-                            .weight(1.1f)
+                            .weight(1.25f)
                             .heightIn(min = 48.dp)
                             .testTag("whatsapp_share_send_btn"),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
@@ -413,9 +491,118 @@ fun WhatsAppShareDialog(
                             contentColor = OnPrimaryActionColor
                         )
                     ) {
-                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("WhatsApp", fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+                        if (isPreparingPhotos) {
+                            CircularProgressIndicator(
+                                color = OnPrimaryActionColor,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Text("Preparing...", fontWeight = FontWeight.Bold, fontSize = 11.5.sp, maxLines = 1)
+                        } else {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = if (includePhotos && photoSources.isNotEmpty()) "Send + Photo" else "WhatsApp",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.5.sp,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+
+                // Combined Property Photo(s) Toggle & Thumbnail Preview Strip (shown when photos exist)
+                if (photoSources.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        color = SurfaceWhite,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            if (includePhotos) PrimaryActionOrange.copy(alpha = 0.55f) else BorderGrey
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("include_property_photos_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PhotoLibrary,
+                                        contentDescription = null,
+                                        tint = if (includePhotos) PrimaryActionOrange else SecondaryText,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "Include Property Photo(s) (${photoSources.size})",
+                                            color = TextPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = if (includePhotos && shareText.length > WhatsAppShareHelper.LONG_CAPTION_CLIPBOARD_THRESHOLD) {
+                                                "Sends photo + details • Auto-copies full text backup"
+                                            } else if (includePhotos) {
+                                                "Sends photo(s) + full details together on WhatsApp"
+                                            } else {
+                                                "Photo attachment off — sending text only"
+                                            },
+                                            color = SecondaryText,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                                Switch(
+                                    checked = includePhotos,
+                                    onCheckedChange = { includePhotos = it },
+                                    modifier = Modifier.testTag("include_property_photos_switch"),
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = PrimaryActionOrange
+                                    )
+                                )
+                            }
+
+                            if (includePhotos) {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    items(photoSources) { src ->
+                                        val model: Any = remember(src) {
+                                            if (src.startsWith("http", true) || src.startsWith("content://", true)) {
+                                                src
+                                            } else {
+                                                File(src)
+                                            }
+                                        }
+                                        AsyncImage(
+                                            model = model,
+                                            contentDescription = "Property photo preview",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(56.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .border(1.dp, BorderGrey, RoundedCornerShape(8.dp))
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -472,7 +659,7 @@ fun WhatsAppShareDialog(
                             Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                text = "Warning: Edited text appears to contain a saved owner/source contact.",
+                                text = "Warning: Edited text appears to contain a saved owner/source/unit detail.",
                                 color = Color(0xFF991B1B),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -527,7 +714,7 @@ fun WhatsAppShareDialog(
                                             val draft = GeminiProductivityEngine.draftPropertySharePitch(
                                                 properties = normalizedProperties,
                                                 tone = selectedAiTone,
-                                                audienceLabel = audienceMode.label,
+                                                audienceLabel = "Executive",
                                                 employeeName = employeeName,
                                                 employeeMobile = employeeMobile
                                             )
@@ -574,7 +761,7 @@ fun WhatsAppShareDialog(
                                                     val draft = GeminiProductivityEngine.draftPropertySharePitch(
                                                         properties = normalizedProperties,
                                                         tone = tone,
-                                                        audienceLabel = audienceMode.label,
+                                                        audienceLabel = "Executive",
                                                         employeeName = employeeName,
                                                         employeeMobile = employeeMobile
                                                     )
@@ -614,11 +801,12 @@ fun WhatsAppShareDialog(
                 OutlinedTextField(
                     value = shareText,
                     onValueChange = { shareText = it },
-                    label = { Text("Editable Message Preview") },
+                    label = { Text("Editable Unified Message Preview") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .heightIn(min = 180.dp),
+                        .heightIn(min = 180.dp)
+                        .testTag("whatsapp_share_preview_field"),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = SurfaceWhite,
                         unfocusedContainerColor = SurfaceWhite,
@@ -633,75 +821,28 @@ fun WhatsAppShareDialog(
             Spacer(Modifier.height(10.dp))
         }
     }
-}
 
-private fun buildMultiPropertyShareMessage(
-    properties: List<PropertyItem>,
-    audience: ShareAudienceMode,
-    concise: Boolean,
-    employeeName: String,
-    employeeMobile: String
-): String = buildString {
-    append("🏢 *Property Options* (${properties.size} ${if (properties.size == 1) "Property" else "Properties"})\n\n")
-    properties.forEachIndexed { index, prop ->
-        val cleanProjectTitle = prop.projectName.ifBlank { prop.propertyType }
-        append("${index + 1}. *$cleanProjectTitle* (${prop.propertyCode})\n")
-        if (prop.location.isNotBlank() && !prop.location.equals("Unverified Location", ignoreCase = true)) {
-            append("• Location: ${prop.location}\n")
-        }
-        append("• Type: ${prop.propertyType} (${prop.transactionType.ifBlank { prop.tab.title }})\n")
-        if (prop.carpetAreaSqFt > 0.0) {
-            append("• Carpet Area: ${CalculationUtils.formatNumber(prop.carpetAreaSqFt)} sq.ft\n")
-        }
-
-        if (!concise) {
-            if (prop.builtUpArea > 0.0) append("• Built-up Area: ${CalculationUtils.formatNumber(prop.builtUpArea)} sq.ft\n")
-            if (prop.furnishing != FurnishingType.UNFURNISHED) append("• Furnishing: ${prop.furnishing.label}\n")
-            if (prop.possession.isNotBlank()) append("• Possession: ${prop.possession}\n")
-            if (audience == ShareAudienceMode.BROKER) {
-                append("• Status: ${prop.status.label}\n")
-            }
-        }
-
-        val resolvedAmount = if (prop.tab.isRental) {
-            (prop.rent ?: 0.0).takeIf { it > 0.0 }
-                ?: prop.priceOrRent.takeIf { it > 0.0 }
-                ?: (prop.priceSale ?: 0.0).takeIf { it > 0.0 }
-                ?: 0.0
-        } else {
-            (prop.priceSale ?: 0.0).takeIf { it > 0.0 }
-                ?: prop.priceOrRent.takeIf { it > 0.0 }
-                ?: (prop.rent ?: 0.0).takeIf { it > 0.0 }
-                ?: 0.0
-        }
-        val priceText = if (resolvedAmount > 0.0) {
-            if (prop.tab.isRental) {
-                "${CalculationUtils.formatIndianCurrency(resolvedAmount)} / month"
-            } else {
-                CalculationUtils.formatIndianCurrency(resolvedAmount)
-            }
-        } else {
-            "Rent / Price on Request"
-        }
-        append("• Price / Rent: $priceText\n")
-
-        val rateText = CalculationUtils.formatRateForBasis(prop, AreaRateBasis.CARPET)
-        if (rateText != "Not Available" && !rateText.contains("₹0") && !concise) {
-            append("• Rate: $rateText\n")
-        }
-
-        if (prop.tab == InventoryTab.PRE_LEASED && (prop.rent ?: 0.0) > 0.0 && (prop.priceSale ?: 0.0) > 0.0) {
-            val annualRent = (prop.rent ?: 0.0) * 12.0
-            val yield = (annualRent / (prop.priceSale ?: 1.0)) * 100.0
-            append("• Gross Annual Rental Yield: ${String.format(java.util.Locale.US, "%.2f", yield)}%\n")
-        }
-
-        append("\n")
+    if (showMatchingBrokersSheet && normalizedProperties.isNotEmpty()) {
+        ShareToMatchingBrokersSheet(
+            property = normalizedProperties.first(),
+            unifiedMessage = shareText,
+            photoSources = photoSources,
+            onDismiss = { showMatchingBrokersSheet = false }
+        )
     }
-
-    append("Contact POC: $employeeName\n")
-    append("Mobile: ${employeeMobile.ifBlank { "9766880099" }} (TLC Real Estate)")
 }
+
+internal fun buildMultiPropertyShareMessage(
+    properties: List<PropertyItem>,
+    employeeName: String,
+    employeeMobile: String,
+    highlightsByPropertyId: Map<String, LinkedProjectBuildingHighlights> = emptyMap()
+): String = WhatsAppShareFormatter.formatMultipleProperties(
+    properties = properties,
+    employeeName = employeeName,
+    employeeMobile = employeeMobile,
+    highlightsByPropertyId = highlightsByPropertyId
+)
 
 object TlcProposalPdfGenerator {
 

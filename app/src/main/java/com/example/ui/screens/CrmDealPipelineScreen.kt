@@ -91,7 +91,9 @@ data class CrmDealItem(
     val landlordBrokerageInr: Double = 0.0,
     val developerBrokerageInr: Double = 0.0,
     val invoiceNotes: String = "",
-    val updatedAt: String = SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date())
+    val updatedAt: String = SimpleDateFormat("dd/MM/yyyy", Locale.ENGLISH).apply {
+        timeZone = java.util.TimeZone.getTimeZone("Asia/Kolkata")
+    }.format(Date())
 ) {
     val totalBrokerageInr: Double
         get() = clientBrokerageInr + landlordBrokerageInr + developerBrokerageInr
@@ -112,13 +114,11 @@ object CrmDealStorage {
                     val obj = arr.optJSONObject(i) ?: continue
                     list.add(fromJson(obj))
                 }
-                if (list.isNotEmpty()) return list
+                return list
             } catch (_: Exception) {
             }
         }
-        val seeded = buildInitialSeedDeals(inventory)
-        saveDeals(context, seeded)
-        return seeded
+        return emptyList()
     }
 
     fun saveDeals(context: Context, deals: List<CrmDealItem>) {
@@ -128,89 +128,6 @@ object CrmDealStorage {
             .edit()
             .putString(KEY_DEALS, arr.toString())
             .apply()
-    }
-
-    private fun buildInitialSeedDeals(inventory: List<PropertyItem>): List<CrmDealItem> {
-        val p1 = inventory.firstOrNull { it.propertyCategory == PropertyCategory.COMMERCIAL } ?: inventory.firstOrNull()
-        val p2 = inventory.drop(1).firstOrNull { it.propertyCategory == PropertyCategory.COMMERCIAL } ?: inventory.getOrNull(1)
-        val p3 = inventory.firstOrNull { it.propertyCategory == PropertyCategory.RESIDENTIAL } ?: inventory.getOrNull(2)
-
-        val rent1 = (p1?.rent ?: p1?.priceOrRent ?: 185000.0).let { if (it <= 0.0) 185000.0 else it }
-        val rent2 = (p2?.rent ?: p2?.priceOrRent ?: 320000.0).let { if (it <= 0.0) 320000.0 else it }
-        val price3 = (p3?.priceSale ?: p3?.priceOrRent ?: 16500000.0).let { if (it <= 0.0) 16500000.0 else it }
-
-        val bu1 = (p1?.builtUpAreaSqFt ?: 0.0).let { if (it > 0.0) it else 3300.0 }
-        val bu2 = (p2?.builtUpAreaSqFt ?: 0.0).let { if (it > 0.0) it else 5500.0 }
-        val bu3 = (p3?.builtUpAreaSqFt ?: 0.0).let { if (it > 0.0) it else 2850.0 }
-
-        val dep1 = (p1?.deposit ?: 0.0).let { if (it > 0.0) it else (rent1 * 3.0) }
-        val dep2 = (p2?.deposit ?: 0.0).let { if (it > 0.0) it else (rent2 * 3.0) }
-
-        return listOf(
-            CrmDealItem(
-                id = "DL-101",
-                propertyCode = p1?.propertyCode?.ifBlank { "CO-0101" } ?: "CO-0101",
-                projectName = p1?.projectName?.ifBlank { "EON Free Zone Phase 2" } ?: "EON Free Zone Phase 2",
-                location = p1?.location?.ifBlank { "Kharadi, Pune" } ?: "Kharadi, Pune",
-                transactionType = "Lease",
-                carpetAreaSqFt = (p1?.carpetAreaSqFt ?: 0.0).let { if (it > 0.0) it else 2450.0 },
-                builtUpAreaSqFt = bu1,
-                monthlyRentOrPriceInr = rent1,
-                securityDepositInr = dep1,
-                lockInPeriod = "36 Months",
-                escalationTerms = "5% every 12 months",
-                possessionDate = p1?.possession?.ifBlank { "Immediate" } ?: "Immediate",
-                clientName = "Vertex Cloud Technologies Pvt. Ltd.",
-                ownerName = p1?.ownerName?.ifBlank { "Panchshil Corporate Park LLP" } ?: "Panchshil Corporate Park LLP",
-                stage = CrmDealStage.LOI_TOKEN,
-                clientBrokerageInr = rent1,
-                landlordBrokerageInr = rent1,
-                developerBrokerageInr = 0.0,
-                invoiceNotes = "LOI signed, 3-month security deposit term sheet shared"
-            ),
-            CrmDealItem(
-                id = "DL-102",
-                propertyCode = p2?.propertyCode?.ifBlank { "CO-0204" } ?: "CO-0204",
-                projectName = p2?.projectName?.ifBlank { "World Trade Center" } ?: "World Trade Center",
-                location = p2?.location?.ifBlank { "Kharadi, Pune" } ?: "Kharadi, Pune",
-                transactionType = "Lease",
-                carpetAreaSqFt = (p2?.carpetAreaSqFt ?: 0.0).let { if (it > 0.0) it else 4100.0 },
-                builtUpAreaSqFt = bu2,
-                monthlyRentOrPriceInr = rent2,
-                securityDepositInr = dep2,
-                lockInPeriod = "36 Months",
-                escalationTerms = "15% every 36 months",
-                possessionDate = "1st Next Month",
-                clientName = "Nordic FinTech Global Services",
-                ownerName = p2?.ownerName?.ifBlank { "Rohan Holdings" } ?: "Rohan Holdings",
-                stage = CrmDealStage.REGISTRATION,
-                clientBrokerageInr = rent2,
-                landlordBrokerageInr = rent2,
-                developerBrokerageInr = 0.0,
-                invoiceNotes = "Leave & License registration scheduled; invoice ready"
-            ),
-            CrmDealItem(
-                id = "DL-103",
-                propertyCode = p3?.propertyCode?.ifBlank { "RS-0312" } ?: "RS-0312",
-                projectName = p3?.projectName?.ifBlank { "Trump Towers / Yoo Pune" } ?: "Trump Towers / Yoo Pune",
-                location = p3?.location?.ifBlank { "Kalyani Nagar, Pune" } ?: "Kalyani Nagar, Pune",
-                transactionType = "Sale",
-                carpetAreaSqFt = (p3?.carpetAreaSqFt ?: 0.0).let { if (it > 0.0) it else 2150.0 },
-                builtUpAreaSqFt = bu3,
-                monthlyRentOrPriceInr = price3,
-                securityDepositInr = price3 * 0.10,
-                lockInPeriod = "N/A (Outright Sale)",
-                escalationTerms = "N/A",
-                possessionDate = "Ready Possession",
-                clientName = "Siddharth & Meera Deshmukh",
-                ownerName = p3?.ownerName?.ifBlank { "Panchshil Realty" } ?: "Panchshil Realty",
-                stage = CrmDealStage.BROKERAGE_BILLED,
-                clientBrokerageInr = price3 * 0.01,
-                landlordBrokerageInr = 0.0,
-                developerBrokerageInr = price3 * 0.02,
-                invoiceNotes = "2% developer ladder + 1% buyer mandate billed"
-            )
-        )
     }
 
     private fun toJson(item: CrmDealItem): JSONObject = JSONObject().apply {

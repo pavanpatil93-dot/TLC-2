@@ -45,6 +45,7 @@ enum class PortalNavTab(
 fun PortalBottomNavBar(
     selectedTab: PortalNavTab,
     onTabSelected: (PortalNavTab) -> Unit,
+    unloggedCallsCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -65,6 +66,7 @@ fun PortalBottomNavBar(
         ) {
             PortalNavTab.entries.forEach { tab ->
                 val isSelected = tab == selectedTab
+                val showCallsBadge = tab == PortalNavTab.CALLS && unloggedCallsCount > 0
 
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -91,12 +93,37 @@ fun PortalBottomNavBar(
                             .padding(horizontal = 12.dp, vertical = 4.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = tab.icon,
-                            contentDescription = tab.label,
-                            tint = if (isSelected) PrimaryActionOrange else SecondaryText,
-                            modifier = Modifier.size(22.dp)
-                        )
+                        if (showCallsBadge) {
+                            BadgedBox(
+                                badge = {
+                                    Badge(
+                                        containerColor = StatusDangerRed,
+                                        contentColor = OnPrimaryActionColor,
+                                        modifier = Modifier.testTag("nav_calls_unlogged_badge")
+                                    ) {
+                                        Text(
+                                            text = if (unloggedCallsCount > 99) "99+" else "$unloggedCallsCount",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = tab.icon,
+                                    contentDescription = "${tab.label} ($unloggedCallsCount unlogged)",
+                                    tint = if (isSelected) PrimaryActionOrange else SecondaryText,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        } else {
+                            Icon(
+                                imageVector = tab.icon,
+                                contentDescription = tab.label,
+                                tint = if (isSelected) PrimaryActionOrange else SecondaryText,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(2.dp))

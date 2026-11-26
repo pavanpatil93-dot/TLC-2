@@ -472,6 +472,7 @@ fun PropertyDetailScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
+                        .imePadding()
                         .padding(horizontal = 12.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -692,10 +693,36 @@ fun PropertyDetailScreen(
                                 text = buildList {
                                     if (property.unitNumber.isNotBlank()) add("Unit ${property.unitNumber}")
                                     if (property.location.isNotBlank()) add(property.location)
-                                }.joinToString(", "),
+                                    property.effectiveMicroMarket?.takeIf {
+                                        !it.equals(property.location, ignoreCase = true)
+                                    }?.let { add(it) }
+                                }.joinToString(" • "),
                                 color = SecondaryText,
                                 fontSize = 13.sp
                             )
+                        }
+
+                        val projectMetaBadges = listOfNotNull(
+                            property.projectId.takeIf { it.isNotBlank() }?.let { "Project ID: $it" },
+                            property.puneZone?.takeIf { it.isNotBlank() },
+                            property.jurisdiction?.takeIf { it.isNotBlank() },
+                            property.ocStatus?.takeIf { it.isNotBlank() }
+                        )
+                        if (projectMetaBadges.isNotEmpty()) {
+                            Surface(
+                                color = SurfaceMuted,
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, BorderGrey),
+                                modifier = Modifier.testTag("detail_project_id_badge")
+                            ) {
+                                Text(
+                                    text = projectMetaBadges.joinToString(" • "),
+                                    color = TextPrimary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
                         }
 
                         // Batch 20: Team "Last Called By" History Banner
@@ -990,9 +1017,30 @@ fun PropertyDetailScreen(
                                 if (property.carpetAreaSqFt > 0.0 && saleVal > 0.0) {
                                     val rate = saleVal / property.carpetAreaSqFt
                                     Text(
-                                        text = "Rate: ${CalculationUtils.formatRateValue(rate)} / sq.ft. (Carpet)",
+                                        text = "Carpet Rate: ${CalculationUtils.formatRateValue(rate)} / sq.ft",
                                         fontSize = 12.sp,
                                         color = SecondaryText
+                                    )
+                                }
+                                val builtUpForSale = property.builtUpAreaSqFt?.takeIf { it > 0.0 }
+                                if (builtUpForSale != null && saleVal > 0.0) {
+                                    val buRate = saleVal / builtUpForSale
+                                    Text(
+                                        text = "Built-Up Rate: ${CalculationUtils.formatRateValue(buRate)} / sq.ft",
+                                        fontSize = 12.sp,
+                                        color = SecondaryText
+                                    )
+                                }
+                                val preLeasedRentVal = (property.rent ?: property.monthlyRentalIncome ?: 0.0).takeIf { it > 0.0 }
+                                val computedGrossRoi = property.roiPercent?.takeIf { it > 0.0 }
+                                    ?: com.example.data.TlcPropertyCalculator.calculateGrossRoiPercent(preLeasedRentVal, saleVal.takeIf { it > 0.0 })
+                                if (property.effectiveIsPreLeased && computedGrossRoi != null) {
+                                    Text(
+                                        text = String.format(java.util.Locale.US, "Gross ROI: %.2f%% p.a.", computedGrossRoi) +
+                                            (property.tenantName?.takeIf { it.isNotBlank() }?.let { " • Tenant: $it" } ?: ""),
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = StatusSuccessGreen
                                     )
                                 }
                             }
@@ -1029,6 +1077,21 @@ fun PropertyDetailScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = PrimaryActionOrange
                                 )
+                                if (property.carpetAreaSqFt > 0.0 && rentVal > 0.0) {
+                                    Text(
+                                        text = "Carpet Rate: ${CalculationUtils.formatRateValue(rentVal / property.carpetAreaSqFt)} / sq.ft / mo",
+                                        fontSize = 12.sp,
+                                        color = SecondaryText
+                                    )
+                                }
+                                val builtUpForLease = property.builtUpAreaSqFt?.takeIf { it > 0.0 }
+                                if (builtUpForLease != null && rentVal > 0.0) {
+                                    Text(
+                                        text = "Built-Up Rate: ${CalculationUtils.formatRateValue(rentVal / builtUpForLease)} / sq.ft / mo",
+                                        fontSize = 12.sp,
+                                        color = SecondaryText
+                                    )
+                                }
                                 val depositVal = property.deposit ?: 0.0
                                 if (depositVal > 0.0) {
                                     Text(
@@ -1053,18 +1116,39 @@ fun PropertyDetailScreen(
             item {
                 val specPairs = remember(property) {
                     buildList {
+                        property.location
+                            .takeIf { InventoryQuality.isMeaningfulText(it) }
+                            ?.let { add("Location" to it) }
+                        property.effectiveMicroMarket
+                            ?.takeIf { InventoryQuality.isMeaningfulText(it) }
+                            ?.let { add("Micro-Market" to it) }
+                        property.projectId
+                            .takeIf { InventoryQuality.isMeaningfulText(it) }
+                            ?.let { add("Project ID" to it) }
                         property.furnishing.label
                             .takeIf { InventoryQuality.isMeaningfulText(it) }
                             ?.let { add("Furnishing" to it) }
                         (property.parking.takeIf { InventoryQuality.isMeaningfulText(it) }
                             ?: property.parkingCount?.takeIf { it > 0 }?.let { "$it Reserved Bays" })
-                            ?.let { add("Parking" to it) }
-                        property.washrooms
-                            .takeIf { InventoryQuality.isMeaningfulText(it) }
-                            ?.let { add("Washrooms" to it) }
-                        property.pantry
-                            .takeIf { InventoryQuality.isMeaningfulText(it) }
-                            ?.let { add("Pantry" to it) }
+                            ?.let { add("Car Parking" to it) }
+                        property.attachedPantry
+                            ?.takeIf { InventoryQuality.isMeaningfulText(it) }
+                            ?.let { add("Attached Pantry" to it) }
+                            ?: property.pantry.takeIf { InventoryQuality.isMeaningfulText(it) }?.let { add("Pantry" to it) }
+                        property.attachedWashroom
+                            ?.takeIf { InventoryQuality.isMeaningfulText(it) }
+                            ?.let { add("Attached Washroom" to it) }
+                            ?: property.washrooms.takeIf { InventoryQuality.isMeaningfulText(it) }?.let { add("Washrooms" to it) }
+                        property.effectiveFrontageFt?.takeIf { it > 0.0 }
+                            ?.let { add("Frontage" to "${CalculationUtils.formatNumber(it)} ft") }
+                        property.effectiveClearHeightFt?.takeIf { it > 0.0 }
+                            ?.let { add("Clear Height" to "${CalculationUtils.formatNumber(it)} ft") }
+                        property.mezzanineCarpetSqFt?.takeIf { it > 0.0 }
+                            ?.let { add("Mezzanine Carpet" to "${CalculationUtils.formatNumber(it)} sq.ft") }
+                        property.truckAccess?.takeIf { InventoryQuality.isMeaningfulText(it) }
+                            ?.let { add("Truck Access" to it) }
+                        property.powerLoad?.takeIf { InventoryQuality.isMeaningfulText(it) }
+                            ?.let { add("Power Load" to it) }
                         (property.floorLevel?.takeIf { InventoryQuality.isMeaningfulText(it) }
                             ?: property.floor.takeIf { InventoryQuality.isMeaningfulText(it) })
                             ?.let { add("Flooring / Level" to it) }
@@ -1082,6 +1166,8 @@ fun PropertyDetailScreen(
                         property.possession
                             .takeIf { InventoryQuality.isMeaningfulText(it) }
                             ?.let { add("Possession" to it) }
+                        property.targetPossessionDate?.takeIf { InventoryQuality.isMeaningfulText(it) }
+                            ?.let { add("Target Possession Date" to it) }
                     }
                 }
 
@@ -1680,7 +1766,7 @@ fun PropertyDetailScreen(
     // ── DETAILED VERIFICATION LOG SHEET ──
     if (showDetailedVerificationLogSheet) {
         val ageState = remember(property) { getVerificationAgeState(property, validityDays = 60) }
-        val isStrictLive = remember(property) { InventoryQuality.isStrictlyLive(property) }
+        val isVerifiedStatus = property.verificationStatus == VerificationStatus.VERIFIED
         ModalBottomSheet(
             onDismissRequest = { showDetailedVerificationLogSheet = false },
             containerColor = SurfaceWhite,
@@ -1690,6 +1776,7 @@ fun PropertyDetailScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
+                    .imePadding()
                     .padding(horizontal = 20.dp, vertical = 12.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -1708,12 +1795,12 @@ fun PropertyDetailScreen(
                         )
                     }
                     Surface(
-                        color = if (isStrictLive) StatusSuccessGreen.copy(alpha = 0.14f) else StatusWarningAmber.copy(alpha = 0.16f),
+                        color = if (isVerifiedStatus) StatusSuccessGreen.copy(alpha = 0.14f) else StatusWarningAmber.copy(alpha = 0.16f),
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(
-                            text = if (isStrictLive) "Verified Live" else "Pending Review",
-                            color = if (isStrictLive) StatusSuccessGreen else StatusWarningAmber,
+                            text = if (isVerifiedStatus) "Verified" else "Pending",
+                            color = if (isVerifiedStatus) StatusSuccessGreen else StatusWarningAmber,
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)

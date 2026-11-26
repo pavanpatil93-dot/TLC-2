@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 val LocalPropertyMapHandler = compositionLocalOf<((PropertyItem) -> Unit)?> { null }
+val LocalMatchingBrokersHandler = compositionLocalOf<((PropertyItem) -> Unit)?> { null }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,11 +66,15 @@ fun PropertyCard(
     onVerificationSwitchChange: ((Boolean) -> Unit)? = null,
     linkedUnitCount: Int = 1,
     onInlineUpdateProperty: ((PropertyItem, Boolean) -> Unit)? = null,
-    onUploadPhoto: (suspend (String, String, String, ByteArray) -> Result<String>)? = null
+    onUploadPhoto: (suspend (String, String, String, ByteArray) -> Result<String>)? = null,
+    onOpenMatchingBrokers: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val mapHandler = LocalPropertyMapHandler.current
+    val matchingBrokersHandler = LocalMatchingBrokersHandler.current
+    val triggerMatchingBrokers: (() -> Unit)? = onOpenMatchingBrokers
+        ?: matchingBrokersHandler?.let { handler -> { handler(property) } }
     var moreMenuExpanded by remember(property.id) { mutableStateOf(false) }
     var showCompletenessSheet by remember(property.id) { mutableStateOf(false) }
     var showVerifySheet by remember(property.id) { mutableStateOf(false) }
@@ -88,15 +93,18 @@ fun PropertyCard(
     }
     val verificationAgeState = precomputed.verificationAgeState
 
+    val isVerifiedProp = property.verificationStatus == VerificationStatus.VERIFIED
+    val isActiveProp = precomputed.isActiveInventory
     val verificationBadgeLabel = when {
         property.archiveStatus == ArchiveStatus.ARCHIVED -> "Archived"
-        verificationAgeState == VerificationAgeState.CURRENT -> "Live · Verified"
+        !isActiveProp -> property.status.label
+        verificationAgeState == VerificationAgeState.CURRENT -> "Verified"
         verificationAgeState == VerificationAgeState.DUE -> "Recheck 60d+"
         else -> "Pending"
     }
 
     val verificationBadgeColor = when {
-        property.archiveStatus == ArchiveStatus.ARCHIVED -> SecondaryText
+        property.archiveStatus == ArchiveStatus.ARCHIVED || !isActiveProp -> SecondaryText
         verificationAgeState == VerificationAgeState.CURRENT -> StatusSuccessGreen
         verificationAgeState == VerificationAgeState.DUE -> StatusWarningAmber
         else -> StatusDangerRed
@@ -435,7 +443,7 @@ fun PropertyCard(
                     )
                 }
 
-                if (!isStrictlyLive && property.archiveStatus != ArchiveStatus.ARCHIVED) {
+                if (!isVerifiedProp && isActiveProp) {
                     Surface(
                         onClick = triggerCompleteAndGoLive,
                         color = PrimaryActionOrange.copy(alpha = 0.14f),
@@ -452,14 +460,14 @@ fun PropertyCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.RocketLaunch,
+                                imageVector = Icons.Default.VerifiedUser,
                                 contentDescription = null,
                                 tint = PrimaryActionOrange,
                                 modifier = Modifier.size(13.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "Complete & Go Live",
+                                text = "Verify Status",
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = PrimaryActionOrange,
@@ -507,6 +515,37 @@ fun PropertyCard(
                             tint = Color.Unspecified,
                             modifier = Modifier.size(20.dp)
                         )
+                    }
+                    if (triggerMatchingBrokers != null) {
+                        Surface(
+                            onClick = triggerMatchingBrokers,
+                            color = PrimaryActionOrange.copy(alpha = 0.12f),
+                            border = BorderStroke(1.dp, PrimaryActionOrange.copy(alpha = 0.45f)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("property_card_brokers_${property.id}")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Groups,
+                                    contentDescription = "Matching Brokers",
+                                    tint = PrimaryActionOrange,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Brokers",
+                                    color = PrimaryActionOrange,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
+                        }
                     }
                     moreMenuControl()
                 }
@@ -809,8 +848,41 @@ fun PropertyCard(
                         )
                     }
 
-                    // 4. Live Switch (ONLY when strictly Live) or "Complete & Go Live" Pill Button (when Pending)
-                    if (isStrictlyLive) {
+                    // 3b. Matching Brokers Direct Button
+                    if (triggerMatchingBrokers != null) {
+                        Surface(
+                            onClick = triggerMatchingBrokers,
+                            color = PrimaryActionOrange.copy(alpha = 0.12f),
+                            border = BorderStroke(1.dp, PrimaryActionOrange.copy(alpha = 0.45f)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("property_card_brokers_${property.id}")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Groups,
+                                    contentDescription = "Open Matching Brokers",
+                                    tint = PrimaryActionOrange,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                                Text(
+                                    text = "Brokers",
+                                    color = PrimaryActionOrange,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+
+                    // 4. Optional Verification Switch (when Verified) or non-blocking "Verify" Pill Button (when Pending)
+                    if (isVerifiedProp && isActiveProp) {
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
@@ -819,8 +891,8 @@ fun PropertyCard(
                         ) {
                             Switch(
                                 checked = true,
-                                onCheckedChange = { targetLive ->
-                                    if (!targetLive) {
+                                onCheckedChange = { targetVerified ->
+                                    if (!targetVerified) {
                                         onVerificationSwitchChange?.invoke(false)
                                     }
                                 },
@@ -833,12 +905,12 @@ fun PropertyCard(
                                 ),
                                 modifier = Modifier
                                     .semantics {
-                                        contentDescription = "Verified Live — Toggle off to move to Pending"
+                                        contentDescription = "Verified — Toggle off to mark Pending"
                                     }
                                     .testTag("property_card_verify_switch_${property.id}")
                             )
                         }
-                    } else if (property.archiveStatus != ArchiveStatus.ARCHIVED) {
+                    } else if (isActiveProp) {
                         Surface(
                             onClick = triggerCompleteAndGoLive,
                             color = PrimaryActionOrange.copy(alpha = 0.14f),
@@ -854,13 +926,13 @@ fun PropertyCard(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.RocketLaunch,
+                                    imageVector = Icons.Default.VerifiedUser,
                                     contentDescription = null,
                                     tint = PrimaryActionOrange,
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Text(
-                                    text = "Complete & Go Live",
+                                    text = "Verify",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = PrimaryActionOrange,
@@ -963,6 +1035,8 @@ fun VerifyPropertyBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {

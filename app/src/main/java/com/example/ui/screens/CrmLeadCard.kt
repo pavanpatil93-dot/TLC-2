@@ -937,8 +937,8 @@ private fun CrmLeadReassignDialog(
     onSaved: () -> Unit
 ) {
     val context = LocalContext.current
-    val allEmployees = remember {
-        listOf("Amit", "Rohan", "Neha", "Vikram", "Priya", "Sagar")
+    val allEmployees = remember(context) {
+        com.example.data.SheetsRepository.getSyncedActiveEmployeeNames(context)
     }
     var selectedAssignee by remember { mutableStateOf(lead.assignedTo) }
     var reason by remember { mutableStateOf("") }

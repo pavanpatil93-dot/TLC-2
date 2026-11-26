@@ -480,56 +480,6 @@ object CrmPipelineAndWorkloadEngine {
     private const val PIPELINE_PREFS = "crm_pipeline_projections_v1"
     private val lock = Any()
 
-    private val defaultTeamDirectory = listOf(
-        EmployeeEligibilityItem(
-            employeeId = "EMP-SAGAR",
-            employeeName = "Sagar",
-            role = EmployeeAccessRole.ADMIN,
-            isActive = true,
-            businessScopes = listOf(BusinessDivisionScope.ASCEND_COMMERCIAL, BusinessDivisionScope.AUREA_RESIDENTIAL)
-        ),
-        EmployeeEligibilityItem(
-            employeeId = "EMP-AMIT",
-            employeeName = "Amit",
-            role = EmployeeAccessRole.COMMERCIAL_MANAGER,
-            isActive = true,
-            businessScopes = listOf(BusinessDivisionScope.ASCEND_COMMERCIAL),
-            reportsToEmployeeId = "EMP-SAGAR"
-        ),
-        EmployeeEligibilityItem(
-            employeeId = "EMP-NEHA",
-            employeeName = "Neha",
-            role = EmployeeAccessRole.RESIDENTIAL_MANAGER,
-            isActive = true,
-            businessScopes = listOf(BusinessDivisionScope.AUREA_RESIDENTIAL),
-            reportsToEmployeeId = "EMP-SAGAR"
-        ),
-        EmployeeEligibilityItem(
-            employeeId = "EMP-ROHAN",
-            employeeName = "Rohan",
-            role = EmployeeAccessRole.SALES_EXECUTIVE,
-            isActive = true,
-            businessScopes = listOf(BusinessDivisionScope.ASCEND_COMMERCIAL),
-            reportsToEmployeeId = "EMP-AMIT"
-        ),
-        EmployeeEligibilityItem(
-            employeeId = "EMP-PRIYA",
-            employeeName = "Priya",
-            role = EmployeeAccessRole.SALES_EXECUTIVE,
-            isActive = true,
-            businessScopes = listOf(BusinessDivisionScope.AUREA_RESIDENTIAL),
-            reportsToEmployeeId = "EMP-NEHA"
-        ),
-        EmployeeEligibilityItem(
-            employeeId = "EMP-VIKRAM",
-            employeeName = "Vikram",
-            role = EmployeeAccessRole.SALES_EXECUTIVE,
-            isActive = true,
-            businessScopes = listOf(BusinessDivisionScope.ASCEND_COMMERCIAL, BusinessDivisionScope.AUREA_RESIDENTIAL),
-            reportsToEmployeeId = "EMP-SAGAR"
-        )
-    )
-
     fun loadEligibleEmployees(context: Context): List<EmployeeEligibilityItem> =
         getTeamEligibilityDirectory(context).filter { it.isActive }
 
@@ -550,11 +500,35 @@ object CrmPipelineAndWorkloadEngine {
                 reportsToEmployeeId = emp.reportsToEmployeeId
             )
         }
-        val existingNames = mappedFromDb.map { it.employeeName.lowercase(Locale.US) }.toSet()
-        val combined = mappedFromDb + defaultTeamDirectory.filter {
-            it.employeeName.lowercase(Locale.US) !in existingNames
+        if (mappedFromDb.isNotEmpty()) {
+            return mappedFromDb.sortedWith(compareByDescending<EmployeeEligibilityItem> { it.isActive }.thenBy { it.employeeName })
         }
-        return combined.sortedWith(compareByDescending<EmployeeEligibilityItem> { it.isActive }.thenBy { it.employeeName })
+        // If Room hasn't been hydrated yet, fall back only to synced `Team & Users` disk cache (never hardcoded test accounts)
+        val syncedDiskMembers = com.example.data.OfflineDiskCache.loadEmployeeDirectory(context)
+            .filter { it.name.isNotBlank() }
+            .map { member ->
+                val accessRole = when {
+                    member.role.contains("super", true) || member.role.contains("admin", true) -> EmployeeAccessRole.ADMIN
+                    member.role.contains("commercial", true) -> EmployeeAccessRole.COMMERCIAL_MANAGER
+                    member.role.contains("residential", true) -> EmployeeAccessRole.RESIDENTIAL_MANAGER
+                    member.role.contains("manager", true) -> EmployeeAccessRole.COMMERCIAL_MANAGER
+                    else -> EmployeeAccessRole.SALES_EXECUTIVE
+                }
+                val scopes = when {
+                    member.division.contains("both", true) || member.division.contains("all", true) -> BusinessDivisionScope.entries.toList()
+                    member.division.contains("resi", true) -> listOf(BusinessDivisionScope.AUREA_RESIDENTIAL)
+                    else -> listOf(BusinessDivisionScope.ASCEND_COMMERCIAL)
+                }
+                EmployeeEligibilityItem(
+                    employeeId = member.id.ifBlank { member.name },
+                    employeeName = member.name,
+                    role = accessRole,
+                    isActive = member.isActiveMember(),
+                    businessScopes = scopes,
+                    reportsToEmployeeId = member.managerId.ifBlank { null }
+                )
+            }
+        return syncedDiskMembers.sortedWith(compareByDescending<EmployeeEligibilityItem> { it.isActive }.thenBy { it.employeeName })
     }
 
     fun isHistoricalLeadratImport(lead: CrmLead): Boolean {

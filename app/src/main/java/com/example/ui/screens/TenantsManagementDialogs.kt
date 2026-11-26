@@ -24,7 +24,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.crm.ActiveCallActionContext
+import com.example.crm.CallActionSessionManager
 import com.example.crm.CrmCallManager
+import com.example.crm.PinnedCallMiniAudioBar
 import com.example.data.OfflineDiskCache
 import com.example.model.*
 import com.example.ui.components.SearchableDropdownField
@@ -37,6 +40,7 @@ import java.util.UUID
 internal fun TenantEditorDialog(
     initialTenant: OfflineDiskCache.TenantCacheRecord,
     inventory: List<PropertyItem>,
+    activeCallContext: ActiveCallActionContext? = null,
     onDismiss: () -> Unit,
     onSave: (OfflineDiskCache.TenantCacheRecord) -> Unit
 ) {
@@ -113,6 +117,8 @@ internal fun TenantEditorDialog(
                     }
                 }
                 HorizontalDivider(color = BorderGrey)
+
+                // Audio playback remains strictly inline on CallLogActionScreen; activeCallContext stays active for Auto-Link on Save.
 
                 Column(
                     modifier = Modifier
@@ -581,6 +587,7 @@ internal fun TenantLogIssueDialog(
 @Composable
 internal fun BrokerVendorEditorDialog(
     initialRecord: BrokerVendorRecord,
+    activeCallContext: ActiveCallActionContext? = null,
     onDismiss: () -> Unit,
     onSave: (BrokerVendorRecord) -> Unit
 ) {
@@ -633,6 +640,8 @@ internal fun BrokerVendorEditorDialog(
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = SecondaryText)
                     }
                 }
+
+                // Audio playback remains strictly inline on CallLogActionScreen; activeCallContext stays active for Auto-Link on Save.
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("Broker / CP", "Ops / Vendor").forEach { cat ->

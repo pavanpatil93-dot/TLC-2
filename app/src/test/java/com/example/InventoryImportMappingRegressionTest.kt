@@ -64,8 +64,7 @@ class InventoryImportMappingRegressionTest {
     @Test fun microMarketIsPreservedWithoutReplacingLocation() {
         val row = parse(office("Micro Market" to "East Pune"))
         assertEquals("Kharadi", row.location)
-        assertEquals("East Pune", row.unmappedColumns["Micro Market"])
-        assertTrue(row.remarks.orEmpty().contains("East Pune"))
+        assertEquals("East Pune", row.microMarket)
     }
 
     @Test fun microMarketCanSupplyAnOtherwiseMissingLocation() {

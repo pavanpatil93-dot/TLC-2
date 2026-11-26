@@ -64,7 +64,7 @@ data class CrmCallRecord(
     val timestamp: Long = System.currentTimeMillis(),
     val durationSeconds: Int = 0,
     val notes: String = "",
-    val assignedAgent: String = "Rahul Sharma",
+    val assignedAgent: String = "",
     val actionRequired: String = "Schedule Site Visit",
     val nextFollowUpDateTime: String = "Today, 4:00 PM",
     val leadStatus: String = "Active", // Active, Pending Follow-up, Site Visit Scheduled, Negotiation, Closed
@@ -78,8 +78,35 @@ data class CrmCallRecord(
     val handoverStatus: String = "",
     val handoverAssignedTo: String = "",
     val handedOverAt: Long = 0L,
-    val handoverCallbackAt: Long = 0L
+    val handoverCallbackAt: Long = 0L,
+    val deviceName: String? = null,
+    val syncStatus: String = "PENDING", // PENDING / SYNCED
+    val recordingFilename: String? = null,
+    val updatedAt: Long = System.currentTimeMillis()
 ) {
+    fun toRoomEntity(): com.example.data.master.CallLogEntity {
+        val roleAndId = listOfNotNull(
+            linkedOpportunityType?.takeIf { it.isNotBlank() },
+            linkedOpportunityId?.takeIf { it.isNotBlank() }
+        ).joinToString(" | ")
+        return com.example.data.master.CallLogEntity(
+            callId = id,
+            timestamp = timestamp,
+            callerName = callerName,
+            phoneNumber = phoneNumber,
+            direction = callType.name,
+            durationSeconds = durationSeconds,
+            roleOrLinkedId = roleAndId,
+            linkedTitle = linkedOpportunityTitle.orEmpty(),
+            notesOrAiSummary = notes,
+            employeeName = assignedAgent,
+            deviceName = deviceName,
+            recordingFilename = recordingFilename,
+            syncStatus = syncStatus.ifBlank { "PENDING" },
+            updatedAt = updatedAt
+        )
+    }
+
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
         put("callerName", callerName)
@@ -103,9 +130,37 @@ data class CrmCallRecord(
         put("handoverAssignedTo", handoverAssignedTo)
         put("handedOverAt", handedOverAt)
         put("handoverCallbackAt", handoverCallbackAt)
+        put("deviceName", deviceName.orEmpty())
+        put("syncStatus", syncStatus)
+        put("recordingFilename", recordingFilename.orEmpty())
+        put("updatedAt", updatedAt)
     }
 
     companion object {
+        fun fromRoomEntity(entity: com.example.data.master.CallLogEntity): CrmCallRecord {
+            val parts = entity.roleOrLinkedId.split("|").map { it.trim() }.filter { it.isNotBlank() }
+            val role = parts.firstOrNull()
+            val linkedId = parts.getOrNull(1) ?: parts.firstOrNull()?.takeIf { it.contains("-") }
+            return CrmCallRecord(
+                id = entity.callId,
+                callerName = entity.callerName.ifBlank { "Unknown Caller" },
+                phoneNumber = entity.phoneNumber,
+                callType = CallType.fromString(entity.direction),
+                timestamp = entity.timestamp,
+                durationSeconds = entity.durationSeconds,
+                notes = entity.notesOrAiSummary,
+                assignedAgent = entity.employeeName,
+                isLinked = !linkedId.isNullOrBlank() || !role.isNullOrBlank(),
+                linkedOpportunityType = role,
+                linkedOpportunityTitle = entity.linkedTitle.ifBlank { null },
+                linkedOpportunityId = linkedId,
+                deviceName = entity.deviceName?.takeIf { it.isNotBlank() },
+                syncStatus = entity.syncStatus.ifBlank { "SYNCED" },
+                recordingFilename = entity.recordingFilename?.takeIf { it.isNotBlank() },
+                updatedAt = entity.updatedAt
+            )
+        }
+
         fun fromJson(obj: JSONObject): CrmCallRecord = CrmCallRecord(
             id = obj.optString("id", UUID.randomUUID().toString()),
             callerName = obj.optString("callerName", "Unknown Caller"),
@@ -114,7 +169,9 @@ data class CrmCallRecord(
             timestamp = obj.optLong("timestamp", System.currentTimeMillis()),
             durationSeconds = obj.optInt("durationSeconds", 0),
             notes = obj.optString("notes", ""),
-            assignedAgent = obj.optString("assignedAgent", "Rahul Sharma"),
+            assignedAgent = obj.optString("assignedAgent", "").let {
+                if (it.equals("Rahul Sharma", ignoreCase = true)) "" else it
+            },
             actionRequired = obj.optString("actionRequired", "Schedule Site Visit"),
             nextFollowUpDateTime = obj.optString("nextFollowUpDateTime", "Today, 4:00 PM"),
             leadStatus = obj.optString("leadStatus", "Active"),
@@ -128,7 +185,11 @@ data class CrmCallRecord(
             handoverStatus = obj.optString("handoverStatus", ""),
             handoverAssignedTo = obj.optString("handoverAssignedTo", ""),
             handedOverAt = obj.optLong("handedOverAt", 0L),
-            handoverCallbackAt = obj.optLong("handoverCallbackAt", 0L)
+            handoverCallbackAt = obj.optLong("handoverCallbackAt", 0L),
+            deviceName = obj.optString("deviceName", "").ifBlank { null },
+            syncStatus = obj.optString("syncStatus", "SYNCED").ifBlank { "SYNCED" },
+            recordingFilename = obj.optString("recordingFilename", "").ifBlank { null },
+            updatedAt = obj.optLong("updatedAt", obj.optLong("timestamp", System.currentTimeMillis()))
         )
     }
 }
@@ -187,11 +248,35 @@ object CrmCallManager {
         return fromPrefs
     }
 
-    fun saveCalls(context: Context, calls: List<CrmCallRecord>) {
-        com.example.data.OfflineDiskCache.saveCallLogs(context, calls)
+    fun saveCalls(context: Context, calls: List<CrmCallRecord>, syncToRoom: Boolean = true) {
+        val cleaned = calls.filterNot { it.id.startsWith("demo_call_", ignoreCase = true) }
+        com.example.data.OfflineDiskCache.saveCallLogs(context, cleaned)
         val array = JSONArray()
-        calls.forEach { array.put(it.toJson()) }
+        cleaned.forEach { array.put(it.toJson()) }
         com.example.data.auditedCrmPreferences(context, PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CALLS, array.toString())
+            .apply()
+        if (syncToRoom) {
+            callSyncScope.launch {
+                runCatching {
+                    val dao = com.example.data.master.MasterProjectDatabase.getDatabase(context).masterProjectDao()
+                    dao.upsertCallLogs(cleaned.map { it.toRoomEntity() })
+                }
+            }
+        }
+    }
+
+    /**
+     * Persists calls pulled/reconciled from Google Sheets without re-triggering push work
+     * or blocking non-admin users via manual DELETE_RECORD audit guards.
+     */
+    fun saveCallsFromPull(context: Context, calls: List<CrmCallRecord>) {
+        val cleaned = calls.filterNot { it.id.startsWith("demo_call_", ignoreCase = true) }
+        com.example.data.OfflineDiskCache.saveCallLogs(context, cleaned)
+        val array = JSONArray()
+        cleaned.forEach { array.put(it.toJson()) }
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_CALLS, array.toString())
             .apply()
@@ -203,16 +288,52 @@ object CrmCallManager {
 
     private fun pushCallAsync(context: Context, call: CrmCallRecord) {
         val appContext = context.applicationContext ?: context
+        // Enqueue durable WorkManager OneTimeWorkRequest (NetworkType.CONNECTED) immediately
+        runCatching { com.example.data.BackgroundSyncScheduler.enqueueImmediatePush(appContext) }
         callSyncScope.launch {
             runCatching {
-                com.example.data.SheetsRepository(appContext, startForegroundSync = false)
-                    .pushCallLogToMasterSheet(call)
+                val repo = com.example.data.SheetsRepository(appContext, startForegroundSync = false)
+                try {
+                    repo.pushCallLogToMasterSheet(call)
+                } finally {
+                    repo.close()
+                }
+            }
+        }
+    }
+
+    fun markCallSyncedLocal(context: Context, callId: String, updatedAt: Long = System.currentTimeMillis()) {
+        val current = readCalls(context).toMutableList()
+        val idx = current.indexOfFirst { it.id == callId }
+        if (idx >= 0 && current[idx].syncStatus != "SYNCED") {
+            current[idx] = current[idx].copy(syncStatus = "SYNCED", updatedAt = updatedAt)
+            saveCalls(context, current, syncToRoom = false)
+        }
+        callSyncScope.launch {
+            runCatching {
+                com.example.data.master.MasterProjectDatabase.getDatabase(context)
+                    .masterProjectDao()
+                    .markCallLogSynced(callId, updatedAt)
             }
         }
     }
 
     fun addOrUpdateCall(context: Context, call: CrmCallRecord) {
-        val taggedCall = tagInternalTeamCallIfNeeded(context, call)
+        val deviceName = call.deviceName?.takeIf { it.isNotBlank() }
+            ?: com.example.data.DeviceIdentityManager.getFriendlyDeviceName(context)
+        val safeId = call.id.trim().takeIf { it.isNotBlank() }
+            ?: com.example.data.DeviceIdentityManager.generateCallLogId(context, call.timestamp)
+        val loggedEmployee = call.assignedAgent.trim().ifBlank {
+            runCatching { com.example.data.UserSettingsManager(context).userProfile.value.username.trim() }.getOrDefault("")
+        }
+        val stampedCall = call.copy(
+            id = safeId,
+            assignedAgent = loggedEmployee,
+            deviceName = deviceName,
+            syncStatus = "PENDING",
+            updatedAt = System.currentTimeMillis()
+        )
+        val taggedCall = tagInternalTeamCallIfNeeded(context, stampedCall)
         val current = readCalls(context).toMutableList()
         val index = current.indexOfFirst { it.id == taggedCall.id }
         if (index >= 0) {
@@ -268,6 +389,64 @@ object CrmCallManager {
         calls[index] = updated
         saveCalls(context, calls)
         logActivity(context, oppId, "Opportunity Created", "Linked saved $oppType Opportunity from Call ($oppTitle)", "Linked to Call ID: $callId")
+        pushCallAsync(context, updated)
+        return true
+    }
+
+    /**
+     * Auto-links a Call Log to a newly saved or opened Lead / Property / Tenant / Broker / Project,
+     * marks the call as Handled (`isLinked = true`, `stagingStatus = "Live"`), clears it from the
+     * unlogged queue, persists to Room + cache, and triggers immediate two-way sheet push.
+     */
+    @Synchronized
+    fun markCallHandledAndLinked(
+        context: Context,
+        callId: String,
+        fallbackCall: CrmCallRecord? = null,
+        oppType: String,
+        oppTitle: String,
+        oppId: String,
+        notesOverride: String = ""
+    ): Boolean {
+        if (callId.isBlank() || oppId.isBlank()) return false
+        val calls = readCalls(context).toMutableList()
+        val index = calls.indexOfFirst { it.id == callId }
+        val base = if (index >= 0) calls[index] else fallbackCall ?: return false
+        val mergedNotes = when {
+            notesOverride.isNotBlank() && !base.notes.contains(notesOverride.trim(), ignoreCase = true) ->
+                if (base.notes.isBlank() || base.notes.equals("Imported from device call log", ignoreCase = true)) {
+                    notesOverride.trim()
+                } else {
+                    "${base.notes.trim()}\n${notesOverride.trim()}"
+                }
+            else -> base.notes
+        }
+        val updated = base.copy(
+            isLinked = true,
+            linkedOpportunityType = oppType.ifBlank { base.linkedOpportunityType ?: "Client" },
+            linkedOpportunityTitle = oppTitle.ifBlank { base.linkedOpportunityTitle ?: oppId },
+            linkedOpportunityId = oppId,
+            stagingStatus = "Live",
+            leadStatus = if (base.leadStatus.isBlank() || base.leadStatus.equals("Unlogged", true)) "Handled" else base.leadStatus,
+            notes = mergedNotes,
+            syncStatus = "PENDING",
+            updatedAt = System.currentTimeMillis()
+        )
+        if (index >= 0) {
+            calls[index] = updated
+        } else {
+            calls.add(0, updated)
+        }
+        saveCalls(context, calls)
+        removeFromUnloggedQueue(context, updated)
+        markPostCallPopupShown(context, updated)
+        logActivity(
+            context = context,
+            entityId = oppId,
+            type = "Call Auto-Linked",
+            summary = "Auto-linked $oppType call (${updated.callerName.ifBlank { updated.phoneNumber }})",
+            details = "Call ID: $callId • ${mergedNotes.take(200)}"
+        )
         pushCallAsync(context, updated)
         return true
     }
@@ -370,16 +549,26 @@ object CrmCallManager {
                         else -> CallType.INCOMING
                     }
 
+                    val deviceTag = com.example.data.DeviceIdentityManager.getDeviceTag(context)
+                    val friendlyDevice = com.example.data.DeviceIdentityManager.getFriendlyDeviceName(context)
+                    val last4 = rawNum.filter { ch -> ch.isDigit() }.takeLast(4).ifBlank { "0000" }
+                    val employeeName = runCatching {
+                        com.example.data.UserSettingsManager(context).userProfile.value.username.trim()
+                    }.getOrDefault("")
                     list.add(
                         CrmCallRecord(
-                            id = "device_call_${dateVal}_${rawNum.takeLast(4)}",
+                            id = "CALL-${deviceTag}-${dateVal}_${last4}",
                             callerName = rawName.ifBlank { "Unknown" },
                             phoneNumber = ContactUtils.normalizePhoneNumber(rawNum),
                             callType = callType,
                             timestamp = dateVal,
                             durationSeconds = durVal,
                             notes = "Imported from device call log",
-                            isLinked = false
+                            assignedAgent = employeeName,
+                            isLinked = false,
+                            deviceName = friendlyDevice,
+                            syncStatus = "PENDING",
+                            updatedAt = System.currentTimeMillis()
                         )
                     )
                 }
@@ -392,81 +581,10 @@ object CrmCallManager {
     }
 
     /**
-     * Demo Call History for real estate workflow verification.
-     * Includes unlinked enquiries, missed calls, incoming leads, and broker follow-ups.
+     * Sample/demo call history has been permanently removed so local storage strictly reflects
+     * real device calls and synced `Call Logs` rows from TLC Master sheet.
      */
-    fun getDemoCalls(): List<CrmCallRecord> {
-        val now = System.currentTimeMillis()
-        val hour = 3600 * 1000L
-        return listOf(
-            CrmCallRecord(
-                id = "demo_call_1",
-                callerName = "Rajesh Singhania",
-                phoneNumber = "9822011223",
-                callType = CallType.MISSED,
-                timestamp = now - (15 * 60 * 1000L),
-                durationSeconds = 0,
-                notes = "Missed call — called back twice earlier. Inquiring for Kharadi office lease.",
-                isLinked = false
-            ),
-            CrmCallRecord(
-                id = "demo_call_2",
-                callerName = "Dr. Ananya Kulkarni",
-                phoneNumber = "9860012345",
-                callType = CallType.INCOMING,
-                timestamp = now - (2 * hour),
-                durationSeconds = 245,
-                notes = "Interested in 3 BHK luxury flat in Keshav Nagar / Mundhwa for self-use. Budget ₹1.8 Cr.",
-                isLinked = false
-            ),
-            CrmCallRecord(
-                id = "demo_call_3",
-                callerName = "Vikram More (Channel Partner)",
-                phoneNumber = "9881122334",
-                callType = CallType.INCOMING,
-                timestamp = now - (5 * hour),
-                durationSeconds = 380,
-                notes = "Has pre-leased bank branch property for sale in Baner with 7.2% ROI.",
-                isLinked = false
-            ),
-            CrmCallRecord(
-                id = "demo_call_4",
-                callerName = "Pooja Deshmukh",
-                phoneNumber = "9766001122",
-                callType = CallType.OUTGOING,
-                timestamp = now - (22 * hour),
-                durationSeconds = 190,
-                notes = "Follow-up regarding site visit scheduled for Saturday at Gera Imperium Alpha.",
-                isLinked = true,
-                linkedOpportunityType = "Client",
-                linkedOpportunityTitle = "Pooja Deshmukh • Office Lease",
-                linkedOpportunityId = "demo_opp_client_1"
-            ),
-            CrmCallRecord(
-                id = "demo_call_5",
-                callerName = "Unknown Caller",
-                phoneNumber = "9923456780",
-                callType = CallType.INCOMING,
-                timestamp = now - (26 * hour),
-                durationSeconds = 85,
-                notes = "Called regarding newspaper listing of retail showroom in Viman Nagar.",
-                isLinked = false
-            ),
-            CrmCallRecord(
-                id = "demo_call_6",
-                callerName = "Amitabh Sharma (Owner)",
-                phoneNumber = "9850123456",
-                callType = CallType.OUTGOING,
-                timestamp = now - (48 * hour),
-                durationSeconds = 310,
-                notes = "Confirmed rental expectation of ₹1,40,000/mo for 1,600 sq.ft office in Kalyani Nagar.",
-                isLinked = true,
-                linkedOpportunityType = "Owner",
-                linkedOpportunityTitle = "Owner of OL-204 (Marigold IT)",
-                linkedOpportunityId = "demo_opp_owner_1"
-            )
-        )
-    }
+    fun getDemoCalls(): List<CrmCallRecord> = emptyList()
 
     // =========================================================================
     // WhatsApp Integration & Contextual Template Generator

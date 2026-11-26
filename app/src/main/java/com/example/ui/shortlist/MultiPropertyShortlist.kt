@@ -180,14 +180,18 @@ object ShortlistMessageFormatter {
 
         val code = property.propertyCode.trim().ifBlank { property.tab.code }
         val project = property.projectName.trim().ifBlank { "Not Mentioned" }
-        val location = property.location.trim().ifBlank { "Not Mentioned" }
+        val projectIdSuffix = property.projectId.trim().takeIf { it.isNotBlank() }?.let { " [$it]" } ?: ""
+        val location = buildList {
+            property.location.trim().takeIf { it.isNotBlank() }?.let { add(it) }
+            property.effectiveMicroMarket?.takeIf { !it.equals(property.location, ignoreCase = true) }?.let { add(it) }
+        }.joinToString(" · ").ifBlank { "Not Mentioned" }
         val carpet = property.carpetAreaSqFt.takeIf { it.isFinite() && it > 0.0 }
         val builtUp = property.builtUpAreaSqFt?.takeIf { it.isFinite() && it > 0.0 }
         val furnishing = property.furnishing.label.ifBlank { "Not Mentioned" }
         val status = property.status.label
 
         val lines = mutableListOf<String>()
-        lines.add("*$index. $code · $project*")
+        lines.add("*$index. $code · $project$projectIdSuffix*")
         lines.add("Location: $location")
 
         val areaParts = buildList {
@@ -196,6 +200,21 @@ object ShortlistMessageFormatter {
         }
         lines.add("Area: ${if (areaParts.isNotEmpty()) areaParts.joinToString(" | ") else "Not Mentioned"}")
         lines.add("Furnishing: $furnishing")
+
+        val commercialSpecs = buildList {
+            property.attachedPantry?.takeIf { it.isNotBlank() }?.let { add("Pantry: $it") }
+            property.attachedWashroom?.takeIf { it.isNotBlank() }?.let { add("Washroom: $it") }
+            property.effectiveFrontageFt?.takeIf { it > 0.0 }?.let { add("Frontage: ${areaDecimalFormat.format(it)} ft") }
+            property.effectiveClearHeightFt?.takeIf { it > 0.0 }?.let { add("Clear Height: ${areaDecimalFormat.format(it)} ft") }
+            property.truckAccess?.takeIf { it.isNotBlank() }?.let { add("Truck Access: $it") }
+            property.powerLoad?.takeIf { it.isNotBlank() }?.let { add("Power Load: $it") }
+        }
+        if (commercialSpecs.isNotEmpty()) {
+            lines.add("Specs: ${commercialSpecs.joinToString(" | ")}")
+        }
+        property.targetPossessionDate?.takeIf { it.isNotBlank() }?.let {
+            lines.add("Target Possession: $it")
+        }
 
         val priceLabel = if (rates.isRentalPrimary) "Monthly Rent" else "Sale Price"
         val formattedPrice = rates.primaryAmount?.let { amount ->
@@ -209,6 +228,14 @@ object ShortlistMessageFormatter {
                     CalculationUtils.formatIndianCurrency(rates.preLeasedMonthlyRent, isMonthly = true)
                 }"
             )
+        }
+        val grossRoi = property.roiPercent?.takeIf { it > 0.0 }
+            ?: com.example.data.TlcPropertyCalculator.calculateGrossRoiPercent(
+                rates.preLeasedMonthlyRent ?: property.rent ?: property.monthlyRentalIncome,
+                rates.primaryAmount.takeIf { !rates.isRentalPrimary }
+            )
+        if (property.effectiveIsPreLeased && grossRoi != null) {
+            lines.add(String.format(java.util.Locale.US, "Gross ROI: %.2f%% p.a.", grossRoi))
         }
 
         val unitSuffix = if (rates.isRentalPrimary) "/sq.ft/mo" else "/sq.ft"
@@ -565,6 +592,7 @@ fun ShortlistReviewBottomSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)

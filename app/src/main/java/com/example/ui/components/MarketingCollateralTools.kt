@@ -1144,6 +1144,7 @@ fun LuxuryStatusFlyerModalSheet(
                 .fillMaxWidth()
                 .fillMaxHeight(0.92f)
                 .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 18.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {

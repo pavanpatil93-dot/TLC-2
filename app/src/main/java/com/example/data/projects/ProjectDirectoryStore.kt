@@ -55,7 +55,9 @@ data class DirectoryProject(
     val coverImageUrl: String,
     val galleryImageUrls: List<String>,
     val raw: JSONObject,
-    val archiveStatus: String = "Archived"
+    val archiveStatus: String = "Archived",
+    val microMarket: String = "",
+    val ocStatus: String = ""
 ) {
     val isLiveActive: Boolean
         get() = archiveStatus.equals("Active", ignoreCase = true) &&
@@ -172,23 +174,26 @@ object ProjectDirectoryStore {
                 listOf(cover, "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=1000&q=80", "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1000&q=80")
             }
             DirectoryProject(
-                j.getString("id"),
-                division,
-                j.getString("name"),
-                j.optString("developer"),
-                j.optString("location"),
-                j.optString("category"),
-                j.optString("phase"),
-                j.optString("configurations"),
-                j.optString("areaRange"),
-                j.optString("priceRange"),
-                j.optString("possession"),
-                j.optString("sourceUrl"),
-                j.optString("otherSourceUrl"),
-                j.optString("verification", "Unverified"),
-                cover,
-                gallery,
-                j
+                id = j.getString("id"),
+                division = division,
+                name = j.getString("name"),
+                developer = j.optString("developer"),
+                location = j.optString("location"),
+                category = j.optString("category"),
+                phase = j.optString("phase"),
+                configurations = j.optString("configurations"),
+                areaRange = j.optString("areaRange"),
+                priceRange = j.optString("priceRange"),
+                possession = j.optString("possession"),
+                sourceUrl = j.optString("sourceUrl"),
+                otherSourceUrl = j.optString("otherSourceUrl"),
+                verification = j.optString("verification", "Unverified"),
+                coverImageUrl = cover,
+                galleryImageUrls = gallery,
+                raw = j,
+                archiveStatus = j.optString("archiveStatus", "Archived"),
+                microMarket = j.optString("microMarket"),
+                ocStatus = j.optString("ocStatus")
             )
         }.also { records ->
             require(records.map { it.id }.distinct().size == records.size) { "Duplicate project codes" }
@@ -213,16 +218,25 @@ object ProjectDirectoryStore {
             .map { it.trim().uppercase(Locale.US) }
             .filter { it.isNotBlank() }
             .toSet()
+        val commSynced = prefs.getBoolean("sheet_synced_commercial", false)
+        val resSynced = prefs.getBoolean("sheet_synced_residential", false)
         val commLen = java.io.File(context.filesDir, com.example.data.OfflineDiskCache.FILE_COMMERCIAL_PROJECTS).let { if (it.exists()) it.length() else -1L }
         val resLen = java.io.File(context.filesDir, com.example.data.OfflineDiskCache.FILE_RESIDENTIAL_PROJECTS).let { if (it.exists()) it.length() else -1L }
-        val snapshotKey = "${context.filesDir.absolutePath}|${local.hashCode()}|${overridesRaw.hashCode()}|${deletedIds.hashCode()}|$commLen|$resLen"
+        val snapshotKey = "${context.filesDir.absolutePath}|${local.hashCode()}|${overridesRaw.hashCode()}|${deletedIds.hashCode()}|$commLen|$resLen|$commSynced|$resSynced"
         val existing = cachedProjects
         if (existing != null && cachedSnapshotKey == snapshotKey) {
             return existing
         }
 
-        val seeded = context.resources.openRawResource(com.example.R.raw.project_directory_seed).use { stream ->
-            GZIPInputStream(stream).bufferedReader().use { parse(it.readText()) }
+        val seededAll = if (commSynced && resSynced) {
+            emptyList()
+        } else {
+            context.resources.openRawResource(com.example.R.raw.project_directory_seed).use { stream ->
+                GZIPInputStream(stream).bufferedReader().use { parse(it.readText()) }
+            }.filter { proj ->
+                val isComm = proj.division.equals("commercial", ignoreCase = true)
+                if (isComm) !commSynced else !resSynced
+            }
         }
         val cachedComm = com.example.data.OfflineDiskCache.loadProjectsRaw(context, "commercial")
             ?.let { raw -> runCatching { parse(raw) }.getOrNull() }
@@ -231,7 +245,7 @@ object ProjectDirectoryStore {
             ?.let { raw -> runCatching { parse(raw) }.getOrNull() }
             .orEmpty()
         val overridesJson = JSONObject(overridesRaw)
-        val resolved = ((cachedComm + cachedRes) + parse(local) + seeded)
+        val resolved = ((cachedComm + cachedRes) + parse(local) + seededAll)
             .distinctBy { it.id }
             .filterNot { it.id.trim().uppercase(Locale.US) in deletedIds }
             .map { project ->
@@ -282,41 +296,70 @@ object ProjectDirectoryStore {
         return resolved
     }
 
-    fun mergeSyncedProjectRows(context: Context, division: String, rows: List<List<String>>): Int {
-        if (rows.size < 2) return 0
+    fun normalizeOcConstructionStatus(raw: String?): String {
+        val clean = raw?.trim().orEmpty()
+        if (clean.isBlank()) return ""
+        val lower = clean.lowercase(Locale.ENGLISH)
+        return when {
+            lower.contains("ready") || lower.contains("oc received") || lower == "oc" || lower.contains("completed") ->
+                "Ready / OC Received"
+            lower.contains("under construction") || lower.contains("ongoing") || lower.contains("uc") ->
+                "Under Construction"
+            lower.contains("new launch") || lower.contains("pre-launch") || lower.contains("pre launch") ->
+                "New Launch"
+            else -> clean
+        }
+    }
+
+    fun mergeSyncedProjectRows(
+        context: Context,
+        division: String,
+        rows: List<List<String>>,
+        reconcileStale: Boolean = true
+    ): Int {
+        val normDiv = if (division.contains("res", ignoreCase = true)) "residential" else "commercial"
+        val prefs = context.getSharedPreferences("project_directory_v1", Context.MODE_PRIVATE)
+        if (rows.size < 2) {
+            if (reconcileStale) {
+                prefs.edit().putBoolean("sheet_synced_$normDiv", true).commit()
+                com.example.data.OfflineDiskCache.saveProjectsJsonArray(context, normDiv, JSONArray())
+                invalidateCache()
+            }
+            return 0
+        }
         val headers = rows.first()
         val dataRows = rows.drop(1)
-        val normDiv = if (division.contains("res", ignoreCase = true)) "residential" else "commercial"
 
         fun col(vararg aliases: String): Int {
             for (a in aliases) {
                 val exact = headers.indexOfFirst { it.trim().equals(a, ignoreCase = true) }
                 if (exact >= 0) return exact
             }
-            for (a in aliases) {
-                val partial = headers.indexOfFirst { it.trim().contains(a, ignoreCase = true) }
-                if (partial >= 0) return partial
-            }
             return -1
         }
 
-        val idIdx = col("id", "Project ID", "Project Code", "Record ID")
-        val nameIdx = col("name", "Project Name", "Project / Building", "Building Name")
-        val devIdx = col("developer", "Developer", "Builder", "Developer Name")
-        val locIdx = col("location", "Location", "Micro Market", "Locality")
-        val catIdx = col("category", "Category", "Property Type")
-        val phaseIdx = col("phase", "Phase", "Stage", "Status")
-        val configIdx = col("configurations", "Configuration", "Configurations")
-        val areaIdx = col("areaRange", "Area Range", "Carpet Area (Sq.Ft)")
-        val priceIdx = col("priceRange", "Price Range")
-        val possIdx = col("possession", "Possession")
-        val srcIdx = col("sourceUrl", "Source URL", "RERA URL")
-        val verIdx = col("verification", "Verification", "Verification Status")
-        val coverIdx = col("coverImageUrl", "Cover Image", "Cover Photo", "Photo URL")
+        val idIdx = col("Project ID", "id", "Project Code", "Record ID")
+        val nameIdx = col("Project Name", "name", "Project / Building", "Building Name")
+        val devIdx = col("Developer", "Developer Name", "Builder", "developer")
+        val locIdx = col("Location", "location", "Locality")
+        val microMarketIdx = col("Micro-Market", "Micro Market", "microMarket")
+        val catIdx = col("Category", "category", "Property Type", "Asset Type")
+        val ocStatusIdx = col("OC / Construction Status", "OC Status", "Construction Status", "Project Status")
+        val phaseIdx = col("Phase", "phase", "Stage", "Status")
+        val configIdx = col("Configurations", "Configuration", "configurations")
+        val areaIdx = col("Area Range", "areaRange", "Carpet Area (Sq.Ft)")
+        val priceIdx = col("Price Range", "priceRange")
+        val possIdx = col("Possession", "Target Possession Date", "Possession Date", "possession")
+        val srcIdx = col("Source URL", "sourceUrl", "RERA URL", "MahaRERA URL")
+        val reraIdx = col("RERA Number", "MahaRERA Number", "RERA")
+        val verIdx = col("Verification Status", "Verification", "verification")
+        val archiveIdx = col("Archive Status", "Record Status")
+        val coverIdx = col("Cover Image", "coverImageUrl", "Cover Photo", "Photo URL")
         val salesPocIdx = col("Sales POC", "Developer Sales POC", "Developer POC", "POC Name", "Contact Name")
         val salesPhoneIdx = col("Sales POC Phone", "Developer Phone", "Builder Contact", "POC Contact")
 
         val arr = JSONArray()
+        val roomProjects = mutableListOf<com.example.data.master.ProjectEntity>()
         var count = 0
         dataRows.forEachIndexed { idx, row ->
             if (row.all { it.isBlank() }) return@forEachIndexed
@@ -324,21 +367,34 @@ object ProjectDirectoryStore {
             if (name.isBlank()) return@forEachIndexed
             val id = row.getOrNull(idIdx)?.trim()?.ifBlank { null }
                 ?: "${if (normDiv == "commercial") "CP" else "RP"}-SH-${idx + 1}"
+            val locationVal = row.getOrNull(locIdx)?.trim().orEmpty()
+            val microMarketVal = row.getOrNull(microMarketIdx)?.trim().orEmpty()
+            val ocStatusVal = normalizeOcConstructionStatus(row.getOrNull(ocStatusIdx))
+            val possessionVal = com.example.data.CrmSheetSyncMapper.formatCrmDateIst(row.getOrNull(possIdx))
+            val developerVal = row.getOrNull(devIdx)?.trim().orEmpty()
+            val categoryVal = row.getOrNull(catIdx)?.trim().orEmpty()
+            val reraVal = row.getOrNull(reraIdx)?.trim().orEmpty()
+            val verVal = row.getOrNull(verIdx)?.trim().orEmpty().ifBlank { "Unverified" }
+            val archiveVal = row.getOrNull(archiveIdx)?.trim().orEmpty().ifBlank { "Active" }
+
             val obj = JSONObject().apply {
                 put("id", id)
                 put("division", normDiv)
                 put("name", name)
-                put("developer", row.getOrNull(devIdx)?.trim().orEmpty())
-                put("location", row.getOrNull(locIdx)?.trim().orEmpty())
-                put("category", row.getOrNull(catIdx)?.trim().orEmpty())
-                put("phase", row.getOrNull(phaseIdx)?.trim().orEmpty())
+                put("developer", developerVal)
+                put("location", locationVal)
+                put("microMarket", microMarketVal)
+                put("category", categoryVal)
+                put("ocStatus", ocStatusVal)
+                put("phase", row.getOrNull(phaseIdx)?.trim().orEmpty().ifBlank { ocStatusVal })
                 put("configurations", row.getOrNull(configIdx)?.trim().orEmpty())
                 put("areaRange", row.getOrNull(areaIdx)?.trim().orEmpty())
                 put("priceRange", row.getOrNull(priceIdx)?.trim().orEmpty())
-                put("possession", row.getOrNull(possIdx)?.trim().orEmpty())
+                put("possession", possessionVal)
                 put("sourceUrl", row.getOrNull(srcIdx)?.trim().orEmpty())
                 put("otherSourceUrl", "")
-                put("verification", row.getOrNull(verIdx)?.trim().orEmpty().ifBlank { "Unverified" })
+                put("verification", verVal)
+                put("archiveStatus", archiveVal)
                 val cover = row.getOrNull(coverIdx)?.trim().orEmpty()
                 if (cover.isNotBlank()) put("coverImageUrl", cover)
                 val salesPoc = row.getOrNull(salesPocIdx)?.trim().orEmpty()
@@ -347,10 +403,46 @@ object ProjectDirectoryStore {
                 if (salesPhone.isNotBlank()) put("salesPocPhone", salesPhone)
             }
             arr.put(obj)
+
+            val roomStatus = when {
+                ocStatusVal.equals("New Launch", ignoreCase = true) -> com.example.data.master.ProjectStatus.PRE_LAUNCH
+                ocStatusVal.equals("Under Construction", ignoreCase = true) -> com.example.data.master.ProjectStatus.UNDER_CONSTRUCTION
+                else -> com.example.data.master.ProjectStatus.READY
+            }
+            val roomVerif = when {
+                verVal.contains("Verified", ignoreCase = true) && !verVal.contains("Unverified", ignoreCase = true) ->
+                    com.example.data.master.VerificationStatus.VERIFIED
+                verVal.contains("Partial", ignoreCase = true) ->
+                    com.example.data.master.VerificationStatus.PARTIALLY_VERIFIED
+                else -> com.example.data.master.VerificationStatus.UNVERIFIED
+            }
+            roomProjects.add(
+                com.example.data.master.ProjectEntity(
+                    projectId = id,
+                    projectName = name,
+                    projectType = if (normDiv == "residential") com.example.data.master.ProjectType.RESIDENTIAL else com.example.data.master.ProjectType.COMMERCIAL,
+                    developerName = developerVal,
+                    location = locationVal.ifBlank { "Pune" },
+                    microMarket = microMarketVal.ifBlank { locationVal },
+                    category = categoryVal,
+                    reraNumber = reraVal.takeIf { it.isNotBlank() },
+                    possessionDate = possessionVal.takeIf { it.isNotBlank() },
+                    status = roomStatus,
+                    verificationStatus = roomVerif,
+                    isArchived = archiveVal.equals("Archived", ignoreCase = true)
+                )
+            )
             count++
         }
-        if (count > 0) {
+        if (count > 0 || reconcileStale) {
+            prefs.edit().putBoolean("sheet_synced_$normDiv", true).commit()
             com.example.data.OfflineDiskCache.saveProjectsJsonArray(context, normDiv, arr)
+            runCatching {
+                kotlinx.coroutines.runBlocking {
+                    val dao = com.example.data.master.MasterProjectDatabase.getDatabase(context).masterProjectDao()
+                    roomProjects.forEach { dao.insertProject(it) }
+                }
+            }
             invalidateCache()
         }
         return count

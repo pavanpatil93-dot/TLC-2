@@ -16,6 +16,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -131,10 +136,9 @@ fun MainAppPortal(
         withContext(Dispatchers.IO) {
             TeamNotificationManager.ensureChannelsCreated(context)
             TeamAlertStore.hydrate(context)
-            ActualDataBootstrap.seedCrm(context)
             repository.ensureLoadedFromDisk()
-            repository.bootstrapBundledActualInventory()
             com.example.data.BackgroundSyncScheduler.ensureMasterAutoSyncScheduled(context)
+            repository.syncIfStaleInBackground(SheetsRepository.FOREGROUND_RESUME_PULL_INTERVAL_MS)
         }
     }
     val userSettingsManager = remember(context) { UserSettingsManager(context) }
@@ -157,6 +161,8 @@ fun MainAppPortal(
     val savedScriptUrl by repository.sheetsScriptUrl.collectAsState()
     val pendingSyncOps by repository.pendingSyncOps.collectAsState()
     val pendingSyncWritesCount by repository.pendingSyncCount.collectAsState()
+    val topSyncChipState by repository.topSyncChipState.collectAsState()
+    val syncBannerState by repository.syncBannerState.collectAsState()
     val availableAppUpdate by repository.availableAppUpdate.collectAsState()
     var isSyncingPending by remember { mutableStateOf(false) }
     val totalPendingSyncCount = remember(pendingSyncOps, pendingSyncWritesCount) {
@@ -197,6 +203,7 @@ fun MainAppPortal(
     var comparisonNotice by remember { mutableStateOf<String?>(null) }
     var resolvedComparisonProps by remember { mutableStateOf<List<PropertyItem>>(emptyList()) }
     var mapTargetProperty by remember { mutableStateOf<PropertyItem?>(null) }
+    var matchingBrokersTargetProperty by remember { mutableStateOf<PropertyItem?>(null) }
     var pendingProjectDirectoryId by remember { mutableStateOf<String?>(null) }
     var clientMatcherInitialRequirement by remember { mutableStateOf<String?>(null) }
     var pendingTenantLinkProperty by remember { mutableStateOf<PropertyItem?>(null) }
@@ -278,10 +285,12 @@ fun MainAppPortal(
     var pendingAddPropertyPhone by remember { mutableStateOf("") }
     var pendingAddPropertyNote by remember { mutableStateOf("") }
     var pendingAddPropertyPocType by remember { mutableStateOf("Property Owner") }
+    var pendingAddPropertyTab by remember { mutableStateOf<InventoryTab?>(null) }
     var pendingAddPropertyFromCall by remember { mutableStateOf(false) }
     var postCallQueue by remember { mutableStateOf<List<CrmCallRecord>>(emptyList()) }
     var postCallQueueIndex by remember { mutableIntStateOf(0) }
     var pendingCallNavigation by remember { mutableStateOf<PendingCallNavigation?>(null) }
+    val activeCallSession by CallActionSessionManager.activeSession.collectAsState()
     val shortlistViewModel: ShortlistViewModel = viewModel()
     val shortlistState by shortlistViewModel.state.collectAsState()
 
@@ -314,6 +323,7 @@ fun MainAppPortal(
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
+    // Passive background call refresh: updates Home Dashboard counter + Calls tab badge without auto-interrupting the user on app launch/resume.
     val refreshAndPromptPostCall: () -> Unit = {
         if (isLoggedIn && !sessionState.isPinLocked) {
             coroutineScope.launch {
@@ -325,15 +335,6 @@ fun MainAppPortal(
                 unloggedCallQueue = updatedQueue
                 if (newCalls.isNotEmpty()) {
                     callsExternalRefreshTick++
-                    if (activePostCall == null) {
-                        val nextCall = newCalls.first()
-                        withContext(Dispatchers.IO) {
-                            CrmCallManager.markPostCallPopupShown(context, nextCall)
-                        }
-                        postCallQueue = updatedQueue.ifEmpty { newCalls }
-                        postCallQueueIndex = postCallQueue.indexOfFirst { it.id == nextCall.id }.coerceAtLeast(0)
-                        activePostCall = nextCall
-                    }
                 }
             }
         }
@@ -363,11 +364,15 @@ fun MainAppPortal(
                                 CrmCallManager.last10Digits(lead.alternatePhone) == phone10
                             ))
                 }
+                val targetSegment = nav.segmentHint.ifBlank { "Commercial" }
                 pendingCrmPrefillLead = matchedLead ?: CrmLead(
                     id = nav.taggedPropertyId?.takeIf { it.startsWith("LD-", true) }.orEmpty(),
                     name = nav.prefillName,
                     phone = nav.prefillPhone,
-                    segment = "Commercial",
+                    companyName = if (nav.isBrokerClient) nav.prefillName else "",
+                    clientType = if (nav.isBrokerClient) "Broker / CP" else "Direct Client",
+                    leadSource = if (nav.isBrokerClient) "Channel Partner / Broker" else "Phone Call",
+                    segment = targetSegment,
                     requirement = nav.prefillNote.ifBlank { "Inbound Call Inquiry" },
                     location = "",
                     budget = "",
@@ -398,6 +403,7 @@ fun MainAppPortal(
                     pendingAddPropertyPhone = nav.prefillPhone
                     pendingAddPropertyNote = nav.prefillNote
                     pendingAddPropertyPocType = "Property Owner"
+                    pendingAddPropertyTab = nav.initialPropertyTab
                     pendingAddPropertyFromCall = true
                     currentDestination = DrawerDestination.ADD_PROPERTY
                 }
@@ -467,7 +473,8 @@ fun MainAppPortal(
                 }
                 Lifecycle.Event.ON_RESUME -> {
                     refreshAndPromptPostCall()
-                    repository.syncIfStaleInBackground()
+                    repository.refreshTopSyncChipState()
+                    repository.syncIfStaleInBackground(SheetsRepository.FOREGROUND_RESUME_PULL_INTERVAL_MS)
                 }
                 else -> Unit
             }
@@ -936,7 +943,8 @@ fun MainAppPortal(
     }
 
     CompositionLocalProvider(
-        LocalPropertyMapHandler provides { prop -> triggerPropertyMapAction(prop, false) }
+        LocalPropertyMapHandler provides { prop -> triggerPropertyMapAction(prop, false) },
+        LocalMatchingBrokersHandler provides { prop -> matchingBrokersTargetProperty = prop }
     ) {
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -1190,7 +1198,15 @@ fun MainAppPortal(
                             currentDestination = DrawerDestination.SETTINGS
                         },
                         unreadAlertCount = unreadAlertCount,
-                        onOpenAlerts = { showTeamAlertsSheet = true }
+                        onOpenAlerts = { showTeamAlertsSheet = true },
+                        topSyncChipState = topSyncChipState,
+                        onTapSyncChip = {
+                            Toast.makeText(context, "Syncing changes with TLC Master sheet...", Toast.LENGTH_SHORT).show()
+                            oneTapSyncCoordinator.triggerOneTapSync(
+                                employee = sessionState.currentEmployee,
+                                showSheetOnFinish = false
+                            )
+                        }
                     )
                 }
             },
@@ -1215,7 +1231,8 @@ fun MainAppPortal(
                                 PortalNavTab.CRM -> DrawerDestination.CRM_WORKSPACE
                                 PortalNavTab.CALLS -> DrawerDestination.CRM_CALLS
                             }
-                        }
+                        },
+                        unloggedCallsCount = unloggedCallQueue.size
                     )
                 }
             },
@@ -1229,60 +1246,126 @@ fun MainAppPortal(
                     .consumeWindowInsets(paddingValues)
                     .background(BrandCharcoalDark)
             ) {
-                if (activeDetailProperty == null && activeDetailProject == null && !showComparisonScreen && unloggedCallQueue.isNotEmpty()) {
+                // Persistent Top Apps Script / Sync Warning Banner (stays visible until sync succeeds)
+                AnimatedVisibility(
+                    visible = syncBannerState.hasError,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
                     Surface(
-                        onClick = {
-                            val nextCall = unloggedCallQueue.firstOrNull()
-                            if (nextCall != null) {
-                                postCallQueue = unloggedCallQueue
-                                postCallQueueIndex = 0
-                                activePostCall = nextCall
-                                coroutineScope.launch(Dispatchers.IO) {
-                                    CrmCallManager.markPostCallPopupShown(context, nextCall)
-                                }
-                            }
-                        },
-                        color = SelectedSurfaceContainer,
-                        border = BorderStroke(1.dp, PrimaryActionOrange),
+                        color = Color(0xFFFFF3E0),
+                        border = BorderStroke(1.dp, StatusDangerRed.copy(alpha = 0.7f)),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 12.dp, vertical = 6.dp)
-                            .testTag("unlogged_calls_queue_banner")
+                            .testTag("top_sync_warning_banner")
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.Top,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.PhoneCallback,
-                                    contentDescription = "Unlogged calls",
-                                    tint = PrimaryActionOrange,
-                                    modifier = Modifier.size(18.dp)
+                                    imageVector = Icons.Default.CloudOff,
+                                    contentDescription = "Sync warning",
+                                    tint = StatusDangerRed,
+                                    modifier = Modifier
+                                        .padding(top = 1.dp)
+                                        .size(18.dp)
                                 )
-                                Text(
-                                    text = "${unloggedCallQueue.size} Call${if (unloggedCallQueue.size == 1) "" else "s"} Need Logging — Tap to Clear",
-                                    color = TextPrimary,
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = syncBannerState.title.ifBlank { "Apps Script Sync Error" },
+                                        color = Color(0xFF8C1D18),
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (syncBannerState.hint.isNotBlank()) {
+                                        Text(
+                                            text = syncBannerState.hint,
+                                            color = Color(0xFF4E2A00),
+                                            fontSize = 11.sp,
+                                            lineHeight = 14.5.sp
+                                        )
+                                    }
+                                }
                             }
-                            Text(
-                                text = "Log ›",
-                                color = PrimaryActionOrange,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = {
+                                        if (!syncBannerState.isRetrying) {
+                                            repository.setSyncBannerRetrying(true)
+                                            coroutineScope.launch {
+                                                repository.retryAllPendingSyncsAndPull()
+                                                oneTapSyncCoordinator.triggerOneTapSync(
+                                                    employee = sessionState.currentEmployee,
+                                                    showSheetOnFinish = false
+                                                )
+                                            }
+                                        }
+                                    },
+                                    enabled = !syncBannerState.isRetrying,
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = PrimaryActionOrange,
+                                        contentColor = Color.White
+                                    ),
+                                    modifier = Modifier
+                                        .heightIn(min = 40.dp)
+                                        .testTag("top_sync_banner_retry_btn")
+                                ) {
+                                    if (syncBannerState.isRetrying) {
+                                        CircularProgressIndicator(
+                                            color = Color.White,
+                                            strokeWidth = 2.dp,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Retrying...", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                    } else {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(Modifier.width(5.dp))
+                                        Text("Retry Now", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        activeDetailProperty = null
+                                        activeDetailProject = null
+                                        showComparisonScreen = false
+                                        currentDestination = DrawerDestination.MASTER_SYNC
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF8C1D18).copy(alpha = 0.5f)),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                    modifier = Modifier
+                                        .heightIn(min = 40.dp)
+                                        .testTag("top_sync_banner_setup_btn")
+                                ) {
+                                    Text(
+                                        text = "Sync Setup",
+                                        color = Color(0xFF8C1D18),
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1523,8 +1606,14 @@ fun MainAppPortal(
                                     onNavigateToCalls = { currentDestination = DrawerDestination.CRM_CALLS },
                                     onPushCrmLeadToSheet = { lead -> repository.pushCrmLeadToMasterSheet(lead) },
                                     onDeleteCrmLeadFromSheet = { leadId ->
+                                        val targetLead = readCrmLeads(context).firstOrNull { it.id.equals(leadId, ignoreCase = true) }
+                                        val targetTab = if (targetLead?.segment.equals("Residential", ignoreCase = true)) {
+                                            "Residential CRM"
+                                        } else {
+                                            "Commercial CRM"
+                                        }
                                         repository.deleteRecordPermanently(
-                                            tabName = "CRM",
+                                            tabName = targetTab,
                                             keyHeader = "Lead ID",
                                             keyValue = leadId
                                         )
@@ -1533,7 +1622,31 @@ fun MainAppPortal(
                                     initialPrefillLead = pendingCrmPrefillLead,
                                     onConsumeInitialPrefillLead = { pendingCrmPrefillLead = null },
                                     initialSelectedLeadId = pendingCrmSelectedLeadId,
-                                    onConsumeInitialSelectedLeadId = { pendingCrmSelectedLeadId = null }
+                                    onConsumeInitialSelectedLeadId = { pendingCrmSelectedLeadId = null },
+                                    activeCallContext = activeCallSession,
+                                    onLeadSaved = { savedLead ->
+                                        val linked = CallActionSessionManager.completeAndAutoLink(
+                                            context = context,
+                                            entityType = if (savedLead.clientType.contains("Broker", true)) "Broker" else "Client",
+                                            entityTitle = savedLead.displayClientTitle(),
+                                            entityId = savedLead.id,
+                                            onCompleted = {
+                                                coroutineScope.launch {
+                                                    unloggedCallQueue = withContext(Dispatchers.IO) {
+                                                        CrmCallManager.getUnloggedCallQueue(context)
+                                                    }
+                                                    callsExternalRefreshTick++
+                                                }
+                                            }
+                                        )
+                                        if (linked) {
+                                            Toast.makeText(
+                                                context,
+                                                "Call auto-linked to ${savedLead.displayClientTitle()} & marked Handled",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
                                 )
                             }
 
@@ -1623,6 +1736,17 @@ fun MainAppPortal(
                                             postCallQueueIndex = safeIdx
                                             activePostCall = queueList.getOrNull(safeIdx)
                                         },
+                                        onEditExtractedClient = { draftLead, _ ->
+                                            pendingCrmPrefillLead = draftLead
+                                            crmExternalRefreshTick++
+                                            currentDestination = DrawerDestination.CRM_WORKSPACE
+                                        },
+                                        onEditExtractedProperty = { draftProp, _ ->
+                                            editingPropertyTarget = draftProp
+                                        },
+                                        onPushCrmLeadToSheet = { lead ->
+                                            repository.pushCrmLeadToMasterSheet(lead)
+                                        },
                                         externalRefreshTick = callsExternalRefreshTick
                                     )
                                 }
@@ -1710,8 +1834,15 @@ fun MainAppPortal(
                                         pendingAddPropertyPhone = bPhone
                                         pendingAddPropertyNote = cNote
                                         pendingAddPropertyPocType = "Broker"
+                                        pendingAddPropertyTab = null
                                         pendingAddPropertyFromCall = true
                                         currentDestination = DrawerDestination.ADD_PROPERTY
+                                    },
+                                    onOpenCallActionQueue = { queueList, startIdx ->
+                                        val safeIdx = startIdx.coerceIn(0, (queueList.size - 1).coerceAtLeast(0))
+                                        postCallQueue = queueList
+                                        postCallQueueIndex = safeIdx
+                                        activePostCall = queueList.getOrNull(safeIdx)
                                     }
                                 )
                             }
@@ -1755,10 +1886,53 @@ fun MainAppPortal(
                                     },
                                     onSaveTenant = { savedTenant ->
                                         repository.saveTenantLocalAndSync(savedTenant)
+                                        val linked = CallActionSessionManager.completeAndAutoLink(
+                                            context = context,
+                                            entityType = "Tenant",
+                                            entityTitle = savedTenant.tenantName.ifBlank { savedTenant.projectName },
+                                            entityId = savedTenant.id,
+                                            onCompleted = {
+                                                coroutineScope.launch {
+                                                    unloggedCallQueue = withContext(Dispatchers.IO) {
+                                                        CrmCallManager.getUnloggedCallQueue(context)
+                                                    }
+                                                    callsExternalRefreshTick++
+                                                }
+                                            }
+                                        )
+                                        if (linked) {
+                                            Toast.makeText(
+                                                context,
+                                                "Call auto-linked to Tenant ${savedTenant.tenantName} & marked Handled",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
                                     },
                                     onSaveBrokerVendor = { savedPartner ->
                                         repository.saveBrokerVendorLocalAndSync(savedPartner)
+                                        val linked = CallActionSessionManager.completeAndAutoLink(
+                                            context = context,
+                                            entityType = if (savedPartner.roleCategory.contains("Vendor", true) || savedPartner.roleCategory.contains("Ops", true)) "Vendor" else "Broker",
+                                            entityTitle = savedPartner.name,
+                                            entityId = savedPartner.id,
+                                            onCompleted = {
+                                                coroutineScope.launch {
+                                                    unloggedCallQueue = withContext(Dispatchers.IO) {
+                                                        CrmCallManager.getUnloggedCallQueue(context)
+                                                    }
+                                                    callsExternalRefreshTick++
+                                                }
+                                            }
+                                        )
+                                        if (linked) {
+                                            Toast.makeText(
+                                                context,
+                                                "Call auto-linked to ${savedPartner.name} & marked Handled",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
                                     },
+                                    activeCallContext = activeCallSession,
                                     onBack = { currentDestination = DrawerDestination.INVENTORY_DASHBOARD }
                                 )
                             }
@@ -1895,12 +2069,42 @@ fun MainAppPortal(
                             DrawerDestination.ADD_PROPERTY -> {
                                 AddPropertyScreen(
                                     onSaveProperty = { newProp ->
+                                        val roleLabel = activeCallSession?.targetRoleLabel
+                                            ?: if (pendingAddPropertyPocType.equals("Broker", true)) "Broker" else "Owner"
                                         pendingAddPropertyName = ""
                                         pendingAddPropertyPhone = ""
                                         pendingAddPropertyNote = ""
                                         pendingAddPropertyPocType = "Property Owner"
+                                        pendingAddPropertyTab = null
                                         pendingAddPropertyFromCall = false
-                                        repository.addPropertyAsync(newProp)
+                                        val savedOk = repository.addPropertyAsync(newProp)
+                                        if (savedOk) {
+                                            val linked = CallActionSessionManager.completeAndAutoLink(
+                                                context = context,
+                                                entityType = roleLabel,
+                                                entityTitle = listOf(newProp.projectName, newProp.unitNumber)
+                                                    .filter { it.isNotBlank() }
+                                                    .joinToString(" ")
+                                                    .ifBlank { newProp.propertyCode },
+                                                entityId = newProp.propertyCode.ifBlank { newProp.id },
+                                                onCompleted = {
+                                                    coroutineScope.launch {
+                                                        unloggedCallQueue = withContext(Dispatchers.IO) {
+                                                            CrmCallManager.getUnloggedCallQueue(context)
+                                                        }
+                                                        callsExternalRefreshTick++
+                                                    }
+                                                }
+                                            )
+                                            if (linked) {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Call auto-linked to ${newProp.propertyCode.ifBlank { newProp.projectName }} & marked Handled",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
+                                        savedOk
                                     },
                                     onCheckDuplicates = { code, proj, unit ->
                                         repository.findPotentialDuplicates(code, proj, unit)
@@ -1913,6 +2117,7 @@ fun MainAppPortal(
                                         pendingAddPropertyPhone = ""
                                         pendingAddPropertyNote = ""
                                         pendingAddPropertyPocType = "Property Owner"
+                                        pendingAddPropertyTab = null
                                         pendingAddPropertyFromCall = false
                                         currentDestination = DrawerDestination.INVENTORY_DASHBOARD
                                     },
@@ -1926,6 +2131,8 @@ fun MainAppPortal(
                                     initialOwnerPhone = pendingAddPropertyPhone,
                                     initialRemarks = pendingAddPropertyNote,
                                     initialPocType = pendingAddPropertyPocType,
+                                    initialTab = pendingAddPropertyTab,
+                                    activeCallContext = activeCallSession,
                                     fromCallIntelligence = pendingAddPropertyFromCall || pendingAddPropertyPhone.isNotBlank(),
                                     onRouteClientRequirementToCrm = { rawRequirement ->
                                         val phone = com.example.ai.SafeWhatsAppExtractor.normalizeIndianPhone(
@@ -2179,6 +2386,30 @@ fun MainAppPortal(
                 val saved = repository.updatePropertyAsync(updated, auditText)
                 if (saved) {
                     if (activeDetailProperty?.id == updated.id) activeDetailProperty = updated
+                    val linked = CallActionSessionManager.completeAndAutoLink(
+                        context = context,
+                        entityType = "Owner",
+                        entityTitle = listOf(updated.projectName, updated.unitNumber)
+                            .filter { it.isNotBlank() }
+                            .joinToString(" ")
+                            .ifBlank { updated.propertyCode },
+                        entityId = updated.propertyCode.ifBlank { updated.id },
+                        onCompleted = {
+                            coroutineScope.launch {
+                                unloggedCallQueue = withContext(Dispatchers.IO) {
+                                    CrmCallManager.getUnloggedCallQueue(context)
+                                }
+                                callsExternalRefreshTick++
+                            }
+                        }
+                    )
+                    if (linked) {
+                        Toast.makeText(
+                            context,
+                            "Call auto-linked to ${updated.propertyCode.ifBlank { updated.projectName }} & marked Handled",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                 }
                 saved
             },
@@ -2305,6 +2536,38 @@ fun MainAppPortal(
         }
     }
 
+    // Global Matching Brokers Multi-Select Batch Share Sheet (triggered from any PropertyCard's Brokers button)
+    matchingBrokersTargetProperty?.let { targetProp ->
+        var targetPhotoSources by remember(targetProp.id) { mutableStateOf<List<String>>(emptyList()) }
+        LaunchedEffect(targetProp.id) {
+            targetPhotoSources = WhatsAppShareHelper.collectPropertyPhotoSources(context, listOf(targetProp))
+        }
+        val unifiedBrokerMessage = remember(
+            targetProp.id,
+            effectiveUserProfile.username,
+            effectiveUserProfile.mobileNumber,
+            currentEmployee?.employeeName
+        ) {
+            WhatsAppShareFormatter.formatProperty(
+                property = targetProp,
+                employeeName = effectiveUserProfile.username.ifBlank { currentEmployee?.employeeName ?: "TLC Advisory" },
+                employeeMobile = effectiveUserProfile.mobileNumber.ifBlank { WhatsAppShareFormatter.FALLBACK_DESK_MOBILE }
+            )
+        }
+        ShareToMatchingBrokersSheet(
+            property = targetProp,
+            unifiedMessage = unifiedBrokerMessage,
+            photoSources = targetPhotoSources,
+            onDismiss = { matchingBrokersTargetProperty = null },
+            onTriggerSyncBrokers = {
+                oneTapSyncCoordinator.triggerOneTapSync(
+                    employee = sessionState.currentEmployee,
+                    showSheetOnFinish = false
+                )
+            }
+        )
+    }
+
     // Batch 5 + Batch 20: Smart Post-Call Pop-Up Bottom Sheet Overlay with Sequential Clear Queue Mode
     val advanceMainPostCallQueue: () -> Unit = {
         val nextIdx = postCallQueueIndex + 1
@@ -2323,15 +2586,28 @@ fun MainAppPortal(
         LaunchedEffect(currentCall.id, crmExternalRefreshTick) {
             currentLeads = withContext(Dispatchers.IO) { readCrmLeads(context) }
         }
-        PostCallSmartSheet(
+        CallLogActionScreen(
             call = currentCall,
             leads = currentLeads,
             inventory = scopedProperties,
             directoryProjects = directoryProjects,
             underConstProjects = scopedUnderConstProjects,
-            employeeName = effectiveUserProfile.username,
-            employeeMobile = effectiveUserProfile.mobileNumber,
-            onDismissLater = { c ->
+            tenants = tenantsList,
+            brokersVendors = brokersVendorsList,
+            queuePosition = (postCallQueueIndex + 1).coerceAtLeast(1),
+            queueTotal = postCallQueue.size.coerceAtLeast(1),
+            onBack = {
+                activePostCall = null
+                postCallQueue = emptyList()
+                postCallQueueIndex = 0
+                coroutineScope.launch {
+                    unloggedCallQueue = withContext(Dispatchers.IO) {
+                        CrmCallManager.getUnloggedCallQueue(context)
+                    }
+                    callsExternalRefreshTick++
+                }
+            },
+            onSkipLater = { c ->
                 CrmCallManager.markCallSkipped(context, c)
                 advanceMainPostCallQueue()
                 coroutineScope.launch {
@@ -2345,7 +2621,7 @@ fun MainAppPortal(
                 }
             },
             onMarkPersonalIgnore = { c ->
-                Toast.makeText(context, "Muted future pop-ups for ${c.phoneNumber}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Marked ${c.phoneNumber} as Ignored / Spam", Toast.LENGTH_SHORT).show()
                 advanceMainPostCallQueue()
                 coroutineScope.launch {
                     val refreshedQueue = withContext(Dispatchers.IO) {
@@ -2358,28 +2634,157 @@ fun MainAppPortal(
                     callsExternalRefreshTick++
                 }
             },
-            onSaveLeadAndSync = { lead, actType, actNotes ->
-                coroutineScope.launch {
-                    val persisted = withContext(Dispatchers.IO) {
-                        upsertCrmLeadFromPostCall(
+            onOpenExistingRecord = { match, session ->
+                CallActionSessionManager.beginSession(session)
+                activePostCall = null
+                postCallQueue = emptyList()
+                postCallQueueIndex = 0
+                when {
+                    match.matchedLead != null -> {
+                        val lead = match.matchedLead
+                        CrmCallManager.markCallHandledAndLinked(
                             context = context,
-                            lead = lead,
-                            activityType = actType,
-                            activityNotes = actNotes,
-                            performer = effectiveUserProfile.username
+                            callId = session.callId,
+                            fallbackCall = session.callRecord,
+                            oppType = if (lead.clientType.contains("Broker", true)) "Broker" else "Client",
+                            oppTitle = lead.displayClientTitle(),
+                            oppId = lead.id,
+                            notesOverride = session.aiSummaryNote
                         )
+                        pendingCrmSelectedLeadId = lead.id
+                        crmExternalRefreshTick++
+                        currentDestination = DrawerDestination.CRM_WORKSPACE
                     }
-                    crmExternalRefreshTick++
-                    repository.pushCrmLeadToMasterSheet(persisted)
+                    match.matchedProperties.isNotEmpty() -> {
+                        val prop = match.matchedProperties.first()
+                        CrmCallManager.markCallHandledAndLinked(
+                            context = context,
+                            callId = session.callId,
+                            fallbackCall = session.callRecord,
+                            oppType = "Owner",
+                            oppTitle = listOf(prop.projectName, prop.unitNumber).filter { it.isNotBlank() }.joinToString(" ").ifBlank { prop.propertyCode },
+                            oppId = prop.propertyCode.ifBlank { prop.id },
+                            notesOverride = session.aiSummaryNote
+                        )
+                        activeDetailProperty = prop
+                    }
+                    match.matchedTenant != null -> {
+                        val tenant = match.matchedTenant
+                        CrmCallManager.markCallHandledAndLinked(
+                            context = context,
+                            callId = session.callId,
+                            fallbackCall = session.callRecord,
+                            oppType = "Tenant",
+                            oppTitle = tenant.tenantName,
+                            oppId = tenant.id,
+                            notesOverride = session.aiSummaryNote
+                        )
+                        pendingTenantId = tenant.id
+                        pendingTenantDraft = tenant
+                        pendingBrokerVendorDraft = null
+                        pendingTenantsTabIndex = 0
+                        currentDestination = DrawerDestination.TENANTS_LEASES
+                    }
+                    match.matchedBrokerVendor != null -> {
+                        val bv = match.matchedBrokerVendor
+                        CrmCallManager.markCallHandledAndLinked(
+                            context = context,
+                            callId = session.callId,
+                            fallbackCall = session.callRecord,
+                            oppType = if (bv.roleCategory.contains("Vendor", true) || bv.roleCategory.contains("Ops", true)) "Vendor" else "Broker",
+                            oppTitle = bv.name,
+                            oppId = bv.id,
+                            notesOverride = session.aiSummaryNote
+                        )
+                        pendingBrokerVendorDraft = bv
+                        pendingTenantId = null
+                        pendingTenantDraft = null
+                        pendingTenantsTabIndex = 2
+                        currentDestination = DrawerDestination.TENANTS_LEASES
+                    }
+                    match.matchedDirectoryProject != null -> {
+                        val proj = match.matchedDirectoryProject
+                        CrmCallManager.markCallHandledAndLinked(
+                            context = context,
+                            callId = session.callId,
+                            fallbackCall = session.callRecord,
+                            oppType = "Developer POC",
+                            oppTitle = proj.name,
+                            oppId = proj.id,
+                            notesOverride = session.aiSummaryNote
+                        )
+                        pendingProjectDirectoryId = proj.id
+                        currentDestination = DrawerDestination.PROJECT_DIRECTORY
+                    }
+                    match.matchedUnderConstProject != null -> {
+                        val ucProj = match.matchedUnderConstProject
+                        CrmCallManager.markCallHandledAndLinked(
+                            context = context,
+                            callId = session.callId,
+                            fallbackCall = session.callRecord,
+                            oppType = "Developer POC",
+                            oppTitle = ucProj.projectName,
+                            oppId = ucProj.id,
+                            notesOverride = session.aiSummaryNote
+                        )
+                        pendingProjectDirectoryId = ucProj.id
+                        currentDestination = DrawerDestination.PROJECT_DIRECTORY
+                    }
+                    else -> {
+                        pendingCrmPrefillLead = CrmLead(
+                            id = "",
+                            name = session.callerName,
+                            phone = session.callerPhone,
+                            segment = "Commercial",
+                            requirement = session.aiSummaryNote.ifBlank { "Inbound Call Inquiry" },
+                            location = "",
+                            budget = "",
+                            status = "New Lead",
+                            verificationStatus = "Verified Live",
+                            nextFollowUp = "",
+                            notes = session.aiSummaryNote
+                        )
+                        crmExternalRefreshTick++
+                        currentDestination = DrawerDestination.CRM_WORKSPACE
+                    }
+                }
+                coroutineScope.launch {
+                    unloggedCallQueue = withContext(Dispatchers.IO) {
+                        CrmCallManager.getUnloggedCallQueue(context)
+                    }
+                    callsExternalRefreshTick++
                 }
             },
-            onShareMatchingProps = { lead ->
-                postCallMatchTargetLead = lead
+            onRouteClientLead = { segment, session ->
+                CallActionSessionManager.beginSession(session.copy(targetRoleLabel = "$segment Client"))
+                activePostCall = null
+                postCallQueue = emptyList()
+                postCallQueueIndex = 0
+                pendingCallNavigation = PendingCallNavigation(
+                    targetRoute = "crm_workspace",
+                    role = PostCallRole.CLIENT_LEAD,
+                    prefillName = session.callerName,
+                    prefillPhone = session.callerPhone,
+                    prefillNote = session.aiSummaryNote,
+                    segmentHint = segment,
+                    isBrokerClient = false,
+                    callId = session.callId
+                )
             },
-            onScheduleSiteVisit = { lead ->
-                postCallVisitTargetLead = lead
+            onRouteOwnerAddProperty = { initialTab, session ->
+                CallActionSessionManager.beginSession(session.copy(targetRoleLabel = "Owner"))
+                activePostCall = null
+                postCallQueue = emptyList()
+                postCallQueueIndex = 0
+                pendingAddPropertyName = session.callerName
+                pendingAddPropertyPhone = session.callerPhone
+                pendingAddPropertyNote = session.aiSummaryNote
+                pendingAddPropertyPocType = "Property Owner"
+                pendingAddPropertyTab = initialTab
+                pendingAddPropertyFromCall = true
+                currentDestination = DrawerDestination.ADD_PROPERTY
             },
-            onUpdateOwnerPropertyStatus = { prop, newStatus, callNote, updatedPrice ->
+            onUpdateOwnerUnitStatus = { prop, newStatus, callNote, updatedPrice ->
                 val ok = repository.confirmOwnerCallStatus(
                     propertyId = prop.id,
                     newStatus = newStatus,
@@ -2390,106 +2795,103 @@ fun MainAppPortal(
                 )
                 Toast.makeText(
                     context,
-                    if (ok) "Property status updated & synced" else "Unable to update property",
+                    if (ok) "Unit ${prop.propertyCode.ifBlank { prop.projectName }} updated & call linked" else "Unable to update unit",
                     Toast.LENGTH_SHORT
                 ).show()
                 ok
             },
-            onLinkOwnerExistingProperty = { prop, callRec, ownerNameInput ->
-                val ok = repository.linkOwnerPhoneToProperty(
-                    propertyId = prop.id,
-                    ownerPhone = callRec.phoneNumber,
-                    ownerName = ownerNameInput,
-                    callNote = callRec.notes,
-                    pocType = prop.pocType.takeIf { it.isNotBlank() }
-                )
-                Toast.makeText(
-                    context,
-                    if (ok) "Linked owner phone to ${prop.propertyCode}" else "Failed to link property",
-                    Toast.LENGTH_SHORT
-                ).show()
-                ok
-            },
-            onAddNewProperty = { newProp ->
-                val ok = repository.addPropertyAsync(newProp)
-                Toast.makeText(
-                    context,
-                    if (ok) "Property saved & synced" else "Unable to save property",
-                    Toast.LENGTH_SHORT
-                ).show()
-                ok
-            },
-            onOpenFullAddProperty = { ownerPhone ->
-                pendingAddPropertyPhone = ownerPhone
-                pendingAddPropertyFromCall = true
+            onRouteBrokerHasClient = { session ->
+                CallActionSessionManager.beginSession(session.copy(targetRoleLabel = "Broker Client"))
                 activePostCall = null
                 postCallQueue = emptyList()
                 postCallQueueIndex = 0
+                pendingCallNavigation = PendingCallNavigation(
+                    targetRoute = "crm_workspace",
+                    role = PostCallRole.CLIENT_LEAD,
+                    prefillName = session.callerName,
+                    prefillPhone = session.callerPhone,
+                    prefillNote = session.aiSummaryNote,
+                    segmentHint = "Commercial",
+                    isBrokerClient = true,
+                    callId = session.callId
+                )
+            },
+            onRouteBrokerHasProperty = { session ->
+                CallActionSessionManager.beginSession(session.copy(targetRoleLabel = "Broker"))
+                activePostCall = null
+                postCallQueue = emptyList()
+                postCallQueueIndex = 0
+                pendingAddPropertyName = session.callerName
+                pendingAddPropertyPhone = session.callerPhone
+                pendingAddPropertyNote = session.aiSummaryNote
+                pendingAddPropertyPocType = "Broker"
+                pendingAddPropertyTab = null
+                pendingAddPropertyFromCall = true
                 currentDestination = DrawerDestination.ADD_PROPERTY
             },
-            onCallResolved = { resolvedCall ->
-                Toast.makeText(context, "Call logged & synced", Toast.LENGTH_SHORT).show()
-                advanceMainPostCallQueue()
-                coroutineScope.launch {
-                    val refreshedQueue = withContext(Dispatchers.IO) {
-                        CrmCallManager.markPostCallPopupShown(context, resolvedCall)
-                        CrmCallManager.removeFromUnloggedQueue(context, resolvedCall)
-                        CrmCallManager.getUnloggedCallQueue(context)
-                    }
-                    unloggedCallQueue = refreshedQueue
-                    callsExternalRefreshTick++
-                }
-            },
-            tenants = tenantsList,
-            brokersVendors = brokersVendorsList,
-            canViewFullConfidentialPhones = PhoneMaskingUtils.canViewUnmaskedConfidentialPhone(
-                userProfile = effectiveUserProfile,
-                revealToggleOn = revealConfidentialPhonesForExec
-            ),
-            autoSaveGoogleContactsEnabled = autoSaveContactsEnabled,
-            onSaveTenantAndSync = { savedTenant ->
-                repository.saveTenantLocalAndSync(savedTenant)
-            },
-            onSaveBrokerVendorAndSync = { savedPartner ->
-                repository.saveBrokerVendorLocalAndSync(savedPartner)
-            },
-            onOpenMoreDetailsForRole = { role, savedCall, prefilledName, prefilledNotes, linkedEntityId, subRole ->
+            onRouteTenant = { existingTenant, session ->
+                CallActionSessionManager.beginSession(session.copy(targetRoleLabel = "Tenant"))
                 activePostCall = null
                 postCallQueue = emptyList()
                 postCallQueueIndex = 0
-                coroutineScope.launch {
-                    val refreshedQueue = withContext(Dispatchers.IO) {
-                        CrmCallManager.markPostCallPopupShown(context, savedCall)
-                        CrmCallManager.removeFromUnloggedQueue(context, savedCall)
-                        CrmCallManager.getUnloggedCallQueue(context)
-                    }
-                    unloggedCallQueue = refreshedQueue
-                    callsExternalRefreshTick++
-                }
-                pendingCallNavigation = PendingCallNavigation.fromPostCallAction(
-                    role = role,
-                    call = savedCall,
-                    prefilledName = prefilledName,
-                    prefilledNotes = prefilledNotes,
-                    linkedEntityId = linkedEntityId,
-                    subRole = subRole
+                pendingTenantDraft = existingTenant ?: OfflineDiskCache.TenantCacheRecord(
+                    id = "TNT-${java.util.UUID.randomUUID().toString().take(8).uppercase(java.util.Locale.US)}",
+                    tenantName = session.callerName,
+                    contactNumber = session.callerPhone,
+                    notes = session.aiSummaryNote,
+                    status = "Active"
                 )
+                pendingTenantId = existingTenant?.id
+                pendingTenantLinkProperty = null
+                pendingBrokerVendorDraft = null
+                pendingTenantsTabIndex = 0
+                currentDestination = DrawerDestination.TENANTS_LEASES
             },
-            queuePosition = (postCallQueueIndex + 1).coerceAtLeast(1),
-            queueTotal = postCallQueue.size.coerceAtLeast(1),
-            onCloseQueueDone = {
+            onRouteDeveloperPoc = { matchedProject, session ->
+                CallActionSessionManager.beginSession(session.copy(targetRoleLabel = "Developer POC"))
                 activePostCall = null
                 postCallQueue = emptyList()
                 postCallQueueIndex = 0
-                coroutineScope.launch {
-                    val refreshedQueue = withContext(Dispatchers.IO) {
-                        CrmCallManager.getUnloggedCallQueue(context)
+                if (matchedProject != null) {
+                    CrmCallManager.markCallHandledAndLinked(
+                        context = context,
+                        callId = session.callId,
+                        fallbackCall = session.callRecord,
+                        oppType = "Developer POC",
+                        oppTitle = matchedProject.name,
+                        oppId = matchedProject.id,
+                        notesOverride = session.aiSummaryNote
+                    )
+                    coroutineScope.launch {
+                        unloggedCallQueue = withContext(Dispatchers.IO) {
+                            CrmCallManager.getUnloggedCallQueue(context)
+                        }
+                        callsExternalRefreshTick++
                     }
-                    unloggedCallQueue = refreshedQueue
-                    callsExternalRefreshTick++
                 }
+                pendingProjectDirectoryId = matchedProject?.id
+                currentDestination = DrawerDestination.PROJECT_DIRECTORY
             },
-            onMissedCallWaCallback = { handledCall ->
+            onRouteVendor = { existingVendor, session ->
+                CallActionSessionManager.beginSession(session.copy(targetRoleLabel = "Vendor"))
+                activePostCall = null
+                postCallQueue = emptyList()
+                postCallQueueIndex = 0
+                pendingBrokerVendorDraft = existingVendor ?: BrokerVendorRecord(
+                    id = "BV-${java.util.UUID.randomUUID().toString().take(8).uppercase(java.util.Locale.US)}",
+                    name = session.callerName,
+                    phone = session.callerPhone,
+                    roleCategory = "Ops / Vendor",
+                    subRole = BrokerVendorRecord.opsSubRoles.first(),
+                    notes = session.aiSummaryNote
+                )
+                pendingTenantId = null
+                pendingTenantDraft = null
+                pendingTenantLinkProperty = null
+                pendingTenantsTabIndex = 2
+                currentDestination = DrawerDestination.TENANTS_LEASES
+            },
+            onCallHandled = { handledCall ->
                 advanceMainPostCallQueue()
                 coroutineScope.launch {
                     val refreshedQueue = withContext(Dispatchers.IO) {
@@ -2500,27 +2902,6 @@ fun MainAppPortal(
                     unloggedCallQueue = refreshedQueue
                     callsExternalRefreshTick++
                 }
-            },
-            onProjectCreated = { newProject ->
-                coroutineScope.launch {
-                    val reloaded = withContext(Dispatchers.IO) {
-                        ProjectDirectoryStore.invalidateCache()
-                        runCatching { ProjectDirectoryStore.read(context) }.getOrDefault(directoryProjects)
-                    }
-                    directoryProjects = reloaded
-                    repository.pushDirectoryProjectToMasterSheet(newProject)
-                }
-            },
-            onOpenCaptureBrokerUnit = { bName, bPhone, cNote ->
-                activePostCall = null
-                postCallQueue = emptyList()
-                postCallQueueIndex = 0
-                pendingAddPropertyName = bName
-                pendingAddPropertyPhone = bPhone
-                pendingAddPropertyNote = cNote
-                pendingAddPropertyPocType = "Broker"
-                pendingAddPropertyFromCall = true
-                currentDestination = DrawerDestination.ADD_PROPERTY
             }
         )
     }

@@ -48,6 +48,7 @@ fun SyncResultBottomSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 18.dp)
                 .padding(bottom = 18.dp)
                 .verticalScroll(rememberScrollState()),
@@ -67,7 +68,7 @@ fun SyncResultBottomSheet(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Spreadsheet: 1VJruPx1...oNReQ",
+                        text = "${com.example.data.TlcSchemaV2Api.EXPECTED_SPREADSHEET_NAME} (${report.spreadsheetId.take(8)}...${report.spreadsheetId.takeLast(4)})",
                         color = SheetSecondary,
                         fontSize = 11.sp
                     )

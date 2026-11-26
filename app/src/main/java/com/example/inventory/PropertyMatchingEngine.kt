@@ -226,22 +226,19 @@ object PropertyMatchingEngine {
             if (!matchesPropertyType(property, criteria.selectedPropertyTypes)) return false
         }
 
-        // Availability & Verification Gate
+        // Availability Gate (all active uploaded sheet properties — including Pending / Not Confirmed —
+        // are eligible for Client Matching & Shortlists; Closed/Archived units remain excluded from active matches)
         when (criteria.availabilityFilter) {
             AvailabilityFilterOption.AVAILABLE -> {
-                if (property.verificationStatus != VerificationStatus.VERIFIED) return false
-                if (property.status != AvailabilityStatus.AVAILABLE) return false
+                if (InventoryQuality.isClosedOrArchived(property)) return false
             }
             AvailabilityFilterOption.UPCOMING -> {
-                if (property.verificationStatus != VerificationStatus.VERIFIED) return false
                 if (!isUpcomingVacancy(property)) return false
             }
             AvailabilityFilterOption.LEASED -> {
-                if (property.verificationStatus != VerificationStatus.VERIFIED) return false
                 if (property.status != AvailabilityStatus.LEASED) return false
             }
             AvailabilityFilterOption.SOLD -> {
-                if (property.verificationStatus != VerificationStatus.VERIFIED) return false
                 if (property.status != AvailabilityStatus.SOLD) return false
             }
             AvailabilityFilterOption.UNAVAILABLE -> {
@@ -252,8 +249,7 @@ object PropertyMatchingEngine {
                 if (!isUnavailable) return false
             }
             AvailabilityFilterOption.ALL -> {
-                // Still require verified status unless explicitly reviewing on Dashboard
-                if (property.verificationStatus != VerificationStatus.VERIFIED) return false
+                // Include all non-archived properties regardless of verification state
             }
         }
 

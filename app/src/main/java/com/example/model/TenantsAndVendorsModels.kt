@@ -190,7 +190,10 @@ data class BrokerVendorRecord(
     val firmName: String = "",
     val operatingAreas: String = "",
     val notes: String = "",
-    val updatedAt: String = ""
+    val updatedAt: String = "",
+    val phoneType: String = "",
+    val alternateMobiles: String = "",
+    val verificationStatus: String = ""
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -202,6 +205,9 @@ data class BrokerVendorRecord(
         put("operatingAreas", operatingAreas)
         put("notes", notes)
         put("updatedAt", updatedAt)
+        put("phoneType", phoneType)
+        put("alternateMobiles", alternateMobiles)
+        put("verificationStatus", verificationStatus)
     }
 
     companion object {
@@ -223,11 +229,14 @@ data class BrokerVendorRecord(
             name = obj.optString("name", obj.optString("Name", "")),
             phone = obj.optString("phone", obj.optString("Phone", "")),
             roleCategory = obj.optString("roleCategory", obj.optString("Role Category", "Broker / CP")),
-            subRole = obj.optString("subRole", obj.optString("Sub-Role", obj.optString("Specialty", "Channel Partner"))),
+            subRole = obj.optString("subRole", obj.optString("Specialization", obj.optString("Sub-Role", obj.optString("Specialty", "Channel Partner")))),
             firmName = obj.optString("firmName", obj.optString("Firm / Agency", "")),
             operatingAreas = obj.optString("operatingAreas", obj.optString("Operating Areas", "")),
             notes = obj.optString("notes", obj.optString("Notes", "")),
-            updatedAt = obj.optString("updatedAt", obj.optString("Updated At", ""))
+            updatedAt = obj.optString("updatedAt", obj.optString("Updated At", "")),
+            phoneType = obj.optString("phoneType", obj.optString("Phone Type", "")),
+            alternateMobiles = obj.optString("alternateMobiles", obj.optString("Alternate Mobiles", "")),
+            verificationStatus = obj.optString("verificationStatus", obj.optString("Verification Status", ""))
         )
     }
 }
@@ -250,10 +259,13 @@ object PhoneMaskingUtils {
             roleName.contains("SUPER", true) ||
             roleName.contains("ADMIN", true) ||
             username.equals("Pawan", true) ||
+            username.equals("Pawan Patil", true) ||
             username.equals("Priya", true) ||
-            username.equals("Himanshu", true) ||
+            username.equals("Priya Thorat", true) ||
             username.equals("Sagar", true) ||
-            username.equals("Ayush", true)
+            username.equals("Sagar I. Chaudhari", true) ||
+            username.equals("Ayush", true) ||
+            username.equals("Ayush S. Khedkar", true)
         return isSuperAdminOrAdminOrManager || revealToggleOn
     }
 
@@ -270,9 +282,13 @@ object PhoneMaskingUtils {
 }
 
 object TenantLeaseAlertHelper {
+    private val DD_MM_YYYY_FMT = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.ENGLISH)
+
     fun parseFlexibleLocalDate(raw: String?): LocalDate? {
         val clean = raw?.trim().orEmpty()
         if (clean.isBlank()) return null
+        val normalized = com.example.data.CrmSheetSyncMapper.formatCrmDateIst(clean)
+        runCatching { return LocalDate.parse(normalized, DD_MM_YYYY_FMT) }
         val candidate10 = if (clean.length >= 10 && clean[4] == '-' && clean[7] == '-') clean.take(10) else clean
         return runCatching { LocalDate.parse(candidate10) }.getOrNull()
     }

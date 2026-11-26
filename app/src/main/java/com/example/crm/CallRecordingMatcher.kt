@@ -248,10 +248,10 @@ object CallRecordingMatcher {
      *
      * Examples:
      * - `Call recording Bld Saurabh Tak_261121_132124.m4a`
-     * - `Call recording Satish Fuke_261121_133731.m4a`
+     * - `Call recording Client Name_261121_133731.m4a`
      * - `Call recording +919730193399_261121_142920.m4a`
      * - `Call recording Suspected Spam_261121_180416.m4a`
-     * - `Satish Fuke(9822011223)_20261121133420.mp3`
+     * - `Client Name(9822011223)_20261121133420.mp3`
      */
     fun parseSamsungRecordingMetadata(
         fileName: String,
@@ -2079,7 +2079,11 @@ data class PendingCallNavigation(
     val prefillNote: String,
     val taggedPropertyId: String? = null,
     val role: PostCallRole = PostCallRole.CLIENT_LEAD,
-    val subRole: String = ""
+    val subRole: String = "",
+    val segmentHint: String = "",
+    val isBrokerClient: Boolean = false,
+    val initialPropertyTab: com.example.model.InventoryTab? = null,
+    val callId: String = ""
 ) {
     companion object {
         const val ROUTE_ADD_EDIT_LEAD = "CRM_WORKSPACE"
@@ -2094,14 +2098,18 @@ data class PendingCallNavigation(
             prefilledName: String,
             prefilledNotes: String,
             linkedEntityId: String?,
-            subRole: String = ""
+            subRole: String = "",
+            segmentHint: String = "",
+            isBrokerClient: Boolean = false,
+            initialPropertyTab: com.example.model.InventoryTab? = null
         ): PendingCallNavigation {
-            val route = when (role) {
-                PostCallRole.CLIENT_LEAD, PostCallRole.FRESH_UNKNOWN -> ROUTE_ADD_EDIT_LEAD
-                PostCallRole.PROPERTY_OWNER -> ROUTE_ADD_EDIT_PROPERTY
-                PostCallRole.DEVELOPER_POC -> ROUTE_ADD_EDIT_PROJECT
-                PostCallRole.TENANT -> ROUTE_ADD_EDIT_TENANT
-                PostCallRole.BROKER, PostCallRole.OPS_VENDOR -> ROUTE_OPS_VENDOR
+            val route = when {
+                isBrokerClient -> ROUTE_ADD_EDIT_LEAD
+                role == PostCallRole.CLIENT_LEAD || role == PostCallRole.FRESH_UNKNOWN -> ROUTE_ADD_EDIT_LEAD
+                role == PostCallRole.PROPERTY_OWNER -> ROUTE_ADD_EDIT_PROPERTY
+                role == PostCallRole.DEVELOPER_POC -> ROUTE_ADD_EDIT_PROJECT
+                role == PostCallRole.TENANT -> ROUTE_ADD_EDIT_TENANT
+                else -> ROUTE_OPS_VENDOR
             }
             val normalizedPhone = ContactUtils.normalizePhoneNumber(call.phoneNumber).ifBlank { call.phoneNumber }
             val resolvedName = prefilledName.trim().ifBlank {
@@ -2116,7 +2124,11 @@ data class PendingCallNavigation(
                 prefillNote = prefilledNotes.trim().ifBlank { call.notes.trim() },
                 taggedPropertyId = linkedEntityId?.takeIf { it.isNotBlank() },
                 role = role,
-                subRole = subRole
+                subRole = subRole,
+                segmentHint = segmentHint,
+                isBrokerClient = isBrokerClient,
+                initialPropertyTab = initialPropertyTab,
+                callId = call.id
             )
         }
     }

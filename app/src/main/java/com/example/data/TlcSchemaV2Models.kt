@@ -312,28 +312,92 @@ data class TlcDashboardKpis(
 }
 
 /**
- * Maps internal PropertyItem tabs to the 5 Schema v2 inventory tab names expected by `submit_inventory`.
+ * Maps internal PropertyItem tabs to the 5 TLC Master Sheet inventory tab names expected by `submit_inventory`.
  */
 object TlcInventoryTabV2 {
     const val COMMERCIAL_LEASE = "Commercial Lease Inventory"
-    const val COMMERCIAL_SALE = "Commercial Sale Inventory"
-    const val PRE_LEASED = "Pre-Leased Inventory"
-    const val RESIDENTIAL_LEASE = "Residential Lease Inventory"
-    const val RESIDENTIAL_SALE = "Residential Sale Inventory"
+    const val COMMERCIAL_RESALE = "Commercial Resale Inventory"
+    const val RESIDENTIAL_UNDER_CONSTRUCTION = "Residential Under Construction"
+    const val RESIDENTIAL_RESALE = "Residential Resale"
+    const val RESIDENTIAL_RENTALS = "Residential Rentals"
+
+    // Legacy compatibility aliases
+    const val COMMERCIAL_SALE = COMMERCIAL_RESALE
+    const val PRE_LEASED = COMMERCIAL_RESALE
+    const val RESIDENTIAL_LEASE = RESIDENTIAL_RENTALS
+    const val RESIDENTIAL_SALE = RESIDENTIAL_RESALE
 
     val ALL_FIVE_TABS = listOf(
         COMMERCIAL_LEASE,
-        COMMERCIAL_SALE,
-        PRE_LEASED,
-        RESIDENTIAL_LEASE,
-        RESIDENTIAL_SALE
+        COMMERCIAL_RESALE,
+        RESIDENTIAL_UNDER_CONSTRUCTION,
+        RESIDENTIAL_RESALE,
+        RESIDENTIAL_RENTALS
     )
 
-    fun resolveTabName(property: PropertyItem): String = when (property.tab) {
+    fun resolveTabName(property: PropertyItem): String = resolveTabName(property.tab)
+
+    fun resolveTabName(tab: InventoryTab): String = when (tab) {
         InventoryTab.OFF_LEASE, InventoryTab.SHOP_LEASE -> COMMERCIAL_LEASE
-        InventoryTab.OFF_OUT, InventoryTab.SHOP_OUT -> COMMERCIAL_SALE
-        InventoryTab.PRE_LEASED -> PRE_LEASED
-        InventoryTab.RESI_RENT -> RESIDENTIAL_LEASE
-        InventoryTab.RESI_RESALE, InventoryTab.UND_CONST -> RESIDENTIAL_SALE
+        InventoryTab.OFF_OUT, InventoryTab.SHOP_OUT, InventoryTab.PRE_LEASED -> COMMERCIAL_RESALE
+        InventoryTab.UND_CONST -> RESIDENTIAL_UNDER_CONSTRUCTION
+        InventoryTab.RESI_RESALE -> RESIDENTIAL_RESALE
+        InventoryTab.RESI_RENT -> RESIDENTIAL_RENTALS
+    }
+
+    /**
+     * Resolves a sheet tab name, InventoryTab enum name, or legacy Room tab label
+     * (e.g. "Off Lease", "OFF_LEASE", "Commercial Lease Inventory", "Resi Sale")
+     * to one of the 5 canonical TLC Master Sheet inventory tab names.
+     */
+    fun resolveTabNameFromString(rawTab: String?): String? {
+        val clean = rawTab?.trim().orEmpty()
+        if (clean.isBlank()) return null
+        ALL_FIVE_TABS.firstOrNull { it.equals(clean, ignoreCase = true) }?.let { return it }
+        val normalized = clean.lowercase(Locale.ENGLISH)
+        return when {
+            normalized.contains("commercial lease") ||
+                normalized == "off lease" ||
+                normalized == "off_lease" ||
+                normalized == "shop lease" ||
+                normalized == "shop_lease" ||
+                (normalized.contains("commercial") && normalized.contains("lease") && !normalized.contains("pre")) ->
+                COMMERCIAL_LEASE
+
+            normalized.contains("commercial resale") ||
+                normalized.contains("commercial sale") ||
+                normalized.contains("commercial outright") ||
+                normalized == "off out" ||
+                normalized == "off_out" ||
+                normalized == "shop out" ||
+                normalized == "shop_out" ||
+                normalized.contains("pre-leased") ||
+                normalized.contains("pre_leased") ||
+                normalized.contains("pre leased") ->
+                COMMERCIAL_RESALE
+
+            normalized.contains("under construction") ||
+                normalized == "und const" ||
+                normalized == "und_const" ||
+                normalized.contains("new residential") ->
+                RESIDENTIAL_UNDER_CONSTRUCTION
+
+            normalized.contains("residential resale") ||
+                normalized.contains("residential sale") ||
+                normalized == "resi resale" ||
+                normalized == "resi_resale" ||
+                normalized == "resi sale" ||
+                normalized == "resi_sale" ->
+                RESIDENTIAL_RESALE
+
+            normalized.contains("residential rental") ||
+                normalized.contains("residential rent") ||
+                normalized.contains("residential lease") ||
+                normalized == "resi rent" ||
+                normalized == "resi_rent" ->
+                RESIDENTIAL_RENTALS
+
+            else -> null
+        }
     }
 }

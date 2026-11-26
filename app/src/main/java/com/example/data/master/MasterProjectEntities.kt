@@ -84,7 +84,15 @@ data class PropertyUnitEntity(
     val status: String = "Available", // AvailabilityStatus
     val ownerName: String? = null,
     val ownerContact: String? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val microMarket: String? = null,
+    val attachedPantry: String? = null,
+    val attachedWashroom: String? = null,
+    val frontageFt: Double? = null,
+    val clearHeightFt: Double? = null,
+    val truckAccess: String? = null,
+    val powerLoad: String? = null,
+    val targetPossessionDate: String? = null
 )
 
 data class ProjectWithUnits(
@@ -255,4 +263,91 @@ data class MarketPulseEntity(
     val isCached: Boolean = true
 )
 
+@Entity(
+    tableName = "call_logs_master",
+    indices = [
+        Index(value = ["timestamp"]),
+        Index(value = ["syncStatus"]),
+        Index(value = ["phoneNumber"])
+    ]
+)
+data class CallLogEntity(
+    @PrimaryKey
+    val callId: String,
+    val timestamp: Long = System.currentTimeMillis(),
+    val callerName: String = "",
+    val phoneNumber: String = "",
+    val direction: String = "INCOMING",
+    val durationSeconds: Int = 0,
+    val roleOrLinkedId: String = "",
+    val linkedTitle: String = "",
+    val notesOrAiSummary: String = "",
+    val employeeName: String = "",
+    val deviceName: String? = null,
+    val recordingFilename: String? = null,
+    val syncStatus: String = "PENDING", // PENDING / SYNCED
+    val updatedAt: Long = System.currentTimeMillis()
+)
 
+@Entity(
+    tableName = "brokers_master",
+    indices = [
+        Index(value = ["mobileLast10"]),
+        Index(value = ["division"]),
+        Index(value = ["sourceTab"])
+    ]
+)
+data class BrokerEntity(
+    @PrimaryKey
+    val brokerId: String,
+    val name: String = "",
+    val phone: String = "",
+    val mobileLast10: String = "",
+    val division: String = "Commercial", // "Commercial" | "Residential"
+    val firmName: String = "",
+    val operatingAreas: String = "",
+    val specialization: String = "",
+    val confidence: String = "",
+    val notes: String = "",
+    val sourceTab: String = "Commercial Brokers",
+    val updatedAt: Long = System.currentTimeMillis(),
+    val phoneType: String = "",
+    val alternateMobiles: String = "",
+    val verificationStatus: String = ""
+)
+
+@Entity(
+    tableName = "call_analysis_master",
+    indices = [
+        Index(value = ["callerRole"]),
+        Index(value = ["reviewStatus"]),
+        Index(value = ["aiAnalyzedAt"])
+    ]
+)
+data class CallAnalysisEntity(
+    @PrimaryKey
+    val callLogId: String,
+    val callerName: String = "",
+    val phoneNumber: String = "",
+    val callTimestamp: Long = 0L,
+    val durationSeconds: Int = 0,
+    val callerRole: String = "PERSONAL_NON_BUSINESS",
+    val detectedLanguage: String = "English",
+    val summaryBulletsJson: String = "[]",
+    val extractedClientLeadJson: String = "",
+    val extractedPropertyUpdateJson: String = "",
+    val extractedTenantNoteJson: String = "",
+    val followUpDate: String = "", // dd/MM/yyyy
+    val followUpTime: String = "", // hh:mm a
+    val followUpNextAction: String = "",
+    val suggestedWhatsAppDraft: String = "",
+    val confidence: Int = 0,
+    val needsReview: Boolean = false,
+    val modelUsed: String = "",
+    val reviewStatus: String = "PENDING_REVIEW", // PENDING_REVIEW | APPROVED | DISMISSED
+    val aiAnalyzedAt: Long = System.currentTimeMillis(),
+    val deviceName: String = "",
+    val recordingFilename: String = "",
+    val rawTranscript: String = "",
+    val syncedToSheet: Boolean = false
+)

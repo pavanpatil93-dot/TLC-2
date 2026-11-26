@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.SheetsRepository
+import com.example.data.TlcPropertyCalculator
 import com.example.data.projects.DirectoryProject
 import com.example.data.projects.ProjectDirectoryStore
 import com.example.data.pune.CommercialProjectEntity
@@ -37,9 +38,13 @@ import com.example.data.pune.LocationEntity
 import com.example.data.pune.PuneIntelligenceRepository
 import com.example.model.*
 import com.example.ui.components.CompactDropdownField
+import com.example.ui.components.LiveAreaFinancialPreviewCard
 import com.example.ui.components.PocTypeChipSelector
+import com.example.ui.components.ProjectDirectoryAutoFillEntry
 import com.example.ui.components.PropertyMediaUploadSection
 import com.example.ui.components.SearchableDropdownField
+import com.example.ui.components.TlcProjectDirectoryHelper
+import com.example.ui.components.YesNoToggleField
 import com.example.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -129,17 +134,24 @@ fun EditPropertyScreen(
     var masterLocations by remember { mutableStateOf<List<LocationEntity>>(emptyList()) }
     var masterCommercialProjects by remember { mutableStateOf<List<CommercialProjectEntity>>(emptyList()) }
     var directoryProjects by remember { mutableStateOf<List<DirectoryProject>>(emptyList()) }
+    var unifiedProjectDirectory by remember { mutableStateOf<Map<String, ProjectDirectoryAutoFillEntry>>(emptyMap()) }
     var showQuickAddProjectDialog by remember { mutableStateOf(false) }
     var pendingNewProjectName by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
-        masterLocations = puneRepo.getAllLocations()
+        val locs = puneRepo.getAllLocations()
+        masterLocations = locs
         masterCommercialProjects = puneRepo.getAllCommercialProjects()
         runCatching {
             withContext(Dispatchers.IO) { ProjectDirectoryStore.read(context) }
         }.onSuccess {
             directoryProjects = it
         }
+        unifiedProjectDirectory = TlcProjectDirectoryHelper.loadUnifiedProjectDirectory(
+            context = context,
+            puneRepo = puneRepo,
+            masterLocations = locs
+        )
     }
 
     // Core form state synchronized to baseProperty
@@ -147,11 +159,19 @@ fun EditPropertyScreen(
     var projectIdState by remember(baseProperty) { mutableStateOf(baseProperty.projectId) }
     var developerState by remember(baseProperty) { mutableStateOf(baseProperty.builderName ?: "") }
     var location by remember(baseProperty) { mutableStateOf(baseProperty.location) }
+    var microMarket by remember(baseProperty) { mutableStateOf(baseProperty.effectiveMicroMarket ?: "") }
+    var puneZone by remember(baseProperty) { mutableStateOf(baseProperty.puneZone ?: "") }
+    var jurisdiction by remember(baseProperty) { mutableStateOf(baseProperty.jurisdiction ?: "") }
+    var ocStatus by remember(baseProperty) { mutableStateOf(baseProperty.ocStatus ?: "") }
     var propertyType by remember(baseProperty) { mutableStateOf(baseProperty.propertyType) }
     var unitNumber by remember(baseProperty) { mutableStateOf(baseProperty.unitNumber) }
     var floor by remember(baseProperty) { mutableStateOf(baseProperty.floor) }
     var carpetArea by remember(baseProperty) {
-        mutableStateOf(if (baseProperty.carpetAreaSqFt > 0.0) baseProperty.carpetAreaSqFt.toInt().toString() else "")
+        val gf = baseProperty.groundFloorCarpetSqFt ?: baseProperty.carpetAreaSqFt
+        mutableStateOf(if (gf > 0.0) gf.toInt().toString() else "")
+    }
+    var mezzanineCarpet by remember(baseProperty) {
+        mutableStateOf(baseProperty.mezzanineCarpetSqFt?.takeIf { it > 0.0 }?.toInt()?.toString() ?: "")
     }
     var builtUpArea by remember(baseProperty) {
         mutableStateOf(baseProperty.builtUpAreaSqFt?.toInt()?.toString() ?: "")
@@ -165,14 +185,24 @@ fun EditPropertyScreen(
     var rent by remember(baseProperty) {
         mutableStateOf(
             baseProperty.rent?.toLong()?.toString()
+                ?: baseProperty.monthlyRentalIncome?.toLong()?.toString()
                 ?: if (baseProperty.tab.isRental && baseProperty.priceOrRent > 0.0) baseProperty.priceOrRent.toLong().toString() else ""
         )
     }
     var deposit by remember(baseProperty) { mutableStateOf(baseProperty.deposit?.toLong()?.toString() ?: "") }
     var roiPercent by remember(baseProperty) { mutableStateOf(baseProperty.roiPercent?.toString() ?: "") }
+    var isPreLeasedState by remember(baseProperty) { mutableStateOf(baseProperty.effectiveIsPreLeased) }
+    var tenantNameState by remember(baseProperty) { mutableStateOf(baseProperty.tenantName ?: "") }
     var furnishing by remember(baseProperty) { mutableStateOf(baseProperty.furnishing) }
     var possession by remember(baseProperty) { mutableStateOf(baseProperty.possession) }
+    var targetPossessionDate by remember(baseProperty) { mutableStateOf(baseProperty.targetPossessionDate ?: "") }
     var parking by remember(baseProperty) { mutableStateOf(baseProperty.parking) }
+    var attachedPantry by remember(baseProperty) { mutableStateOf(baseProperty.attachedPantry) }
+    var attachedWashroom by remember(baseProperty) { mutableStateOf(baseProperty.attachedWashroom) }
+    var frontageFt by remember(baseProperty) { mutableStateOf(baseProperty.effectiveFrontageFt?.toString() ?: "") }
+    var clearHeightFt by remember(baseProperty) { mutableStateOf(baseProperty.effectiveClearHeightFt?.toString() ?: "") }
+    var truckAccess by remember(baseProperty) { mutableStateOf(baseProperty.truckAccess ?: "") }
+    var powerLoad by remember(baseProperty) { mutableStateOf(baseProperty.powerLoad ?: "") }
     var workstations by remember(baseProperty) { mutableStateOf(baseProperty.workstations?.toString() ?: "") }
     var cabins by remember(baseProperty) { mutableStateOf(baseProperty.cabins?.toString() ?: "") }
     var bhkConfig by remember(baseProperty) { mutableStateOf(baseProperty.bhk ?: "") }
@@ -229,18 +259,29 @@ fun EditPropertyScreen(
 
     val hasUnsavedChanges = project != baseProperty.projectName ||
         location != baseProperty.location ||
+        microMarket != (baseProperty.effectiveMicroMarket ?: "") ||
         propertyType != baseProperty.propertyType ||
         unitNumber != baseProperty.unitNumber ||
         floor != baseProperty.floor ||
         carpetArea != initialCarpetText ||
+        mezzanineCarpet != (baseProperty.mezzanineCarpetSqFt?.takeIf { it > 0.0 }?.toInt()?.toString() ?: "") ||
         builtUpArea != initialBuiltUpText ||
         priceSale != initialSaleText ||
         rent != initialRentText ||
         deposit != (baseProperty.deposit?.toLong()?.toString() ?: "") ||
         roiPercent != (baseProperty.roiPercent?.toString() ?: "") ||
+        isPreLeasedState != baseProperty.effectiveIsPreLeased ||
+        tenantNameState != (baseProperty.tenantName ?: "") ||
         furnishing != baseProperty.furnishing ||
         possession != baseProperty.possession ||
+        targetPossessionDate != (baseProperty.targetPossessionDate ?: "") ||
         parking != baseProperty.parking ||
+        attachedPantry != baseProperty.attachedPantry ||
+        attachedWashroom != baseProperty.attachedWashroom ||
+        frontageFt != (baseProperty.effectiveFrontageFt?.toString() ?: "") ||
+        clearHeightFt != (baseProperty.effectiveClearHeightFt?.toString() ?: "") ||
+        truckAccess != (baseProperty.truckAccess ?: "") ||
+        powerLoad != (baseProperty.powerLoad ?: "") ||
         workstations != (baseProperty.workstations?.toString() ?: "") ||
         cabins != (baseProperty.cabins?.toString() ?: "") ||
         bhkConfig != (baseProperty.bhk ?: "") ||
@@ -258,15 +299,41 @@ fun EditPropertyScreen(
         videoUrlState != baseProperty.videoUrl ||
         floorPlanUrlState != baseProperty.floorPlanUrl
 
-    val isPreLeased = baseProperty.tab == InventoryTab.PRE_LEASED ||
-        baseProperty.transactionType.contains("Pre", ignoreCase = true)
+    val isPreLeased = isPreLeasedState || baseProperty.tab == InventoryTab.PRE_LEASED
     val isPureRental = baseProperty.tab.isRental && !isPreLeased
+    val isShopOrShowroom = baseProperty.tab.isCommercial && TlcPropertyCalculator.isShopOrShowroom(propertyType, baseProperty.tab)
+    val isWarehouseOrIndustrial = baseProperty.tab.isCommercial && TlcPropertyCalculator.isWarehouseOrIndustrial(propertyType)
+    val isUnitNumberMandatory = remember(pocType) { TlcPropertyCalculator.isUnitNumberRequired(pocType) }
 
-    val projectLookupMap = remember(directoryProjects, masterCommercialProjects, masterLocations) {
+    val editAreaCalc = remember(carpetArea, mezzanineCarpet, builtUpArea, propertyType, baseProperty.tab) {
+        TlcPropertyCalculator.calculateAreaMetrics(
+            groundFloorCarpet = if (isShopOrShowroom) carpetArea.trim().toDoubleOrNull() else null,
+            mezzanineCarpet = if (isShopOrShowroom) mezzanineCarpet.trim().toDoubleOrNull() else null,
+            directCarpet = carpetArea.trim().toDoubleOrNull(),
+            builtUpInput = builtUpArea.trim().toDoubleOrNull(),
+            propertyType = propertyType,
+            isCommercial = baseProperty.tab.isCommercial,
+            tab = baseProperty.tab
+        )
+    }
+
+    val editGrossRoi = remember(rent, priceSale, roiPercent) {
+        TlcPropertyCalculator.calculateGrossRoiPercent(
+            monthlyRent = rent.trim().toDoubleOrNull(),
+            baseValue = priceSale.trim().toDoubleOrNull()
+        ) ?: roiPercent.trim().toDoubleOrNull()
+    }
+
+    val projectLookupMap = remember(unifiedProjectDirectory, directoryProjects, masterCommercialProjects, masterLocations) {
         val locById = masterLocations.associate { it.id to it.name.trim() }
         val map = LinkedHashMap<String, Pair<String, String>>()
+        unifiedProjectDirectory.forEach { (name, entry) ->
+            map[name] = entry.location to entry.developer
+        }
         directoryProjects.forEach { dp ->
-            if (dp.name.isNotBlank()) map[dp.name.trim()] = dp.location.trim() to dp.developer.trim()
+            if (dp.name.isNotBlank() && !map.containsKey(dp.name.trim())) {
+                map[dp.name.trim()] = dp.location.trim() to dp.developer.trim()
+            }
         }
         masterCommercialProjects.forEach { cp ->
             val name = cp.name.trim()
@@ -286,8 +353,13 @@ fun EditPropertyScreen(
     val localityOptions = remember(masterLocations, location) {
         (listOfNotNull(location.trim().takeIf { it.isNotBlank() }) +
             masterLocations.map { it.name.trim() } +
-            TlcStandardOptions.puneLocations +
-            TlcStandardOptions.kharadiMicroMarkets)
+            TlcStandardOptions.puneLocations)
+            .filter { it.isNotBlank() }
+            .distinct()
+    }
+
+    val microMarketOptions = remember(microMarket) {
+        (listOfNotNull(microMarket.trim().takeIf { it.isNotBlank() }) + TlcStandardOptions.kharadiMicroMarkets)
             .filter { it.isNotBlank() }
             .distinct()
     }
@@ -382,24 +454,64 @@ fun EditPropertyScreen(
         val trimmedOwner = ownerName.trim().takeIf { it.isNotBlank() }
         val trimmedPhone = ownerContact.trim().takeIf { it.isNotBlank() }
 
+        if (isUnitNumberMandatory && unitNumber.trim().isBlank()) {
+            errorMessage = "Exact Unit Number is required for ${pocType.ifBlank { "Direct Owner / Developer" }}."
+            return
+        }
+        if (isPreLeased && tenantNameState.trim().isBlank()) {
+            errorMessage = "Pre-Leased listing requires Tenant Name / Industry."
+            return
+        }
+        if (isPreLeased && (parsedRent == null || parsedRent <= 0.0)) {
+            errorMessage = "Pre-Leased listing requires Current Monthly Rent (₹)."
+            return
+        }
+
+        val effectiveTotalCarpet = if (editAreaCalc.totalCarpetSqFt > 0.0) editAreaCalc.totalCarpetSqFt else parsedCarpet
+        val effectiveBuiltUp = editAreaCalc.totalBuiltUpSqFt ?: parsedBuiltUp
+        val effectiveRoi = editGrossRoi ?: parsedRoi
+        val parsedFrontage = frontageFt.trim().toDoubleOrNull()
+        val parsedClearHeight = clearHeightFt.trim().toDoubleOrNull()
+        val formattedTargetPoss = TlcPropertyCalculator.formatDateDdMmYyyy(targetPossessionDate).takeIf { it.isNotBlank() }
+
         val updated = baseProperty.copy(
             projectName = project.trim(),
             projectId = projectIdState.ifBlank { baseProperty.projectId },
             builderName = developerState.trim().takeIf { it.isNotBlank() } ?: baseProperty.builderName,
             location = location.trim(),
+            microMarket = microMarket.trim().takeIf { it.isNotBlank() },
+            puneZone = puneZone.trim().takeIf { it.isNotBlank() },
+            jurisdiction = jurisdiction.trim().takeIf { it.isNotBlank() },
+            ocStatus = ocStatus.trim().takeIf { it.isNotBlank() },
             propertyType = propertyType.trim().ifBlank { baseProperty.propertyType },
             unitNumber = unitNumber.trim(),
             floor = floor.trim(),
-            carpetAreaSqFt = parsedCarpet,
-            builtUpAreaSqFt = parsedBuiltUp,
+            carpetAreaSqFt = effectiveTotalCarpet,
+            groundFloorCarpetSqFt = editAreaCalc.groundFloorCarpetSqFt,
+            mezzanineCarpetSqFt = if (isShopOrShowroom) editAreaCalc.mezzanineCarpetSqFt else null,
+            builtUpAreaSqFt = effectiveBuiltUp,
+            isAreaEstimated = editAreaCalc.isBuiltUpAutoCalculated || editAreaCalc.isCarpetAutoCalculated,
+            isManualBuiltUpOverride = editAreaCalc.isManualBuiltUpOrLoadingOverride,
             priceOrRent = primaryPrice,
             priceSale = parsedSale,
             rent = parsedRent,
+            monthlyRentalIncome = if (isPreLeased) parsedRent else baseProperty.monthlyRentalIncome,
             deposit = parsedDeposit,
-            roiPercent = parsedRoi,
+            roiPercent = effectiveRoi,
+            isPreLeased = isPreLeased,
+            tenantName = if (isPreLeased) tenantNameState.trim().takeIf { it.isNotBlank() } else baseProperty.tenantName,
             furnishing = furnishing,
             possession = possession.trim(),
+            targetPossessionDate = formattedTargetPoss,
             parking = parking.trim(),
+            attachedPantry = if (baseProperty.tab.isCommercial) attachedPantry else baseProperty.attachedPantry,
+            attachedWashroom = if (baseProperty.tab.isCommercial) attachedWashroom else baseProperty.attachedWashroom,
+            frontageFt = if (isShopOrShowroom) parsedFrontage else null,
+            frontageFeet = if (isShopOrShowroom) parsedFrontage else null,
+            clearHeightFt = if (isShopOrShowroom || isWarehouseOrIndustrial) parsedClearHeight else null,
+            ceilingHeightFeet = if (isShopOrShowroom || isWarehouseOrIndustrial) parsedClearHeight else null,
+            truckAccess = if (isWarehouseOrIndustrial) truckAccess.trim().takeIf { it.isNotBlank() } else null,
+            powerLoad = if (isWarehouseOrIndustrial) powerLoad.trim().takeIf { it.isNotBlank() } else null,
             workstations = workstations.trim().toIntOrNull(),
             cabins = cabins.trim().toIntOrNull(),
             bhk = if (!baseProperty.tab.isCommercial) bhkConfig.trim().takeIf { it.isNotBlank() } else baseProperty.bhk,
@@ -423,20 +535,32 @@ fun EditPropertyScreen(
 
         val changedFields = buildSet {
             if (updated.projectName != baseProperty.projectName) add("projectName")
+            if (updated.projectId != baseProperty.projectId) add("projectId")
             if (updated.location != baseProperty.location) add("location")
+            if (updated.microMarket != baseProperty.microMarket) add("microMarket")
             if (updated.propertyType != baseProperty.propertyType) add("propertyType")
             if (updated.unitNumber != baseProperty.unitNumber) add("unitNumber")
             if (updated.floor != baseProperty.floor) add("floor")
             if (updated.carpetAreaSqFt != baseProperty.carpetAreaSqFt) add("carpetAreaSqFt")
+            if (updated.mezzanineCarpetSqFt != baseProperty.mezzanineCarpetSqFt) add("mezzanineCarpetSqFt")
             if (updated.builtUpAreaSqFt != baseProperty.builtUpAreaSqFt) add("builtUpAreaSqFt")
             if (updated.priceOrRent != baseProperty.priceOrRent) add("priceOrRent")
             if (updated.priceSale != baseProperty.priceSale) add("priceSale")
             if (updated.rent != baseProperty.rent) add("rent")
             if (updated.deposit != baseProperty.deposit) add("deposit")
             if (updated.roiPercent != baseProperty.roiPercent) add("roiPercent")
+            if (updated.isPreLeased != baseProperty.isPreLeased) add("isPreLeased")
+            if (updated.tenantName != baseProperty.tenantName) add("tenantName")
             if (updated.furnishing != baseProperty.furnishing) add("furnishing")
             if (updated.possession != baseProperty.possession) add("possession")
+            if (updated.targetPossessionDate != baseProperty.targetPossessionDate) add("targetPossessionDate")
             if (updated.parking != baseProperty.parking) add("parking")
+            if (updated.attachedPantry != baseProperty.attachedPantry) add("attachedPantry")
+            if (updated.attachedWashroom != baseProperty.attachedWashroom) add("attachedWashroom")
+            if (updated.frontageFt != baseProperty.frontageFt) add("frontageFt")
+            if (updated.clearHeightFt != baseProperty.clearHeightFt) add("clearHeightFt")
+            if (updated.truckAccess != baseProperty.truckAccess) add("truckAccess")
+            if (updated.powerLoad != baseProperty.powerLoad) add("powerLoad")
             if (updated.workstations != baseProperty.workstations) add("workstations")
             if (updated.cabins != baseProperty.cabins) add("cabins")
             if (updated.bhk != baseProperty.bhk) add("bhk")
@@ -770,42 +894,38 @@ fun EditPropertyScreen(
                             letterSpacing = 0.6.sp
                         )
 
+                        SearchableDropdownField(
+                            label = "Project / Building Name *",
+                            selectedValue = project,
+                            options = projectOptions,
+                            onValueSelected = { picked ->
+                                if (picked == "+ Add New Project") {
+                                    pendingNewProjectName = project
+                                    showQuickAddProjectDialog = true
+                                } else {
+                                    project = picked
+                                    val dirEntry = unifiedProjectDirectory[picked.trim()]
+                                    if (dirEntry != null) {
+                                        projectIdState = dirEntry.projectId
+                                        if (dirEntry.location.isNotBlank()) location = dirEntry.location
+                                        if (dirEntry.microMarket.isNotBlank()) microMarket = dirEntry.microMarket
+                                        if (dirEntry.developer.isNotBlank()) developerState = dirEntry.developer
+                                        if (dirEntry.puneZone.isNotBlank()) puneZone = dirEntry.puneZone
+                                        if (dirEntry.jurisdiction.isNotBlank()) jurisdiction = dirEntry.jurisdiction
+                                        if (dirEntry.ocStatus.isNotBlank()) ocStatus = dirEntry.ocStatus
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("edit_project_input"),
+                            allowAddNew = true
+                        )
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            SearchableDropdownField(
-                                label = "Project / Building *",
-                                selectedValue = project,
-                                options = projectOptions,
-                                onValueSelected = { picked ->
-                                    if (picked == "+ Add New Project") {
-                                        pendingNewProjectName = project
-                                        showQuickAddProjectDialog = true
-                                    } else {
-                                        project = picked
-                                        val dirMatch = directoryProjects.firstOrNull {
-                                            it.name.equals(picked.trim(), ignoreCase = true)
-                                        }
-                                        if (dirMatch != null) {
-                                            projectIdState = dirMatch.id
-                                            if (dirMatch.location.isNotBlank()) location = dirMatch.location
-                                            if (dirMatch.developer.isNotBlank()) developerState = dirMatch.developer
-                                        } else {
-                                            val lookup = projectLookupMap[picked.trim()]
-                                            if (lookup != null) {
-                                                if (lookup.first.isNotBlank()) location = lookup.first
-                                                if (lookup.second.isNotBlank()) developerState = lookup.second
-                                            }
-                                        }
-                                    }
-                                },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("edit_project_input"),
-                                allowAddNew = true
-                            )
-
                             SearchableDropdownField(
                                 label = "Location *",
                                 selectedValue = location,
@@ -814,6 +934,17 @@ fun EditPropertyScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .testTag("edit_location_input"),
+                                allowAddNew = true
+                            )
+
+                            SearchableDropdownField(
+                                label = "Micro-Market",
+                                selectedValue = microMarket,
+                                options = microMarketOptions,
+                                onValueSelected = { microMarket = it },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("edit_micro_market_input"),
                                 allowAddNew = true
                             )
                         }
@@ -832,10 +963,10 @@ fun EditPropertyScreen(
                             )
 
                             CompactFormInputField(
-                                label = "Unit / Shop / Office No",
+                                label = if (isUnitNumberMandatory) "Unit / Office No *" else "Unit No (Optional)",
                                 value = unitNumber,
                                 onValueChange = { unitNumber = it },
-                                placeholder = "e.g. 402",
+                                placeholder = if (isUnitNumberMandatory) "Required (e.g. 402)" else "Optional for Broker",
                                 modifier = Modifier
                                     .weight(1f)
                                     .testTag("edit_unit_input")
@@ -893,30 +1024,78 @@ fun EditPropertyScreen(
                             letterSpacing = 0.6.sp
                         )
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                        if (isShopOrShowroom) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CompactFormInputField(
+                                    label = "Ground Floor Carpet (sq.ft) *",
+                                    value = carpetArea,
+                                    onValueChange = { carpetArea = sanitizeEditDecimal(it) },
+                                    placeholder = "e.g. 850",
+                                    keyboardType = KeyboardType.Decimal,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("edit_carpet_input")
+                                )
+                                CompactFormInputField(
+                                    label = "Mezzanine Carpet (sq.ft)",
+                                    value = mezzanineCarpet,
+                                    onValueChange = { mezzanineCarpet = sanitizeEditDecimal(it) },
+                                    placeholder = "e.g. 250",
+                                    keyboardType = KeyboardType.Decimal,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("edit_mezzanine_carpet_input")
+                                )
+                            }
                             CompactFormInputField(
-                                label = "Carpet Area (sq.ft) *",
-                                value = carpetArea,
-                                onValueChange = { carpetArea = sanitizeEditDecimal(it) },
-                                placeholder = "e.g. 1250",
-                                keyboardType = KeyboardType.Decimal,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .testTag("edit_carpet_input")
-                            )
-
-                            CompactFormInputField(
-                                label = "Built-up Area (sq.ft)",
+                                label = "Total Built-Up Area (sq.ft — auto 50% if blank)",
                                 value = builtUpArea,
                                 onValueChange = { builtUpArea = sanitizeEditDecimal(it) },
                                 placeholder = "Optional",
                                 keyboardType = KeyboardType.Decimal,
                                 modifier = Modifier
-                                    .weight(1f)
+                                    .fillMaxWidth()
                                     .testTag("edit_builtup_input")
+                            )
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CompactFormInputField(
+                                    label = "Carpet Area (sq.ft) *",
+                                    value = carpetArea,
+                                    onValueChange = { carpetArea = sanitizeEditDecimal(it) },
+                                    placeholder = "e.g. 1250",
+                                    keyboardType = KeyboardType.Decimal,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("edit_carpet_input")
+                                )
+
+                                CompactFormInputField(
+                                    label = "Built-up Area (sq.ft)",
+                                    value = builtUpArea,
+                                    onValueChange = { builtUpArea = sanitizeEditDecimal(it) },
+                                    placeholder = "Optional",
+                                    keyboardType = KeyboardType.Decimal,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("edit_builtup_input")
+                                )
+                            }
+                        }
+
+                        if (baseProperty.tab.isCommercial && !baseProperty.tab.isRental && baseProperty.tab != InventoryTab.PRE_LEASED) {
+                            YesNoToggleField(
+                                label = "Pre-Leased Status",
+                                selectedValue = if (isPreLeasedState) "Yes" else "No",
+                                onSelect = { picked -> isPreLeasedState = picked.equals("Yes", ignoreCase = true) },
+                                modifier = Modifier.fillMaxWidth(),
+                                testTagPrefix = "edit_pre_leased_toggle"
                             )
                         }
 
@@ -966,7 +1145,7 @@ fun EditPropertyScreen(
                                     )
 
                                     CompactFormInputField(
-                                        label = "Monthly Rent (₹)",
+                                        label = "Current Monthly Rent (₹) *",
                                         value = rent,
                                         onValueChange = { rent = sanitizeEditDecimal(it) },
                                         placeholder = "e.g. 145000",
@@ -982,24 +1161,23 @@ fun EditPropertyScreen(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     CompactFormInputField(
-                                        label = "Security Deposit (₹)",
-                                        value = deposit,
-                                        onValueChange = { deposit = sanitizeEditDecimal(it) },
-                                        placeholder = "Optional",
-                                        keyboardType = KeyboardType.Decimal,
+                                        label = "Tenant Name / Industry *",
+                                        value = tenantNameState,
+                                        onValueChange = { tenantNameState = it },
+                                        placeholder = "e.g. HDFC Bank / IT MNC",
                                         modifier = Modifier
-                                            .weight(1f)
-                                            .testTag("edit_deposit_input")
+                                            .weight(1.2f)
+                                            .testTag("edit_tenant_name_input")
                                     )
 
                                     CompactFormInputField(
-                                        label = "ROI %",
+                                        label = "Gross ROI %",
                                         value = roiPercent,
                                         onValueChange = { roiPercent = sanitizeEditDecimal(it) },
-                                        placeholder = "e.g. 7.2",
+                                        placeholder = editGrossRoi?.let { String.format(Locale.US, "%.2f%%", it) } ?: "Auto",
                                         keyboardType = KeyboardType.Decimal,
                                         modifier = Modifier
-                                            .weight(1f)
+                                            .weight(0.8f)
                                             .testTag("edit_roi_input")
                                     )
                                 }
@@ -1018,57 +1196,25 @@ fun EditPropertyScreen(
                             }
                         }
 
-                        // Live Currency (Lac/Cr) & Rate Preview Box
-                        val liveCarpetVal = carpetArea.trim().toDoubleOrNull() ?: 0.0
-                        val liveBuiltUpVal = builtUpArea.trim().toDoubleOrNull() ?: 0.0
                         val livePrimaryAmount = if (isPureRental) {
                             rent.trim().toDoubleOrNull() ?: 0.0
                         } else {
                             priceSale.trim().toDoubleOrNull() ?: 0.0
                         }
-                        val liveLoadingPct = if (liveCarpetVal > 0.0 && liveBuiltUpVal >= liveCarpetVal && liveBuiltUpVal > 0.0) {
-                            CalculationUtils.calculateLoadingPercentage(liveCarpetVal, liveBuiltUpVal)
-                        } else null
-                        val liveCarpetRate = if (livePrimaryAmount > 0.0 && liveCarpetVal > 0.0) {
-                            livePrimaryAmount / liveCarpetVal
-                        } else null
-                        val liveBuiltUpRate = if (livePrimaryAmount > 0.0 && liveBuiltUpVal > 0.0) {
-                            livePrimaryAmount / liveBuiltUpVal
-                        } else null
-
-                        Surface(
-                            color = SurfaceMuted,
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, EditBorder),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(10.dp),
-                                verticalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                val shortPreview = if (livePrimaryAmount > 0.0) {
-                                    formatIndianShortPreview(livePrimaryAmount) + if (isPureRental) "/mo" else ""
-                                } else ""
-                                Text(
-                                    text = if (shortPreview.isNotBlank()) "LIVE PREVIEW • $shortPreview" else "LIVE RATE & LOADING CALCULATIONS",
-                                    color = EditTeal,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
-                                Text(
-                                    text = "Carpet Rate: ${if (liveCarpetRate != null) "${CalculationUtils.formatRateValue(liveCarpetRate)} / sq.ft." else "Not Available"}",
-                                    color = EditNavy,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = "Built-up Rate: ${if (liveBuiltUpRate != null) "${CalculationUtils.formatRateValue(liveBuiltUpRate)} / sq.ft." else "Not Available"}" +
-                                        (if (liveLoadingPct != null) String.format(Locale.US, " • Loading: %.1f%%", liveLoadingPct) else ""),
-                                    color = EditSecondary,
-                                    fontSize = 11.sp
-                                )
-                            }
-                        }
+                        val editDualRates = TlcPropertyCalculator.calculateDualRates(
+                            primaryAmount = livePrimaryAmount.takeIf { it > 0.0 },
+                            totalCarpetSqFt = editAreaCalc.totalCarpetSqFt.takeIf { it > 0.0 },
+                            totalBuiltUpSqFt = editAreaCalc.totalBuiltUpSqFt?.takeIf { it > 0.0 }
+                        )
+                        LiveAreaFinancialPreviewCard(
+                            areaResult = editAreaCalc,
+                            dualRates = editDualRates,
+                            primaryAmount = livePrimaryAmount,
+                            isLease = isPureRental,
+                            grossRoiPercent = editGrossRoi,
+                            isPreLeased = isPreLeased,
+                            isShopOrShowroom = isShopOrShowroom
+                        )
 
                         if (baseProperty.tab.isCommercial && (isPureRental || isPreLeased)) {
                             Row(
@@ -1134,12 +1280,107 @@ fun EditPropertyScreen(
                             )
                         }
 
+                        val showTargetPossession =
+                            baseProperty.tab == InventoryTab.UND_CONST ||
+                                targetPossessionDate.isNotBlank() ||
+                                (baseProperty.tab.isCommercial && !baseProperty.tab.isRental && (
+                                    possession.contains("Under", ignoreCase = true) ||
+                                        possession.contains("Construction", ignoreCase = true) ||
+                                        possession.contains("Months", ignoreCase = true) ||
+                                        ocStatus.contains("Under", ignoreCase = true)
+                                    ))
+                        if (showTargetPossession) {
+                            CompactFormInputField(
+                                label = "Target Possession Date (dd/MM/yyyy)",
+                                value = targetPossessionDate,
+                                onValueChange = { targetPossessionDate = it },
+                                placeholder = "e.g. 31/12/2027",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("edit_target_possession_date_input")
+                            )
+                        }
+
+                        if (baseProperty.tab.isCommercial) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                YesNoToggleField(
+                                    label = "Attached Pantry",
+                                    selectedValue = attachedPantry,
+                                    onSelect = { attachedPantry = it },
+                                    modifier = Modifier.weight(1f),
+                                    testTagPrefix = "edit_attached_pantry"
+                                )
+                                YesNoToggleField(
+                                    label = "Attached Washroom",
+                                    selectedValue = attachedWashroom,
+                                    onSelect = { attachedWashroom = it },
+                                    modifier = Modifier.weight(1f),
+                                    testTagPrefix = "edit_attached_washroom"
+                                )
+                            }
+
+                            if (isShopOrShowroom) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    CompactFormInputField(
+                                        label = "Frontage (Ft)",
+                                        value = frontageFt,
+                                        onValueChange = { frontageFt = sanitizeEditDecimal(it) },
+                                        placeholder = "e.g. 25",
+                                        keyboardType = KeyboardType.Decimal,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    CompactFormInputField(
+                                        label = "Clear Height (Ft)",
+                                        value = clearHeightFt,
+                                        onValueChange = { clearHeightFt = sanitizeEditDecimal(it) },
+                                        placeholder = "e.g. 14",
+                                        keyboardType = KeyboardType.Decimal,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            } else if (isWarehouseOrIndustrial) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    CompactFormInputField(
+                                        label = "Clear Height (Ft)",
+                                        value = clearHeightFt,
+                                        onValueChange = { clearHeightFt = sanitizeEditDecimal(it) },
+                                        placeholder = "e.g. 32",
+                                        keyboardType = KeyboardType.Decimal,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    CompactFormInputField(
+                                        label = "Power Load",
+                                        value = powerLoad,
+                                        onValueChange = { powerLoad = it },
+                                        placeholder = "e.g. 100 kVA",
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                CompactFormInputField(
+                                    label = "Truck Access",
+                                    value = truckAccess,
+                                    onValueChange = { truckAccess = it },
+                                    placeholder = "e.g. 40ft Container",
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             CompactDropdownField(
-                                label = "Parking",
+                                label = "Car Parking",
                                 selectedValue = parking,
                                 options = TlcStandardOptions.parkingOptions,
                                 onValueSelected = { parking = it },

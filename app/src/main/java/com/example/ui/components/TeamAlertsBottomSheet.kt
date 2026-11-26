@@ -54,6 +54,7 @@ fun TeamAlertsBottomSheet(
                 .fillMaxWidth()
                 .heightIn(max = 620.dp)
                 .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 16.dp)
         ) {

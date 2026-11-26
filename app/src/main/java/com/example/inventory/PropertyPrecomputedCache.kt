@@ -37,6 +37,8 @@ data class PropertyPrecomputedData(
     val primaryAmount: Double,
     val priceDisplay: String,
     val rateDisplay: String,
+    val isActiveInventory: Boolean,
+    val isClosedOrArchived: Boolean,
     val isStrictlyLive: Boolean,
     val requiredMissingFields: List<String>,
     val detailedCompleteness: CompletenessBreakdown,
@@ -92,6 +94,8 @@ object PropertyPrecomputedCache {
             includeBasisSuffix = true
         )
         val requiredMissingFields = InventoryQuality.minimumRequiredMissingFields(p)
+        val isClosedOrArchived = InventoryQuality.isClosedOrArchived(p)
+        val isActiveInventory = !isClosedOrArchived
         val isStrictlyLive = InventoryQuality.isStrictlyLive(p)
         val detailedCompleteness = CalculationUtils.computeDetailedCompleteness(p)
         val verificationAgeState = getVerificationAgeState(p, validityDays = 60)
@@ -146,6 +150,8 @@ object PropertyPrecomputedCache {
             primaryAmount = primaryAmount,
             priceDisplay = priceDisplay,
             rateDisplay = rateDisplay,
+            isActiveInventory = isActiveInventory,
+            isClosedOrArchived = isClosedOrArchived,
             isStrictlyLive = isStrictlyLive,
             requiredMissingFields = requiredMissingFields,
             detailedCompleteness = detailedCompleteness,

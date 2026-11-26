@@ -143,22 +143,32 @@ object InventoryQuality {
         minimumRequiredMissingFields(property).isEmpty()
 
     /**
-     * Strict 4-rule check for whether a property belongs in the "Live" (or "Verified") tab:
+     * Unified active visibility rule:
+     * Closed/Archived properties (Archived, Sold, Leased, Not Available, Withdrawn) belong in Archive / Closed.
+     * Every other uploaded Google Sheet property (Verified, Pending, Available, Not Confirmed, Under Negotiation, etc.)
+     * is immediately visible in Active Inventory, Map Search, and Client Matching with its honest status tag.
+     */
+    fun isClosedOrArchived(property: PropertyItem): Boolean =
+        property.archiveStatus == ArchiveStatus.ARCHIVED ||
+            property.status in setOf(
+                com.example.model.AvailabilityStatus.SOLD,
+                com.example.model.AvailabilityStatus.LEASED,
+                com.example.model.AvailabilityStatus.NOT_AVAILABLE,
+                com.example.model.AvailabilityStatus.WITHDRAWN
+            )
+
+    fun isActiveInventory(property: PropertyItem): Boolean = !isClosedOrArchived(property)
+
+    /**
+     * Strict 4-rule check retained for completeness/verification badges and verification-only filters:
      * 1) Not archived and not Sold Out / Leased Out / Not Available / Withdrawn.
      * 2) Availability Status is confirmed (never NOT_CONFIRMED / blank).
      * 3) Verification / Listing Status is Verified (not Pending).
      * 4) 100% of "Required to Go Live" fields are complete (missingRequiredCount == 0).
      */
     fun isStrictlyLive(property: PropertyItem): Boolean {
-        if (property.archiveStatus == ArchiveStatus.ARCHIVED) return false
-        if (property.status in setOf(
-                com.example.model.AvailabilityStatus.NOT_CONFIRMED,
-                com.example.model.AvailabilityStatus.SOLD,
-                com.example.model.AvailabilityStatus.LEASED,
-                com.example.model.AvailabilityStatus.NOT_AVAILABLE,
-                com.example.model.AvailabilityStatus.WITHDRAWN
-            )
-        ) return false
+        if (isClosedOrArchived(property)) return false
+        if (property.status == com.example.model.AvailabilityStatus.NOT_CONFIRMED) return false
         if (property.status.label.isBlank()) return false
         if (property.verificationStatus != com.example.model.VerificationStatus.VERIFIED) return false
         return minimumRequiredMissingFields(property).isEmpty()

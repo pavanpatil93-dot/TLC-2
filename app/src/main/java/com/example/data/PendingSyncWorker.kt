@@ -33,17 +33,18 @@ class PendingSyncWorker(appContext: Context, parameters: WorkerParameters) :
                 withTimeout(120000L) {
                     var writeResult = ListenableWorker.Result.success()
                     if (hasRetryable) {
-                        if (PendingSyncQueue.nextDue(queue, System.currentTimeMillis()) == null) {
-                            return@withTimeout ListenableWorker.Result.retry()
-                        }
-                        writeResult = toWorkResult(
-                            repository.retryPendingWrites(
-                                deadlineMillis = deadline,
-                                maxOperations = 3
+                        if (PendingSyncQueue.nextDue(queue, System.currentTimeMillis()) != null) {
+                            writeResult = toWorkResult(
+                                repository.retryPendingWrites(
+                                    deadlineMillis = deadline,
+                                    maxOperations = 5
+                                )
                             )
-                        )
+                        }
                     }
-                    // Every 15 minutes (or when stale), silently pull Master Sheet datasets to local filesDir cache and run team alert diff
+                    // Immediately push any locally modified / unsynced Properties, CRM Leads & Call Logs
+                    runCatching { repository.pushPendingMultiDeviceChanges() }
+                    // Every 15 minutes (or when stale), silently pull Master Sheet datasets to local Room/filesDir cache
                     if (repository.isSyncStale()) {
                         runCatching { repository.syncWithGoogleSheetNow() }
                     }

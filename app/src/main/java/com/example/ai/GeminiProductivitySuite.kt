@@ -494,9 +494,13 @@ JSON schema:
             } ?: "On Request"
             append("Option ${idx + 1}: ")
             append("Code=${prop.propertyCode.ifBlank { prop.tab.code }}")
+            if (prop.projectId.isNotBlank()) append(" | ProjectID=${prop.projectId}")
             append(" | Project=${prop.projectName.ifBlank { prop.propertyType }}")
             if (prop.location.isNotBlank() && !prop.location.equals("Unverified Location", true)) {
                 append(" | Location=${prop.location}")
+            }
+            prop.effectiveMicroMarket?.takeIf { !it.equals(prop.location, true) }?.let {
+                append(" | MicroMarket=$it")
             }
             append(" | Type=${prop.propertyType.ifBlank { prop.tab.title }} (${prop.transactionType.ifBlank { prop.tab.title }})")
             if (!prop.bhk.isNullOrBlank()) append(" | Config=${prop.bhk}")
@@ -505,18 +509,33 @@ JSON schema:
             if (prop.floor.isNotBlank()) append(" | Floor=${prop.floor}")
             append(" | Furnishing=${prop.furnishing.label}")
             append(" | Commercials=$priceStr")
+            val rateUnit = if (rates.isRentalPrimary) "/sq.ft/mo" else "/sq.ft"
             rates.ratePerCarpetSqFt?.let { r ->
-                val unit = if (rates.isRentalPrimary) "/sq.ft/mo" else "/sq.ft"
-                append(" (Rate: ${CalculationUtils.formatIndianCurrencyFull(r)}$unit)")
+                append(" | CarpetRate=${CalculationUtils.formatIndianCurrencyFull(r)}$rateUnit")
+            }
+            rates.ratePerBuiltUpSqFt?.let { r ->
+                append(" | BuiltUpRate=${CalculationUtils.formatIndianCurrencyFull(r)}$rateUnit")
             }
             if ((prop.deposit ?: 0.0) > 0.0 && rates.isRentalPrimary) {
                 append(" | Deposit=${CalculationUtils.formatIndianCurrency(prop.deposit!!)}")
             }
-            if ((prop.roiPercent ?: 0.0) > 0.0 && prop.tab == InventoryTab.PRE_LEASED) {
-                append(" | GrossYield=${String.format(Locale.US, "%.2f", prop.roiPercent!!)}%")
+            val grossYield = prop.roiPercent?.takeIf { it > 0.0 }
+                ?: com.example.data.TlcPropertyCalculator.calculateGrossRoiPercent(
+                    prop.rent ?: prop.monthlyRentalIncome,
+                    prop.priceSale ?: prop.priceOrRent.takeIf { !rates.isRentalPrimary }
+                )
+            if (prop.effectiveIsPreLeased && grossYield != null) {
+                append(" | GrossROI=${String.format(Locale.US, "%.2f", grossYield)}%")
             }
             if (prop.parking.isNotBlank()) append(" | Parking=${prop.parking}")
+            prop.attachedPantry?.takeIf { it.isNotBlank() }?.let { append(" | AttachedPantry=$it") }
+            prop.attachedWashroom?.takeIf { it.isNotBlank() }?.let { append(" | AttachedWashroom=$it") }
+            prop.effectiveFrontageFt?.takeIf { it > 0.0 }?.let { append(" | Frontage=${CalculationUtils.formatNumber(it)} ft") }
+            prop.effectiveClearHeightFt?.takeIf { it > 0.0 }?.let { append(" | ClearHeight=${CalculationUtils.formatNumber(it)} ft") }
+            prop.truckAccess?.takeIf { it.isNotBlank() }?.let { append(" | TruckAccess=$it") }
+            prop.powerLoad?.takeIf { it.isNotBlank() }?.let { append(" | PowerLoad=$it") }
             if (prop.possession.isNotBlank()) append(" | Possession=${prop.possession}")
+            prop.targetPossessionDate?.takeIf { it.isNotBlank() }?.let { append(" | TargetPossession=$it") }
             if ((prop.workstations ?: 0) > 0) append(" | Workstations=${prop.workstations}")
             if ((prop.cabins ?: 0) > 0) append(" | Cabins=${prop.cabins}")
             append("\n")

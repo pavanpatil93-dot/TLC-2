@@ -20,6 +20,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Android 13+ scoped audio permission to query Samsung call recordings via MediaStore.Audio -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- Optional runtime permission for microphone voice note transcription via gemini-3.5-transcribe -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:allowBackup="true"

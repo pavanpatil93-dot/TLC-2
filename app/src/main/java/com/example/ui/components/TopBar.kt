@@ -46,7 +46,9 @@ fun PortalTopBar(
     employeeDisplayName: String? = null,
     onOpenProfile: (() -> Unit)? = null,
     unreadAlertCount: Int = 0,
-    onOpenAlerts: (() -> Unit)? = null
+    onOpenAlerts: (() -> Unit)? = null,
+    topSyncChipState: com.example.data.TopSyncChipState? = null,
+    onTapSyncChip: (() -> Unit)? = null
 ) {
     Surface(
         color = BackgroundSoft,
@@ -206,6 +208,68 @@ fun PortalTopBar(
                         }
                     }
 
+                    // Subtle Multi-Device Sync Status Chip (tapping forces immediate Push + Pull)
+                    if (topSyncChipState != null && onTapSyncChip != null) {
+                        val (chipBg, chipBorder, chipContentColor, chipLabel) = when (topSyncChipState.status) {
+                            com.example.data.TopSyncStatus.SYNCED -> Quadruple(
+                                SuccessGreen.copy(alpha = 0.12f),
+                                SuccessGreen.copy(alpha = 0.45f),
+                                SuccessGreen,
+                                "Synced"
+                            )
+                            com.example.data.TopSyncStatus.SYNCING -> Quadruple(
+                                PrimaryTeal.copy(alpha = 0.12f),
+                                PrimaryTeal.copy(alpha = 0.45f),
+                                PrimaryTeal,
+                                "Syncing..."
+                            )
+                            com.example.data.TopSyncStatus.OFFLINE_PENDING -> Quadruple(
+                                WarningAmber.copy(alpha = 0.16f),
+                                WarningAmber.copy(alpha = 0.6f),
+                                WarningAmber,
+                                if (topSyncChipState.pendingCount > 0) "Offline (${topSyncChipState.pendingCount} pending)" else "Offline"
+                            )
+                        }
+                        Surface(
+                            onClick = onTapSyncChip,
+                            shape = RoundedCornerShape(10.dp),
+                            color = chipBg,
+                            border = BorderStroke(1.dp, chipBorder),
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("topbar_sync_status_chip")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                if (topSyncChipState.status == com.example.data.TopSyncStatus.SYNCING) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(12.dp),
+                                        strokeWidth = 1.8.dp,
+                                        color = chipContentColor
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(chipContentColor)
+                                    )
+                                }
+                                Text(
+                                    text = chipLabel,
+                                    color = chipContentColor,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
                     // Notification Bell with unread badge (48.dp touch target)
                     if (onOpenAlerts != null) {
                         Box(
@@ -321,3 +385,10 @@ fun PortalTopBar(
         }
     }
 }
+
+private data class Quadruple<A, B, C, D>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D
+)

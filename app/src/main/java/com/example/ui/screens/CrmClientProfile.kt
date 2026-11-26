@@ -2152,6 +2152,7 @@ private fun OwnerMatchingClientsSheet(
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f)
                 .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp, vertical = 6.dp)
                 .testTag("owner_matching_clients_sheet"),
             verticalArrangement = Arrangement.spacedBy(10.dp)

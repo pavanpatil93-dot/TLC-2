@@ -186,8 +186,15 @@ object PropertiesLocalDatabase {
 
     @Synchronized
     fun loadProperties(context: Context): List<PropertyItem> = try {
+        val file = File(context.filesDir, DB_FILE_NAME)
+        val hasPrimaryFile = file.exists() || File(context.filesDir, "$DB_FILE_NAME.bak").exists()
         val primary = readState(context).properties
-        val loaded = if (primary.isNotEmpty()) primary else OfflineDiskCache.loadInventorySplits(context)
+        // If the primary DB file exists and was validly reconciled to empty, do NOT resurrect stale split-cache rows.
+        val loaded = if (primary.isNotEmpty() || hasPrimaryFile) {
+            primary
+        } else {
+            OfflineDiskCache.loadInventorySplits(context)
+        }
         com.example.inventory.PropertyPrecomputedCache.warmUp(loaded)
         loaded
     } catch (error: Exception) {
@@ -206,6 +213,7 @@ object PropertiesLocalDatabase {
         android.util.AtomicFile(File(context.filesDir, DB_FILE_NAME)).delete()
         File(context.filesDir, LEGACY_DB_FILE_NAME).delete()
         File(context.filesDir, "pending_sync_ops_v1.json").delete()
+        runCatching { OfflineDiskCache.saveInventorySplits(context, emptyList()) }
         com.example.inventory.PropertyPrecomputedCache.clear()
     }
 
@@ -359,7 +367,11 @@ object PropertiesLocalDatabase {
         "lockInMonths", "escalationIntervalMonths", "createdAt", "recordVersion",
         "unmappedColumns", "fullAddress", "city", "locationPrecision",
         "physicalUnitKey", "hasDualSaleAndLeaseOffer", "saleOfferStatus",
-        "leaseOfferStatus", "saleSourceInfo", "leaseSourceInfo", "Type of POC", "pocType"
+        "leaseOfferStatus", "saleSourceInfo", "leaseSourceInfo", "Type of POC", "pocType",
+        "microMarket", "attachedPantry", "attachedWashroom", "frontageFt", "clearHeightFt",
+        "truckAccess", "powerLoad", "targetPossessionDate", "groundFloorCarpetSqFt",
+        "mezzanineCarpetSqFt", "puneZone", "jurisdiction", "ocStatus", "isPreLeased",
+        "manualLoadingPercentOverride", "isManualBuiltUpOverride"
     )
 
     internal fun serializePropertyJson(item: PropertyItem): JSONObject = serializeProperty(item)
@@ -496,6 +508,22 @@ object PropertiesLocalDatabase {
         item.saleSourceInfo?.let { obj.put("saleSourceInfo", it) } ?: obj.remove("saleSourceInfo")
         item.leaseSourceInfo?.let { obj.put("leaseSourceInfo", it) } ?: obj.remove("leaseSourceInfo")
         obj.put("Type of POC", item.pocType)
+        item.microMarket?.let { obj.put("microMarket", it) } ?: obj.remove("microMarket")
+        item.attachedPantry?.let { obj.put("attachedPantry", it) } ?: obj.remove("attachedPantry")
+        item.attachedWashroom?.let { obj.put("attachedWashroom", it) } ?: obj.remove("attachedWashroom")
+        item.frontageFt?.let { obj.put("frontageFt", it) } ?: obj.remove("frontageFt")
+        item.clearHeightFt?.let { obj.put("clearHeightFt", it) } ?: obj.remove("clearHeightFt")
+        item.truckAccess?.let { obj.put("truckAccess", it) } ?: obj.remove("truckAccess")
+        item.powerLoad?.let { obj.put("powerLoad", it) } ?: obj.remove("powerLoad")
+        item.targetPossessionDate?.let { obj.put("targetPossessionDate", it) } ?: obj.remove("targetPossessionDate")
+        item.groundFloorCarpetSqFt?.let { obj.put("groundFloorCarpetSqFt", it) } ?: obj.remove("groundFloorCarpetSqFt")
+        item.mezzanineCarpetSqFt?.let { obj.put("mezzanineCarpetSqFt", it) } ?: obj.remove("mezzanineCarpetSqFt")
+        item.puneZone?.let { obj.put("puneZone", it) } ?: obj.remove("puneZone")
+        item.jurisdiction?.let { obj.put("jurisdiction", it) } ?: obj.remove("jurisdiction")
+        item.ocStatus?.let { obj.put("ocStatus", it) } ?: obj.remove("ocStatus")
+        obj.put("isPreLeased", item.isPreLeased)
+        item.manualLoadingPercentOverride?.let { obj.put("manualLoadingPercentOverride", it) } ?: obj.remove("manualLoadingPercentOverride")
+        obj.put("isManualBuiltUpOverride", item.isManualBuiltUpOverride)
         if (item.unmappedColumns.isNotEmpty()) {
             obj.put("unmappedColumns", JSONObject(item.unmappedColumns))
             item.unmappedColumns.forEach { (key, value) ->
@@ -697,7 +725,23 @@ object PropertiesLocalDatabase {
             leaseOfferStatus = obj.optString("leaseOfferStatus").takeIf { it.isNotBlank() }?.let { runCatching { AvailabilityStatus.valueOf(it) }.getOrNull() },
             saleSourceInfo = optionalString(obj, "saleSourceInfo"),
             leaseSourceInfo = optionalString(obj, "leaseSourceInfo"),
-            pocType = normalizePocType(obj.optString("Type of POC").ifBlank { obj.optString("pocType") })
+            pocType = normalizePocType(obj.optString("Type of POC").ifBlank { obj.optString("pocType") }),
+            microMarket = optionalString(obj, "microMarket"),
+            attachedPantry = optionalString(obj, "attachedPantry"),
+            attachedWashroom = optionalString(obj, "attachedWashroom"),
+            frontageFt = optionalDouble(obj, "frontageFt") ?: optionalDouble(obj, "frontageFeet"),
+            clearHeightFt = optionalDouble(obj, "clearHeightFt") ?: optionalDouble(obj, "ceilingHeightFeet"),
+            truckAccess = optionalString(obj, "truckAccess"),
+            powerLoad = optionalString(obj, "powerLoad"),
+            targetPossessionDate = optionalString(obj, "targetPossessionDate"),
+            groundFloorCarpetSqFt = optionalDouble(obj, "groundFloorCarpetSqFt"),
+            mezzanineCarpetSqFt = optionalDouble(obj, "mezzanineCarpetSqFt"),
+            puneZone = optionalString(obj, "puneZone"),
+            jurisdiction = optionalString(obj, "jurisdiction"),
+            ocStatus = optionalString(obj, "ocStatus"),
+            isPreLeased = obj.optBoolean("isPreLeased", false),
+            manualLoadingPercentOverride = optionalDouble(obj, "manualLoadingPercentOverride"),
+            isManualBuiltUpOverride = obj.optBoolean("isManualBuiltUpOverride", false)
         )
     }
 
@@ -752,129 +796,8 @@ object PropertiesLocalDatabase {
         )
 
     fun getDefaultSampleProperties(): List<PropertyItem> {
-        return listOf(
-            PropertyItem(
-                id = "sample_prop_1",
-                propertyCode = "OL-KHD-101",
-                date = "13/10/2026",
-                location = "Kharadi, Pune",
-                projectName = "World Trade Center (WTC)",
-                unitNumber = "Tower 4, 8th Floor",
-                floor = "High Floor",
-                propertyType = "Office",
-                tab = InventoryTab.OFF_LEASE,
-                carpetAreaSqFt = 2400.0,
-                priceOrRent = 168000.0,
-                deposit = 1008000.0,
-                possession = "Immediate",
-                furnishing = FurnishingType.FULLY_FURNISHED,
-                status = AvailabilityStatus.AVAILABLE,
-                ownerName = "Rajesh Singhania",
-                ownerContact = "9822011223",
-                remarks = "Fully furnished plug & play corporate office with 24 workstations, 3 cabins, and conference room.",
-                verificationStatus = VerificationStatus.VERIFIED,
-                archiveStatus = ArchiveStatus.ACTIVE,
-                portfolio = "Commercial",
-                transactionType = "Lease"
-            ),
-            PropertyItem(
-                id = "sample_prop_2",
-                propertyCode = "SL-VMN-202",
-                date = "13/10/2026",
-                location = "Viman Nagar, Pune",
-                projectName = "Phoenix Marketcity Retail",
-                unitNumber = "Ground Floor, Shop 14",
-                floor = "Ground Floor",
-                propertyType = "Shop",
-                tab = InventoryTab.SHOP_LEASE,
-                carpetAreaSqFt = 950.0,
-                priceOrRent = 190000.0,
-                deposit = 1140000.0,
-                possession = "Immediate",
-                furnishing = FurnishingType.BARE_SHELL,
-                status = AvailabilityStatus.AVAILABLE,
-                ownerName = "Suresh Mehta",
-                ownerContact = "9822188220",
-                remarks = "Prime high-street frontage retail shop with excellent footfall.",
-                verificationStatus = VerificationStatus.VERIFIED,
-                archiveStatus = ArchiveStatus.ACTIVE,
-                portfolio = "Commercial",
-                transactionType = "Lease"
-            ),
-            PropertyItem(
-                id = "sample_prop_3",
-                propertyCode = "PL-KHD-303",
-                date = "13/10/2026",
-                location = "Kharadi, Pune",
-                projectName = "Gera Imperium Alpha",
-                unitNumber = "Office 305",
-                floor = "Mid Floor",
-                propertyType = "Office",
-                tab = InventoryTab.PRE_LEASED,
-                carpetAreaSqFt = 1450.0,
-                priceOrRent = 22500000.0,
-                roiPercent = 7.8,
-                possession = "Immediate",
-                furnishing = FurnishingType.SEMI_FURNISHED,
-                status = AvailabilityStatus.AVAILABLE,
-                ownerName = "Anil Deshmukh",
-                ownerContact = "9850123456",
-                remarks = "Pre-leased to multinational tech tenant with 3-year lock-in. 7.8% net ROI.",
-                verificationStatus = VerificationStatus.VERIFIED,
-                archiveStatus = ArchiveStatus.ACTIVE,
-                portfolio = "Commercial",
-                transactionType = "Pre-Leased Sale"
-            ),
-            PropertyItem(
-                id = "sample_prop_4",
-                propertyCode = "RR-WKD-404",
-                date = "13/10/2026",
-                location = "Wakad, Pune",
-                projectName = "Kasturi Apostrophe",
-                unitNumber = "Building B, 1202",
-                floor = "High Floor",
-                propertyType = "Apartment",
-                tab = InventoryTab.RESI_RENT,
-                carpetAreaSqFt = 1320.0,
-                priceOrRent = 45000.0,
-                deposit = 200000.0,
-                bhk = "3 BHK",
-                possession = "Immediate",
-                furnishing = FurnishingType.SEMI_FURNISHED,
-                status = AvailabilityStatus.AVAILABLE,
-                ownerName = "Dr. Prakash Kulkarni",
-                ownerContact = "9860012345",
-                remarks = "Sprawling 3 BHK luxury apartment with club view and 2 covered parking spaces.",
-                verificationStatus = VerificationStatus.VERIFIED,
-                archiveStatus = ArchiveStatus.ACTIVE,
-                portfolio = "Residential",
-                transactionType = "Lease"
-            ),
-            PropertyItem(
-                id = "sample_prop_5",
-                propertyCode = "RS-Kalyani-505",
-                date = "13/10/2026",
-                location = "Kalyani Nagar, Pune",
-                projectName = "Kumar Primavera",
-                unitNumber = "A Wing, 401",
-                floor = "Mid Floor",
-                propertyType = "Apartment",
-                tab = InventoryTab.RESI_RESALE,
-                carpetAreaSqFt = 1650.0,
-                priceOrRent = 18500000.0,
-                bhk = "3 BHK",
-                possession = "Immediate",
-                furnishing = FurnishingType.FULLY_FURNISHED,
-                status = AvailabilityStatus.AVAILABLE,
-                ownerName = "Vikramaditya Rao",
-                ownerContact = "9881122334",
-                remarks = "Exquisitely renovated 3 BHK resale in prime Kalyani Nagar residential enclave.",
-                verificationStatus = VerificationStatus.VERIFIED,
-                archiveStatus = ArchiveStatus.ACTIVE,
-                portfolio = "Residential",
-                transactionType = "Sale"
-            )
-        )
+        // Sample/seed inventory removed so an empty Google Sheet stays empty in the app.
+        return emptyList()
     }
 }
 

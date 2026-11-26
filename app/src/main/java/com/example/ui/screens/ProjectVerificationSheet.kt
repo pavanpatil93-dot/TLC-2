@@ -76,6 +76,8 @@ fun ProjectVerificationSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.92f)
+                .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {

@@ -125,7 +125,8 @@ fun DashboardScreen(
         linkedEntityId: String?,
         subRole: String
     ) -> Unit)? = null,
-    onOpenCaptureBrokerUnit: ((brokerName: String, brokerPhone: String, callNote: String) -> Unit)? = null
+    onOpenCaptureBrokerUnit: ((brokerName: String, brokerPhone: String, callNote: String) -> Unit)? = null,
+    onOpenCallActionQueue: ((calls: List<CrmCallRecord>, startIndex: Int) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -277,8 +278,6 @@ fun DashboardScreen(
     val unloggedQueueCalls = computedState.unloggedQueueCalls
     val liveUnloggedCallsCount = computedState.liveUnloggedCallsCount
     val live60DayRecheckDueCount = computedState.live60DayRecheckDueCount
-    var activePostCallRecord by remember { mutableStateOf<CrmCallRecord?>(null) }
-    var postCallQueue by remember { mutableStateOf<List<CrmCallRecord>>(emptyList()) }
 
     // Daily AI Priority Briefing (cached per IST day, refreshes on demand)
     var dailyBriefing by remember { mutableStateOf<DailyAiBriefingResult?>(null) }
@@ -358,20 +357,6 @@ fun DashboardScreen(
         } finally {
             isLoadingBriefing = false
         }
-    }
-    var postCallQueueIndex by remember { mutableIntStateOf(0) }
-
-    val advanceDashboardPostCallQueue: () -> Unit = {
-        val nextIdx = postCallQueueIndex + 1
-        if (nextIdx < postCallQueue.size) {
-            postCallQueueIndex = nextIdx
-            activePostCallRecord = postCallQueue[nextIdx]
-        } else {
-            activePostCallRecord = null
-            postCallQueue = emptyList()
-            postCallQueueIndex = 0
-        }
-        refreshTrigger++
     }
 
     var tickerNowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -863,9 +848,11 @@ fun DashboardScreen(
                     .testTag("metric_unlogged_calls_live"),
                 onClick = {
                     if (unloggedQueueCalls.isNotEmpty()) {
-                        postCallQueue = unloggedQueueCalls
-                        postCallQueueIndex = 0
-                        activePostCallRecord = unloggedQueueCalls.first()
+                        if (onOpenCallActionQueue != null) {
+                            onOpenCallActionQueue(unloggedQueueCalls, 0)
+                        } else {
+                            onNavigateToCalls()
+                        }
                     } else {
                         coroutineScope.launch {
                             val nextUnlinkedList = withContext(Dispatchers.IO) {
@@ -875,10 +862,8 @@ fun DashboardScreen(
                                         !CrmCallManager.isInternalTeamCall(context, it)
                                 }
                             }
-                            if (nextUnlinkedList.isNotEmpty()) {
-                                postCallQueue = nextUnlinkedList
-                                postCallQueueIndex = 0
-                                activePostCallRecord = nextUnlinkedList.first()
+                            if (nextUnlinkedList.isNotEmpty() && onOpenCallActionQueue != null) {
+                                onOpenCallActionQueue(nextUnlinkedList, 0)
                             } else {
                                 onNavigateToCalls()
                             }
@@ -1686,157 +1671,6 @@ fun DashboardScreen(
             }
         )
     }
-
-    // Batch 9 + 18: In-place PostCallSmartSheet queue when tapping Unlogged Calls counter on Home Dashboard
-    activePostCallRecord?.let { callItem ->
-        val dirProjects = remember(context) {
-            runCatching { ProjectDirectoryStore.read(context) }.getOrDefault(emptyList())
-        }
-        val settingsMgr = remember(context) { UserSettingsManager(context) }
-        val autoSaveContactsEnabled by settingsMgr.autoSaveGoogleContacts.collectAsState()
-        val revealPhonesForExec by settingsMgr.revealConfidentialPhonesForExec.collectAsState()
-        val canViewFullConfidentialPhones = remember(userProfile, revealPhonesForExec) {
-            PhoneMaskingUtils.canViewUnmaskedConfidentialPhone(userProfile, revealPhonesForExec)
-        }
-        val cachedTenants = remember(context, refreshTrigger) { OfflineDiskCache.loadTenants(context) }
-        val cachedBrokers = remember(context, refreshTrigger) { OfflineDiskCache.loadBrokersVendors(context) }
-        val postCallRepo = remember(context) { SheetsRepository(context.applicationContext, startForegroundSync = false) }
-        val postCallSyncScope = rememberCoroutineScope()
-        PostCallSmartSheet(
-            call = callItem,
-            leads = liveCrmLeads,
-            inventory = activeProperties,
-            directoryProjects = dirProjects,
-            underConstProjects = underConstProjects,
-            employeeName = userProfile.username.ifBlank { "TLC-1 Team" },
-            employeeMobile = userProfile.mobileNumber.ifBlank { "9766880099" },
-            onDismissLater = { skippedCall ->
-                CrmCallManager.markCallSkipped(context, skippedCall)
-                CrmCallManager.removeFromUnloggedQueue(context, skippedCall)
-                advanceDashboardPostCallQueue()
-            },
-            onMarkPersonalIgnore = { ignoredCall ->
-                com.example.crm.IgnoredNumbersManager.markPersonalIgnored(context, ignoredCall.phoneNumber)
-                CrmCallManager.removeFromUnloggedQueue(context, ignoredCall)
-                advanceDashboardPostCallQueue()
-            },
-            onSaveLeadAndSync = { updatedLead, activityType, activityNotes ->
-                val persisted = upsertCrmLeadFromPostCall(
-                    context = context,
-                    lead = updatedLead,
-                    activityType = activityType,
-                    activityNotes = activityNotes,
-                    performer = userProfile.username.ifBlank { "TLC-1 Team" }
-                )
-                postCallSyncScope.launch(Dispatchers.IO) {
-                    postCallRepo.pushCrmLeadToMasterSheet(persisted)
-                }
-                refreshTrigger++
-            },
-            onShareMatchingProps = {
-                activePostCallRecord = null
-                postCallQueue = emptyList()
-                onNavigateToCrm()
-            },
-            onScheduleSiteVisit = {
-                activePostCallRecord = null
-                postCallQueue = emptyList()
-                onNavigateToVisits()
-            },
-            onUpdateOwnerPropertyStatus = { prop, newStatus, _, updatedPrice ->
-                onVerifyProperty(prop.id)
-                onEditProperty(
-                    prop.copy(
-                        status = newStatus,
-                        priceOrRent = updatedPrice ?: prop.priceOrRent,
-                        pocType = prop.pocType
-                    )
-                )
-                true
-            },
-            onLinkOwnerExistingProperty = { prop, callRec, ownerNameInput ->
-                onEditProperty(
-                    prop.copy(
-                        ownerName = ownerNameInput.ifBlank { prop.ownerName },
-                        ownerContact = callRec.phoneNumber.ifBlank { prop.ownerContact },
-                        pocType = prop.pocType
-                    )
-                )
-                true
-            },
-            onAddNewProperty = { newProp ->
-                onEditProperty(newProp)
-                true
-            },
-            onOpenFullAddProperty = {
-                activePostCallRecord = null
-                postCallQueue = emptyList()
-                onNavigateToAddProperty()
-            },
-            onCallResolved = { resolvedCall ->
-                CrmCallManager.removeFromUnloggedQueue(context, resolvedCall)
-                advanceDashboardPostCallQueue()
-            },
-            tenants = cachedTenants,
-            brokersVendors = cachedBrokers,
-            canViewFullConfidentialPhones = canViewFullConfidentialPhones,
-            autoSaveGoogleContactsEnabled = autoSaveContactsEnabled,
-            onSaveTenantAndSync = { tenantRec ->
-                postCallRepo.saveTenantLocalAndSync(tenantRec)
-                refreshTrigger++
-            },
-            onSaveBrokerVendorAndSync = { bvRec ->
-                postCallRepo.saveBrokerVendorLocalAndSync(bvRec)
-                refreshTrigger++
-            },
-            onOpenMoreDetailsForRole = { role, callRec, prefilledName, prefilledNotes, linkedId, subRole ->
-                CrmCallManager.removeFromUnloggedQueue(context, callRec)
-                activePostCallRecord = null
-                postCallQueue = emptyList()
-                postCallQueueIndex = 0
-                refreshTrigger++
-                if (onOpenMoreDetailsForRole != null) {
-                    onOpenMoreDetailsForRole(role, callRec, prefilledName, prefilledNotes, linkedId, subRole)
-                } else {
-                    when (role) {
-                        com.example.crm.PostCallRole.CLIENT_LEAD -> onNavigateToCrm()
-                        com.example.crm.PostCallRole.PROPERTY_OWNER -> onNavigateToAddProperty()
-                        com.example.crm.PostCallRole.DEVELOPER_POC -> onNavigateToProjects()
-                        else -> onNavigateToCrm()
-                    }
-                }
-            },
-            queuePosition = (postCallQueueIndex + 1).coerceAtLeast(1),
-            queueTotal = postCallQueue.size.coerceAtLeast(1),
-            onCloseQueueDone = {
-                activePostCallRecord = null
-                postCallQueue = emptyList()
-                postCallQueueIndex = 0
-                refreshTrigger++
-            },
-            onMissedCallWaCallback = { handledCall ->
-                CrmCallManager.removeFromUnloggedQueue(context, handledCall)
-                advanceDashboardPostCallQueue()
-            },
-            onProjectCreated = { createdProject ->
-                postCallSyncScope.launch(Dispatchers.IO) {
-                    postCallRepo.pushDirectoryProjectToMasterSheet(createdProject)
-                }
-                refreshTrigger++
-            },
-            onOpenCaptureBrokerUnit = { bName, bPhone, cNote ->
-                activePostCallRecord = null
-                postCallQueue = emptyList()
-                postCallQueueIndex = 0
-                refreshTrigger++
-                if (onOpenCaptureBrokerUnit != null) {
-                    onOpenCaptureBrokerUnit(bName, bPhone, cNote)
-                } else {
-                    onNavigateToAddProperty()
-                }
-            }
-        )
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1858,6 +1692,8 @@ private fun DashboardDrillDownBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .padding(bottom = 28.dp)
                 .testTag("dashboard_drilldown_sheet")

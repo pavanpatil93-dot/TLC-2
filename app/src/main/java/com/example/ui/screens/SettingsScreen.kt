@@ -85,6 +85,7 @@ fun SettingsScreen(
     val connectionStatus by repository.connectionStatus.collectAsState()
     val lastSyncTimestamp by repository.lastSyncTimestamp.collectAsState()
     val lastDiagnostic by repository.lastDiagnostic.collectAsState()
+    val syncDiagnostics by repository.syncDiagnostics.collectAsState()
     val syncLogs by repository.syncLogs.collectAsState()
     var approvalRequests by remember { mutableStateOf(ApprovalQueueStore.read(context)) }
 
@@ -1426,7 +1427,7 @@ fun SettingsScreen(
                                 letterSpacing = 0.8.sp
                             )
                             Text(
-                                text = "MASTER_REAL_ESTATE_INVENTORY",
+                                text = syncDiagnostics.activeSpreadsheetName,
                                 color = TextPrimaryDark,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold
@@ -1436,21 +1437,46 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Status Overview Card
+                    // Sync Diagnostics Overview Card
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                             .background(BrandCharcoalSurface)
-                            .padding(12.dp),
+                            .padding(12.dp)
+                            .testTag("settings_sync_diagnostics_card"),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        DetailRow(label = "Spreadsheet Name", value = "MASTER_REAL_ESTATE_INVENTORY")
-                        DetailRow(label = "Five-Tab Contract", value = "CRM • Commercial Inventory • Residential Inventory • Commercial Projects • Residential Projects")
+                        val sheetIdStatus = if (syncDiagnostics.isExpectedSpreadsheetConnected) {
+                            "${syncDiagnostics.activeSpreadsheetId} (Verified)"
+                        } else {
+                            "${syncDiagnostics.activeSpreadsheetId} (Expected: ${syncDiagnostics.expectedSpreadsheetId})"
+                        }
+                        DetailRow(label = "Active Spreadsheet", value = syncDiagnostics.activeSpreadsheetName)
+                        DetailRow(label = "Spreadsheet ID", value = sheetIdStatus)
+                        DetailRow(label = "Apps Script URL", value = com.example.data.TlcSchemaV2Api.resolveEndpointUrl(sheetsScriptUrl))
                         DetailRow(label = "Connection Status", value = connectionStatus)
                         DetailRow(label = "Last Successful Sync", value = lastSyncTimestamp)
-                        DetailRow(label = "Total Active Properties", value = "$totalProps Loaded")
-                        DetailRow(label = "Last Diagnostic Error", value = lastDiagnostic?.message ?: "None (All Healthy)")
+                        DetailRow(label = "Total Local Properties", value = "$totalProps Active")
+                        DetailRow(label = "Last Sync Summary", value = syncDiagnostics.lastStatusSummary)
+                        DetailRow(label = "Last Diagnostic", value = lastDiagnostic?.message ?: "None (All Healthy)")
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        HorizontalDivider(color = BrandCharcoalBorder, thickness = 1.dp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "SYNC DIAGNOSTICS — LAST SYNC ROW COUNTS (${syncDiagnostics.totalSyncedSheetRows} SHEET ROWS)",
+                            color = BrandGold,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                        com.example.data.TlcInventoryTabV2.ALL_FIVE_TABS.forEach { tabName ->
+                            val rowCount = syncDiagnostics.tabRowCounts[tabName] ?: 0
+                            DetailRow(label = tabName, value = "$rowCount rows")
+                        }
+                        DetailRow(label = "Stale Rows Cleared", value = "${syncDiagnostics.lastRemovedStaleCount}")
+                        DetailRow(label = "Pending Drafts Preserved", value = "${syncDiagnostics.lastPreservedPendingCount}")
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -1470,7 +1496,7 @@ fun SettingsScreen(
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = BrandGold, contentColor = BrandCharcoalDark),
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f).height(40.dp)
+                            modifier = Modifier.weight(1f).height(40.dp).testTag("settings_test_sheet_connection_btn")
                         ) {
                             Icon(Icons.Default.NetworkCheck, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(modifier = Modifier.width(4.dp))
@@ -1480,13 +1506,14 @@ fun SettingsScreen(
                         Button(
                             onClick = {
                                 coroutineScope.launch {
-                                    val count = repository.syncWithGoogleSheetNow()
-                                    Toast.makeText(context, "Synced $count properties with Google Sheet!", Toast.LENGTH_SHORT).show()
+                                    val summary = repository.syncWithGoogleSheetNow()
+                                    val firstLine = summary.lineSequence().firstOrNull()?.trim().orEmpty().ifBlank { "Sync complete" }
+                                    Toast.makeText(context, firstLine, Toast.LENGTH_SHORT).show()
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981), contentColor = Color.White),
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.weight(1f).height(40.dp)
+                            modifier = Modifier.weight(1f).height(40.dp).testTag("settings_sync_now_btn")
                         ) {
                             Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(modifier = Modifier.width(4.dp))
@@ -1959,7 +1986,17 @@ fun SettingsScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         DetailRow(label = "Application Version", value = "v${BuildConfig.VERSION_NAME} (Code ${BuildConfig.VERSION_CODE})")
-                        DetailRow(label = "Database Status", value = "Active (Local JSON DB + Storage)")
+                        DetailRow(label = "Database Status", value = "Active (Room + Local JSON Storage)")
+                        DetailRow(label = "Active Spreadsheet", value = syncDiagnostics.activeSpreadsheetName)
+                        DetailRow(
+                            label = "Spreadsheet ID",
+                            value = if (syncDiagnostics.isExpectedSpreadsheetConnected) {
+                                "${syncDiagnostics.activeSpreadsheetId} (Verified)"
+                            } else {
+                                syncDiagnostics.activeSpreadsheetId
+                            }
+                        )
+                        DetailRow(label = "Last Sync Sheet Rows", value = "${syncDiagnostics.totalSyncedSheetRows} across 5 inventory tabs")
                         DetailRow(label = "Master Sheet Connection", value = connectionStatus)
                         DetailRow(label = "Total Active Properties", value = "$totalProps Records")
                         DetailRow(label = "Divisions Supported", value = "Commercial & Residential")

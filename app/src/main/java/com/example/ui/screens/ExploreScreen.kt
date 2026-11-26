@@ -419,14 +419,19 @@ fun ExploreScreen(
                 }
             }
 
+            var activeCount = 0
             var vCount = 0
             var pCount = 0
             var aCount = 0
             for (prop in divisionList) {
                 val pre = PropertyPrecomputedCache.get(prop)
-                if (pre.isStrictlyLive) vCount++
-                else if (prop.archiveStatus != ArchiveStatus.ARCHIVED) pCount++
-                if (prop.archiveStatus == ArchiveStatus.ARCHIVED) aCount++
+                if (pre.isActiveInventory) {
+                    activeCount++
+                    if (prop.verificationStatus == VerificationStatus.VERIFIED) vCount++
+                    else pCount++
+                } else {
+                    aCount++
+                }
             }
             val unclassCount = directUnits.count { it.isUnclassified() }
 
@@ -434,12 +439,20 @@ fun ExploreScreen(
 
             if (!showUnclassifiedOnly) {
                 list = when (selectedVerificationTab) {
-                    VerificationFilterTab.ALL, VerificationFilterTab.VERIFIED ->
-                        list.filter { PropertyPrecomputedCache.get(it).isStrictlyLive }
+                    VerificationFilterTab.ALL ->
+                        list.filter { PropertyPrecomputedCache.get(it).isActiveInventory }
+                    VerificationFilterTab.VERIFIED ->
+                        list.filter {
+                            PropertyPrecomputedCache.get(it).isActiveInventory &&
+                                it.verificationStatus == VerificationStatus.VERIFIED
+                        }
                     VerificationFilterTab.PENDING ->
-                        list.filter { it.archiveStatus != ArchiveStatus.ARCHIVED && !PropertyPrecomputedCache.get(it).isStrictlyLive }
+                        list.filter {
+                            PropertyPrecomputedCache.get(it).isActiveInventory &&
+                                it.verificationStatus != VerificationStatus.VERIFIED
+                        }
                     VerificationFilterTab.ARCHIVE ->
-                        list.filter { it.archiveStatus == ArchiveStatus.ARCHIVED }
+                        list.filter { PropertyPrecomputedCache.get(it).isClosedOrArchived }
                 }
 
                 if (selectedCategoryOption != null) {
@@ -654,7 +667,7 @@ fun ExploreScreen(
                 verifiedCount = vCount,
                 pendingCount = pCount,
                 archiveCount = aCount,
-                activeTotalCount = vCount,
+                activeTotalCount = activeCount,
                 unclassifiedCount = unclassCount,
                 filteredProperties = sortedList,
                 approximateMatchPropertyIds = approxIds,
@@ -882,48 +895,25 @@ fun ExploreScreen(
                         }
                     }
 
-                    // Verification & Archive Tabs (Live Active, Verified, Pending, Archive)
+                    // Unified 2-way Inventory Toggle: All Active (no verification gate) | Archive / Closed
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         VerificationTabChip(
-                            label = "Live ($activeTotalCount)",
-                            isSelected = selectedVerificationTab == VerificationFilterTab.ALL && !showUnclassifiedOnly,
+                            label = "All Active ($activeTotalCount)",
+                            isSelected = selectedVerificationTab != VerificationFilterTab.ARCHIVE && !showUnclassifiedOnly,
                             onClick = {
                                 selectedVerificationTab = VerificationFilterTab.ALL
                                 onClearUnclassifiedOnly?.invoke()
                             },
                             modifier = Modifier
-                                .weight(1f)
-                                .testTag("inventory_tab_live")
-                        )
-                        VerificationTabChip(
-                            label = "Verified ($verifiedCount)",
-                            isSelected = selectedVerificationTab == VerificationFilterTab.VERIFIED && !showUnclassifiedOnly,
-                            onClick = {
-                                selectedVerificationTab = VerificationFilterTab.VERIFIED
-                                onClearUnclassifiedOnly?.invoke()
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("inventory_tab_verified"),
+                                .weight(1.25f)
+                                .testTag("inventory_tab_live"),
                             badgeColor = StatusAvailable
                         )
                         VerificationTabChip(
-                            label = "Pending ($pendingCount)",
-                            isSelected = selectedVerificationTab == VerificationFilterTab.PENDING && !showUnclassifiedOnly,
-                            onClick = {
-                                selectedVerificationTab = VerificationFilterTab.PENDING
-                                onClearUnclassifiedOnly?.invoke()
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .testTag("inventory_tab_pending"),
-                            badgeColor = StatusUnconfirmed
-                        )
-                        VerificationTabChip(
-                            label = "Archive ($archiveCount)",
+                            label = "Archive / Closed ($archiveCount)",
                             isSelected = selectedVerificationTab == VerificationFilterTab.ARCHIVE && !showUnclassifiedOnly,
                             onClick = {
                                 selectedVerificationTab = VerificationFilterTab.ARCHIVE
@@ -936,7 +926,7 @@ fun ExploreScreen(
                         )
                     }
 
-                    // Single compact sub-type & upcoming chip strip (No Commercial/Residential/All row)
+                    // Compact optional status filter chips + sub-type & upcoming chip strip
                     val subCategories = remember(selectedBrand) {
                         getCategoriesForBrand(selectedBrand).filter {
                             it !is CategoryFilterOption.AllCommercial && it !is CategoryFilterOption.AllResidential
@@ -947,6 +937,41 @@ fun ExploreScreen(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
+                        if (selectedVerificationTab != VerificationFilterTab.ARCHIVE) {
+                            item(key = "chip_status_verified") {
+                                val isVerifiedChip = selectedVerificationTab == VerificationFilterTab.VERIFIED && !showUnclassifiedOnly
+                                CategoryChip(
+                                    label = "Verified ($verifiedCount)",
+                                    isSelected = isVerifiedChip,
+                                    onClick = {
+                                        selectedVerificationTab = if (isVerifiedChip) {
+                                            VerificationFilterTab.ALL
+                                        } else {
+                                            VerificationFilterTab.VERIFIED
+                                        }
+                                        onClearUnclassifiedOnly?.invoke()
+                                    },
+                                    modifier = Modifier.testTag("inventory_tab_verified")
+                                )
+                            }
+                            item(key = "chip_status_pending") {
+                                val isPendingChip = selectedVerificationTab == VerificationFilterTab.PENDING && !showUnclassifiedOnly
+                                CategoryChip(
+                                    label = "Pending / Unconfirmed ($pendingCount)",
+                                    isSelected = isPendingChip,
+                                    onClick = {
+                                        selectedVerificationTab = if (isPendingChip) {
+                                            VerificationFilterTab.ALL
+                                        } else {
+                                            VerificationFilterTab.PENDING
+                                        }
+                                        onClearUnclassifiedOnly?.invoke()
+                                    },
+                                    modifier = Modifier.testTag("inventory_tab_pending")
+                                )
+                            }
+                        }
+
                         item(key = "chip_renewal_radar") {
                             CategoryChip(
                                 label = "🔔 Renewal Radar (90d)",

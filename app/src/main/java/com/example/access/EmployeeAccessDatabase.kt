@@ -285,6 +285,15 @@ interface EmployeeDao {
 
     @Query("SELECT COUNT(*) FROM tlc_employees WHERE role = 'ADMIN' AND accessStatus = 'ACTIVE' AND isActive = 1")
     suspend fun countActiveAdmins(): Int
+
+    @Query("DELETE FROM tlc_employees WHERE employeeId IN (:employeeIds)")
+    suspend fun deleteByIds(employeeIds: List<String>)
+
+    @Query("DELETE FROM tlc_employees WHERE employeeId NOT IN (:activeIds)")
+    suspend fun deleteWhereIdNotIn(activeIds: List<String>)
+
+    @Query("DELETE FROM tlc_employees")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -297,6 +306,12 @@ interface AccessAuditDao {
 
     @Query("SELECT * FROM tlc_access_audit_events ORDER BY occurredAt DESC LIMIT :limit")
     suspend fun getRecent(limit: Int = 100): List<AccessAuditEventEntity>
+
+    @Query("DELETE FROM tlc_access_audit_events WHERE eventId IN (:eventIds)")
+    suspend fun deleteByIds(eventIds: List<String>)
+
+    @Query("DELETE FROM tlc_access_audit_events")
+    suspend fun deleteAll()
 }
 
 @Dao

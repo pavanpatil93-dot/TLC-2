@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,7 +47,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.R
+import com.example.ai.BatchCallAnalysisCoordinator
 import com.example.crm.*
+import com.example.data.master.MasterProjectDatabase
 import com.example.data.projects.DirectoryProject
 import com.example.model.*
 import com.example.ui.components.PocTypeChipSelector
@@ -108,10 +111,21 @@ fun CrmCallsScreen(
     onOpenSavedReviews: (() -> Unit)? = null,
     onOpenPostCallSheet: ((CrmCallRecord) -> Unit)? = null,
     onOpenPostCallQueue: ((List<CrmCallRecord>, Int) -> Unit)? = null,
+    onEditExtractedClient: ((CrmLead, CrmCallRecord?) -> Unit)? = null,
+    onEditExtractedProperty: ((PropertyItem, CrmCallRecord?) -> Unit)? = null,
+    onPushCrmLeadToSheet: (suspend (CrmLead) -> Result<Unit>)? = null,
     externalRefreshTick: Int = 0
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    var callsSubTab by rememberSaveable { mutableIntStateOf(0) } // 0 = Call Logs, 1 = AI Review
+    val callAnalyses by remember(context) {
+        MasterProjectDatabase.getDatabase(context).masterProjectDao().observeAllCallAnalyses()
+    }.collectAsState(initial = emptyList())
+    val pendingAiReviewCount = remember(callAnalyses) {
+        callAnalyses.count { !it.reviewStatus.equals("APPROVED", ignoreCase = true) }
+    }
+    val batchAnalysisProgress by BatchCallAnalysisCoordinator.progress.collectAsState()
     val settingsManager = remember(context) { UserSettingsManager(context) }
     val userProfile by settingsManager.userProfile.collectAsState()
     val revealMaskedPhones by settingsManager.revealConfidentialPhonesForExec.collectAsState()
@@ -426,8 +440,117 @@ fun CrmCallsScreen(
             }
         }
 
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(6.dp))
 
+        // Dedicated 2-way sub-tab switcher: Call Logs | AI Review (Batch 44)
+        Surface(
+            color = SurfaceWhite,
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, BorderGrey),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("calls_subtab_switcher")
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Surface(
+                    color = if (callsSubTab == 0) PrimaryActionOrange else Color.Transparent,
+                    shape = RoundedCornerShape(9.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .clickable { callsSubTab = 0 }
+                        .testTag("calls_subtab_logs")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Call,
+                            contentDescription = null,
+                            tint = if (callsSubTab == 0) Color.White else TextPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "Call Logs (${callsComputed.activeCallsCount})",
+                            color = if (callsSubTab == 0) Color.White else TextPrimary,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Surface(
+                    color = if (callsSubTab == 1) PrimaryActionOrange else Color.Transparent,
+                    shape = RoundedCornerShape(9.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .clickable { callsSubTab = 1 }
+                        .testTag("calls_subtab_ai_review")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = if (callsSubTab == 1) Color.White else PrimaryActionOrange,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = when {
+                                batchAnalysisProgress.isRunning -> "AI (${batchAnalysisProgress.completed}/${batchAnalysisProgress.total})"
+                                pendingAiReviewCount > 0 -> "AI Review ($pendingAiReviewCount)"
+                                else -> "AI Review"
+                            },
+                            color = if (callsSubTab == 1) Color.White else TextPrimary,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(6.dp))
+
+        if (callsSubTab == 1) {
+            BatchCallReviewQueueTab(
+                calls = calls,
+                recordingOutcomesByCallId = recordingOutcomesByCallId,
+                activePlayingCallId = activePlayingCallId,
+                onTogglePlayRecording = { callRec, rec ->
+                    toggleInlineRecordingPlay(callRec, rec)
+                },
+                onAddPropertyToInventory = onAddPropertyToInventory,
+                onEditExtractedClient = onEditExtractedClient,
+                onEditExtractedProperty = onEditExtractedProperty,
+                onPushCrmLeadToSheet = onPushCrmLeadToSheet,
+                onOpenCallActionScreen = onOpenPostCallSheet,
+                onCallsMutated = {
+                    coroutineScope.launch {
+                        calls = withContext(Dispatchers.IO) { CrmCallManager.readCalls(context) }
+                    }
+                }
+            )
+        } else {
         // Compact single-row action bar: + Call | Import | Review | Saved | Demo
         Row(
             modifier = Modifier
@@ -569,36 +692,6 @@ fun CrmCallsScreen(
                     Icon(Icons.Default.Bookmarks, contentDescription = null, modifier = Modifier.size(15.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Saved", fontSize = 12.sp)
-                }
-            }
-
-            if (calls.none { it.id.startsWith("demo_call_") }) {
-                TextButton(
-                    onClick = {
-                        val demo = CrmCallManager.getDemoCalls()
-                        val existingIds = calls.map { it.id }.toSet()
-                        val updated = demo.filterNot { it.id in existingIds } + calls
-                        calls = updated
-                        coroutineScope.launch(Dispatchers.IO) {
-                            CrmCallManager.saveCalls(context, updated)
-                        }
-                    },
-                    modifier = Modifier.heightIn(min = 48.dp)
-                ) {
-                    Text("+ Demo", fontSize = 11.sp, color = BrandGold)
-                }
-            } else {
-                TextButton(
-                    onClick = {
-                        val updated = calls.filterNot { it.id.startsWith("demo_call_") }
-                        calls = updated
-                        coroutineScope.launch(Dispatchers.IO) {
-                            CrmCallManager.saveCalls(context, updated)
-                        }
-                    },
-                    modifier = Modifier.heightIn(min = 48.dp)
-                ) {
-                    Text("- Demo", fontSize = 11.sp, color = TextSecondaryDark)
                 }
             }
         }
@@ -989,6 +1082,7 @@ fun CrmCallsScreen(
                     }
                 }
             }
+        }
         }
     }
 
@@ -1626,6 +1720,13 @@ private fun CallRecordCard(
             call.handedOverAt > 0L &&
             (System.currentTimeMillis() - call.handedOverAt) > (2L * 60L * 60L * 1000L)
     }
+    val currentDeviceName = remember {
+        com.example.data.DeviceIdentityManager.getFriendlyDeviceName(context)
+    }
+    val isFromOtherDevice = com.example.data.DeviceIdentityManager.isFromOtherDevice(
+        recordDeviceName = call.deviceName,
+        currentDeviceName = currentDeviceName
+    )
     val matchedRecording = recordingOutcome?.takeIf { it.status == CallRecordingMatchStatus.MATCHED }?.matched
     val isAmbiguousRecording = recordingOutcome?.status == CallRecordingMatchStatus.AMBIGUOUS &&
         recordingOutcome.ambiguousCandidates.isNotEmpty()
@@ -1799,6 +1900,50 @@ private fun CallRecordCard(
                             fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            if (isFromOtherDevice && !call.deviceName.isNullOrBlank()) {
+                Spacer(Modifier.height(5.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = PrimaryTeal.copy(alpha = 0.10f),
+                        border = BorderStroke(0.6.dp, PrimaryTeal.copy(alpha = 0.35f)),
+                        modifier = Modifier.testTag("call_card_device_pill_${call.id}")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Smartphone,
+                                contentDescription = "Logged on ${call.deviceName}",
+                                tint = PrimaryTeal,
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Text(
+                                text = "Logged on ${call.deviceName}",
+                                color = PrimaryTeal,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                    if (matchedRecording == null && !call.recordingFilename.isNullOrBlank()) {
+                        Text(
+                            text = "Audio on ${call.deviceName}",
+                            color = TextSecondaryDark,
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -2238,7 +2383,13 @@ private fun CallRecordCard(
                         onSummaryGenerated = { summary ->
                             if (call.id == boundCallId) {
                                 val mergedNotes = if (call.notes.isBlank()) summary else "${call.notes}\n$summary"
-                                val updated = call.copy(notes = mergedNotes)
+                                val updated = call.copy(
+                                    notes = mergedNotes,
+                                    deviceName = call.deviceName?.takeIf { it.isNotBlank() } ?: currentDeviceName,
+                                    recordingFilename = matchedRecording?.fileName ?: call.recordingFilename,
+                                    syncStatus = "PENDING",
+                                    updatedAt = System.currentTimeMillis()
+                                )
                                 coroutineScope.launch {
                                     withContext(Dispatchers.IO) {
                                         CrmCallManager.addOrUpdateCall(context, updated)
