@@ -1,0 +1,8 @@
+BEGIN;
+ALTER TABLE tlc.property_enquiries ADD COLUMN web_requirement text, ADD COLUMN web_location text, ADD COLUMN web_property_ref text, ADD COLUMN web_consent_at timestamptz;
+ALTER TABLE tlc.property_enquiries ADD CONSTRAINT web_enquiry_fields_check CHECK (web_consent_at IS NULL OR (web_requirement IS NOT NULL AND length(trim(web_requirement)) BETWEEN 5 AND 2000 AND client_phone_e164 IS NOT NULL AND client_phone_e164 ~ '^\+[1-9][0-9]{7,14}$' AND length(trim(client_name)) BETWEEN 2 AND 120 AND (web_location IS NULL OR length(web_location)<=160) AND (web_property_ref IS NULL OR length(web_property_ref)<=150)));
+ALTER TABLE tlc.property_enquiries DROP CONSTRAINT property_enquiries_check;
+ALTER TABLE tlc.property_enquiries ADD CONSTRAINT property_enquiries_check CHECK (property_id IS NOT NULL OR project_id IS NOT NULL OR web_consent_at IS NOT NULL);
+CREATE POLICY web_verified_enquiry_insert ON tlc.property_enquiries FOR INSERT TO tlc_web_runtime WITH CHECK (current_setting('tlc.public_enquiry_verified',true)='true' AND web_consent_at IS NOT NULL AND contact_consent AND enquiry_kind='other' AND enquiry_state='new' AND assigned_to IS NULL AND client_account_id IS NULL AND property_id IS NULL AND project_id IS NULL AND client_email IS NULL);
+GRANT INSERT (client_name,client_phone_e164,enquiry_kind,contact_consent,enquiry_state,web_requirement,web_location,web_property_ref,web_consent_at) ON tlc.property_enquiries TO tlc_web_runtime;
+COMMIT;
