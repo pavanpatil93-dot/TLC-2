@@ -8,7 +8,7 @@ export async function GET(request:Request){
  if(!["admin","employee"].includes(p.accountKind))return reply({error:"FORBIDDEN"},403);
  try{
   const rows=await withSubjectTransaction(p.subject,async db=>(await db.query(
-   "SELECT id,contact_name,contact_phone_e164,property_public_ref,requested_location,requirement,status,created_at FROM tlc.enquiries ORDER BY created_at DESC LIMIT 100")).rows);
+   "SELECT id,client_name AS contact_name,client_phone_e164 AS contact_phone_e164,web_property_ref AS property_public_ref,web_location AS requested_location,web_requirement AS requirement,enquiry_state AS status,created_at FROM tlc.property_enquiries WHERE web_consent_at IS NOT NULL ORDER BY created_at DESC LIMIT 100")).rows);
   return reply({items:rows});
  }catch{return reply({error:"ENQUIRIES_UNAVAILABLE"},503);}
 }
