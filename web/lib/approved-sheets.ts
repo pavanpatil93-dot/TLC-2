@@ -46,3 +46,20 @@ export async function readPublicationPreview(approved: ReadonlySet<string>): Pro
   }
   return deduplicate(listings);
 }
+
+/** Aggregate-only diagnostics; never return raw records or identifiers. */
+export async function inventoryConnectivityDiagnostic(){
+ const email=process.env.TLC_GOOGLE_SERVICE_ACCOUNT_EMAIL;
+ const key=process.env.TLC_GOOGLE_PRIVATE_KEY?.replace(/\\n/g,"\n");
+ if(!email||!key||!SHEET_ID)throw new Error("SHEETS_NOT_CONFIGURED");
+ const auth=new google.auth.JWT({email,key,scopes:["https://www.googleapis.com/auth/spreadsheets.readonly"]});
+ const sheets=google.sheets({version:"v4",auth});
+ const results=[];
+ for(const tab of INVENTORY_TABS){
+  const {data}=await sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:"'"+tab+"'!A1:BN",valueRenderOption:"UNFORMATTED_VALUE"});
+  const stats={rows:0,eligible:0,rejected:{} as Record<string,number>,schemaValid:false};
+  toPublicListings(tab,(data.values??[]).map(row=>row.map(v=>String(v??""))),new Set(),stats);
+  results.push({tab,...stats});
+ }
+ return {sheetsConnected:true,tabs:results,publicationEnabled:process.env.TLC_MASTER_PUBLICATION_MODE==="registry",approvalWritesEnabled:process.env.TLC_MASTER_APPROVAL_WRITES==="enabled"};
+}
