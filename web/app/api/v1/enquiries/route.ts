@@ -29,7 +29,7 @@ export async function POST(request:Request){
  try{
   await db.query("BEGIN");
   await db.query("SELECT set_config('tlc.public_enquiry_verified','true',true)");
-  await db.query("INSERT INTO tlc.enquiries(contact_name,contact_phone_e164,property_public_ref,requested_location,requirement,consent_at) VALUES($1,$2,$3,$4,$5,now())",[name,phone,propertyRef||null,location||null,requirement]);
+  await db.query("INSERT INTO tlc.property_enquiries(client_name,client_phone_e164,web_property_ref,web_location,web_requirement,web_consent_at,enquiry_kind,contact_consent,enquiry_state) VALUES($1,$2,$3,$4,$5,now(),'other',true,'new')",[name,phone,propertyRef||null,location||null,requirement]);
   await db.query("COMMIT");
   return respond({received:true,status:"PRIVATE_CRM_QUEUE"},201);
  }catch{await db.query("ROLLBACK").catch(()=>{});return respond({error:"ENQUIRY_UNAVAILABLE"},503);}
