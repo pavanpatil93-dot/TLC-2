@@ -54,12 +54,32 @@ jobs:
           fi
       - name: Unit test gate
         timeout-minutes: 20
-        run: gradle :app:testDebugUnitTest --stacktrace --info --no-daemon
+        run: |
+          mkdir -p app/build/test-diagnostics
+          (
+            sleep 480
+            while true; do
+              stamp=$(date -u +%Y%m%dT%H%M%SZ)
+              jps -l > "app/build/test-diagnostics/jvm-$stamp.txt"
+              while read -r pid name; do
+                case "$name" in
+                  *GradleWorkerMain*|*GradleDaemon*)
+                    timeout 15s jcmd "$pid" Thread.print > "app/build/test-diagnostics/threads-$stamp-$pid.txt" 2>&1 || true
+                    ;;
+                esac
+              done < "app/build/test-diagnostics/jvm-$stamp.txt"
+              sleep 120
+            done
+          ) &
+          monitor=$!
+          trap 'kill "$monitor" 2>/dev/null || true' EXIT
+          gradle :app:testDebugUnitTest --stacktrace --info --no-daemon
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: Android-unit-test-diagnostics
           path: |
+            app/build/test-diagnostics/
             app/build/test-results/
             app/build/reports/tests/
           if-no-files-found: warn
