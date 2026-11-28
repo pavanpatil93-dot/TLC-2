@@ -21,6 +21,11 @@ import com.example.ui.components.PortalTopBar
 import com.example.ui.screens.EmployeeEntryScreen
 import com.example.ui.screens.PinLockScreen
 import com.example.ui.theme.MyApplicationTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
@@ -225,6 +230,7 @@ class Group01EmployeeAccessTest {
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun adminGuardsBlockSelfDemotionLastAdminCycleAndOptimisticConflict() = runBlocking {
         val manager = newManager()
@@ -320,7 +326,14 @@ class Group01EmployeeAccessTest {
         assertEquals(EmployeeAccessStatus.ACTIVE, persistedExec.accessStatus)
 
         // 4. Switch Profile / Sign Out clears in-memory callback while retaining Room employee rows
-        manager.switchProfile()
+        // The Robolectric test thread is blocked by runBlocking; use an unconfined
+        // test Main dispatcher for the session-clear callback to avoid posting to it.
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        try {
+            manager.switchProfile()
+        } finally {
+            Dispatchers.resetMain()
+        }
         assertFalse(manager.sessionState.value.isSignedIn)
         assertTrue(inMemoryClearedCount >= 1)
         assertEquals(3, db.employeeDao().getAll().size)
